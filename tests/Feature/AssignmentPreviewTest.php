@@ -30,9 +30,33 @@ class AssignmentPreviewTest extends IntegrationTestCase
     {
         $device = $this->device();
         $this->downPort($device);
+        $this->downPort($device);
         $this->downPort($this->device());
 
-        self::assertSame(1, $this->counter->count(['assignment_type' => 'device', 'assignment_reference' => $device->device_id])['count']);
+        $result = $this->counter->count(['assignment_type' => 'device', 'assignment_reference' => $device->device_id]);
+        self::assertSame(2, $result['count'], 'Two interfaces on the target device.');
+        self::assertSame(1, $result['devices'], 'One device.');
+    }
+
+    public function test_the_device_count_spans_the_matched_devices(): void
+    {
+        // Many interfaces across a few devices — the case that surprised a user:
+        // a device group of a handful of devices legitimately matches hundreds
+        // of interfaces. The preview surfaces both numbers.
+        $group = DeviceGroup::factory()->create();
+        $interfaces = 0;
+        foreach (range(1, 3) as $i) {
+            $device = $this->device();
+            $device->groups()->attach($group->id);
+            foreach (range(1, 5) as $j) {
+                $this->downPort($device);
+                $interfaces++;
+            }
+        }
+
+        $result = $this->counter->count(['assignment_type' => 'device_group', 'match_mode' => 'any', 'device_group_ids' => [$group->id]]);
+        self::assertSame($interfaces, $result['count'], '15 interfaces total.');
+        self::assertSame(3, $result['devices'], '3 devices.');
     }
 
     public function test_a_location_assignment_counts_ports_at_that_location(): void
@@ -75,6 +99,7 @@ class AssignmentPreviewTest extends IntegrationTestCase
 
         $result = $this->counter->count(['assignment_type' => 'ifname_regex', 'match_expression' => '/^xe-/']);
         self::assertSame(1, $result['count']);
+        self::assertSame(1, $result['devices']);
         self::assertFalse($result['capped']);
     }
 
@@ -105,6 +130,7 @@ class AssignmentPreviewTest extends IntegrationTestCase
             ->postJson('/plugin/interface-alert-policy-manager/assignments/preview', ['policy_id' => $policy->id, 'assignment_type' => 'device', 'assignment_reference' => (string) $device->device_id, 'match_mode' => 'any', 'priority' => 0])
             ->assertOk()
             ->assertJsonPath('count', 1)
+            ->assertJsonPath('devices', 1)
             ->assertJsonPath('capped', false);
     }
 }

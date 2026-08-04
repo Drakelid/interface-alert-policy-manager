@@ -139,7 +139,8 @@
         }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); }).then(function (res) {
             if (!res.ok) { result.textContent = (res.d && res.d.message) ? res.d.message : 'Preview failed (check the fields).'; return; }
             if (res.d.error) { result.textContent = res.d.error; return; }
-            result.textContent = 'Matches ' + res.d.count + ' interface(s)' + (res.d.capped ? ' (sampled; real total is higher)' : '') + '.';
+            var devices = (res.d.devices || 0) + ' device(s)';
+            result.textContent = 'Matches ' + res.d.count + ' interface(s) across ' + devices + (res.d.capped ? ' (sampled; real total is higher)' : '') + '.';
         }).catch(function () { result.textContent = 'Preview failed.'; });
     });
 })();
