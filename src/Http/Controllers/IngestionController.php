@@ -32,7 +32,7 @@ class IngestionController extends Controller
             $seen[] = (int) $port->port_id; $context = $contexts->forPort($port); $resolution = $policies->resolve($context);
             $fingerprint = hash('sha256', implode('|', [(string) ($data['alert_uid'] ?? ''), (string) ($data['alert_id'] ?? ''), (string) ($data['timestamp'] ?? ''), $state, (string) $context->portId]));
             if (! $resolution->policy) {
-                DB::transaction(function () use ($data, $context, $fingerprint, &$counts): void {
+                $this->runWithUniqueRetry(function () use ($data, $context, $fingerprint, &$counts): void {
                     $incident = Incident::where('incident_key', Incident::key($context->deviceId, $context->portId))->lockForUpdate()->first() ?? new Incident(['incident_key' => Incident::key($context->deviceId, $context->portId), 'first_seen_at' => now(), 'notification_count' => 0]);
                     if (($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) { $counts['ignored']++; return; }
                     $reopening = $incident->exists && $incident->state === IncidentState::Recovered;
@@ -43,7 +43,7 @@ class IngestionController extends Controller
                 });
                 continue;
             }
-            DB::transaction(function () use ($data, $state, $context, $resolution, $suppression, $device, $fingerprint, &$counts): void {
+            $this->runWithUniqueRetry(function () use ($data, $state, $context, $resolution, $suppression, $device, $fingerprint, &$counts): void {
                 $incident = Incident::where('incident_key', Incident::key($context->deviceId, $context->portId))->lockForUpdate()->first();
                 if ($incident && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) { $counts['ignored']++; return; }
                 if ($state === 'recovered') { if ($incident && $incident->state !== IncidentState::Recovered) $this->requestRecovery($incident, $resolution->policy->recovery_after_seconds, 'Recovery received from LibreNMS.', $counts); return; }
@@ -67,6 +67,21 @@ class IngestionController extends Controller
         }
         \Illuminate\Support\Facades\Log::channel('iapm')->info('Alert ingestion completed.', ['device_id' => $device->device_id, 'alert_id' => $data['alert_id'] ?? null, 'alert_uid' => $data['alert_uid'] ?? null, 'state' => $state, 'counts' => $counts]);
         return response()->json(['status' => 'accepted', 'counts' => $counts]);
+    }
+
+    /**
+     * Run an incident upsert inside a transaction, retrying once if a concurrent
+     * first-time webhook for the same port wins the race to INSERT. On the retry
+     * the locked read finds the now-existing row and takes the update path, so
+     * the constraint violation never surfaces to the caller as a 500.
+     */
+    private function runWithUniqueRetry(callable $callback): void
+    {
+        try {
+            DB::transaction($callback);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+            DB::transaction($callback);
+        }
     }
 
     private function requestRecovery(Incident $incident, int $holdDown, string $message, array &$counts): void
