@@ -1,0 +1,44 @@
+{
+    "name": "librenms/interface-alert-policy-manager",
+    "description": "Scalable per-interface alert policies for LibreNMS",
+    "type": "library",
+    "license": "GPL-3.0-or-later",
+    "require": {
+        "php": "^8.2",
+        "illuminate/contracts": "^12.10",
+        "illuminate/support": "^12.10",
+        "librenms/plugin-interfaces": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "LibreNMS\\Plugins\\InterfaceAlertPolicyManager\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "LibreNMS\\Plugins\\InterfaceAlertPolicyManager\\Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "illuminate/database": "^12.10",
+        "laravel/pint": "^1.18",
+        "phpstan/phpstan": "^2.0",
+        "phpunit/phpunit": "^11.0"
+    },
+    "scripts": {
+        "test": "phpunit --testsuite unit",
+        "test:integration": "phpunit --testsuite integration",
+        "lint": "pint --test",
+        "analyse": "phpstan analyse"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LibreNMS\\Plugins\\InterfaceAlertPolicyManager\\IapmServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

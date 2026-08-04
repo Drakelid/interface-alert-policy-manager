@@ -1,0 +1,62 @@
+<?php
+
+namespace LibreNMS\Plugins\InterfaceAlertPolicyManager;
+
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\ServiceProvider;
+use LibreNMS\Interfaces\Plugins\Hooks\MenuEntryHook;
+use LibreNMS\Interfaces\Plugins\Hooks\SettingsHook;
+use LibreNMS\Interfaces\Plugins\PluginManagerInterface;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CacheClearCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CacheRebuildCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CleanupCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\InstallCheckCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ProcessActionsCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ReconcileCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestDestinationCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestPolicyCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Hooks\MenuEntry;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Hooks\Settings;
+
+class IapmServiceProvider extends ServiceProvider
+{
+    public const PLUGIN_NAME = 'interface-alert-policy-manager';
+
+    public const ABILITIES = ['view iapm', 'manage iapm policies', 'manage iapm assignments', 'manage iapm destinations', 'manage iapm settings', 'acknowledge iapm incidents', 'mute iapm incidents', 'test iapm destinations', 'view iapm audit logs'];
+
+    public function register(): void
+    {
+        $this->mergeConfigFrom(__DIR__.'/../config/iapm.php', 'iapm');
+        if (config('logging.channels.iapm') === null) config(['logging.channels.iapm' => ['driver' => 'single', 'path' => storage_path('logs/iapm.log'), 'level' => 'info', 'replace_placeholders' => true]]);
+    }
+
+    public function boot(PluginManagerInterface $plugins): void
+    {
+        foreach (self::ABILITIES as $ability) {
+            Gate::define($ability, function (\App\Models\User $user) use ($ability): bool { if ($user->hasRole('admin')) return true; try { return $user->hasPermissionTo($ability); } catch (\Throwable) { return false; } });
+        }
+        $plugins->publishHook(self::PLUGIN_NAME, MenuEntryHook::class, MenuEntry::class);
+        $plugins->publishHook(self::PLUGIN_NAME, SettingsHook::class, Settings::class);
+
+        // Registered unconditionally: `php artisan migrate` must work before the
+        // plugin row exists, and routes carry their own enablement middleware.
+        $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        $this->loadViewsFrom(__DIR__.'/../resources/views', 'iapm');
+        $this->publishes([__DIR__.'/../config/iapm.php' => config_path('iapm.php')], 'iapm-config');
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
+        }
+
+        // The scheduler is resolved during app boot, when the plugins table may
+        // not exist yet on a fresh install. So entries are always registered and
+        // each scheduled command checks enablement when it actually runs.
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
+            $schedule->command('iapm:reconcile')->everyMinute()->withoutOverlapping();
+            $schedule->command('iapm:process-actions')->everyMinute()->withoutOverlapping();
+            $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping();
+        });
+    }
+}

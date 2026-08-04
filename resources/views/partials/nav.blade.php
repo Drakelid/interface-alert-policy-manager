@@ -1,0 +1,19 @@
+<ul class="nav nav-tabs">
+    <li><a href="{{ route('iapm.overview') }}">Overview</a></li>
+    <li><a href="{{ route('iapm.incidents.index') }}">Incidents</a></li>
+    <li><a href="{{ route('iapm.policies.index') }}">Policies</a></li>
+    <li><a href="{{ route('iapm.assignments.index') }}">Assignments</a></li>
+    <li><a href="{{ route('iapm.matrix') }}">Matrix</a></li>
+    <li><a href="{{ route('iapm.policy-test') }}">Policy Test</a></li>
+    <li><a href="{{ route('iapm.comparison-report') }}">Comparison</a></li>
+    <li><a href="{{ route('iapm.destinations.index') }}">Destinations</a></li>
+    <li><a href="{{ route('iapm.schedules.index') }}">Schedules</a></li>
+    <li><a href="{{ route('iapm.delivery-log') }}">Deliveries</a></li>
+    <li><a href="{{ route('iapm.audit-log') }}">Audit</a></li>
+    <li><a href="{{ route('iapm.template-preview') }}">Template Preview</a></li>
+    <li><a href="{{ route('iapm.setup-helper') }}">Setup</a></li>
+    <li><a href="{{ route('iapm.settings.edit') }}">Settings</a></li>
+</ul>
+@if(session('status'))<div class="alert alert-success">{{ session('status') }}</div>@endif
+@if(session('error'))<div class="alert alert-danger">{{ session('error') }}</div>@endif
+@if($errors->any())<div class="alert alert-danger"><ul>@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif

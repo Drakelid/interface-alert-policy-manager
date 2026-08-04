@@ -1,0 +1,4 @@
+<?php
+namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
+use Illuminate\Http\Request; use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination; use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
+class DestinationCloneController { public function __invoke(Request $request,Destination $destination,AuditService $audit){abort_unless($request->user()->can('manage iapm destinations'),403);$copy=$destination->replicate();$copy->name=$destination->name.' (copy)';$copy->enabled=false;$copy->save();$audit->record($request,'cloned','destination',$copy,null,['name'=>$copy->name,'type'=>$copy->type,'enabled'=>false]);return redirect()->route('iapm.destinations.edit',$copy)->with('status','Destination cloned disabled. Review secrets and enable it explicitly.');} }

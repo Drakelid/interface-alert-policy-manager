@@ -1,0 +1,4 @@
+<?php
+namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Unit;
+use InvalidArgumentException; use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer; use PHPUnit\Framework\TestCase;
+class SafeTemplateRendererTest extends TestCase { public function test_it_renders_known_values_without_executing_code():void{$r=new SafeTemplateRenderer;self::assertSame('Port xe-0/0/1 {{ phpinfo() }}',$r->render('Port {{ ifName }} {{ phpinfo() }}',['ifName'=>'xe-0/0/1']));} public function test_unknown_placeholders_fail_visibly():void{$this->expectException(InvalidArgumentException::class);(new SafeTemplateRenderer)->render('{{ missing }}',[]);} public function test_truncation_preserves_incident_identifier():void{$v=(new SafeTemplateRenderer)->render(str_repeat('x',100),['incident_id'=>42],30);self::assertLessThanOrEqual(30,mb_strlen($v));self::assertStringEndsWith("Incident: 42",$v);} }

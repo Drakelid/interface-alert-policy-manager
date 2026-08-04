@@ -1,0 +1,12 @@
+{
+  "alert_uid": "18432",
+  "alert_id": 572,
+  "rule_id": 14,
+  "device_id": 225,
+  "hostname": "core-router-01",
+  "state": 1,
+  "severity": "critical",
+  "timestamp": "2026-07-10T11:15:00+02:00",
+  "title": "Interface alert",
+  "faults": [{"port_id": 17292, "ifName": "xe-0/0/4", "ifDescr": "xe-0/0/4", "ifAlias": "CUST: Example customer - Primary", "ifAdminStatus": "up", "ifOperStatus": "down"}]
+}

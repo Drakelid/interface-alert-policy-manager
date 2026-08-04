@@ -1,0 +1,33 @@
+{
+  "policy": {
+    "name": "Default customer interface policy",
+    "enabled": true,
+    "priority": 0,
+    "severity": "critical",
+    "notifications_enabled": true,
+    "trigger_after_seconds": 120,
+    "failed_poll_count": 2,
+    "recovery_after_seconds": 60,
+    "repeat_seconds": 900,
+    "maximum_repeats": 3,
+    "notify_recovery": true,
+    "suppress_device_down": true,
+    "suppress_admin_down": true,
+    "suppress_ignored_port": true,
+    "suppress_disabled_port": true,
+    "suppress_deleted_port": true,
+    "suppress_maintenance": true,
+    "suppress_parent_down": true
+  },
+  "assignment": {
+    "assignment_type": "default",
+    "match_mode": "any",
+    "priority": 0,
+    "enabled": true
+  },
+  "actions": [
+    {"phase": "trigger", "delay_seconds": 0, "enabled": true, "sort_order": 10},
+    {"phase": "reminder", "delay_seconds": 900, "repeat_seconds": 900, "maximum_sends": 3, "enabled": true, "sort_order": 20},
+    {"phase": "recovery", "delay_seconds": 0, "maximum_sends": 1, "enabled": true, "sort_order": 30}
+  ]
+}
