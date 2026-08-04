@@ -9,7 +9,9 @@ class SettingStore
 {
     public function get(string $key, mixed $default = null): mixed
     {
-        $value = DB::table('iapm_settings')->where('setting_key', $key)->value('setting_value');
+        // Tolerate the table not existing yet (plugin enabled before migrating):
+        // the nav reads a setting on every page, so this must never throw.
+        try { $value = DB::table('iapm_settings')->where('setting_key', $key)->value('setting_value'); } catch (\Throwable) { return $default; }
         if ($value === null) return $default;
         try { return json_decode(Crypt::decryptString($value), true, 32, JSON_THROW_ON_ERROR); } catch (\Throwable) { return $default; }
     }
