@@ -1,5 +1,13 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Stats') @section('content')
-@php($fmt = function($seconds){ if($seconds===null) return '—'; $s=(int)round($seconds); if($s<60) return $s.'s'; if($s<3600) return round($s/60,1).'m'; return round($s/3600,1).'h'; })
+@php
+$fmt = function ($seconds) {
+    if ($seconds === null) { return '—'; }
+    $s = (int) round($seconds);
+    if ($s < 60) { return $s.'s'; }
+    if ($s < 3600) { return round($s / 60, 1).'m'; }
+    return round($s / 3600, 1).'h';
+};
+@endphp
 <div class="container-fluid">@include('iapm::partials.nav')
 <h2>Statistics &amp; SLA</h2>
 <form class="form-inline" method="get" style="margin-bottom:12px;">
