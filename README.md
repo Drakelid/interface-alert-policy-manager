@@ -74,7 +74,19 @@ php artisan iapm:test-destination --destination=ID --receiver=VALUE [--force]
 php artisan iapm:cleanup [--force]
 php artisan iapm:cache-clear
 php artisan iapm:cache-rebuild [--device=DEVICE_ID]
+php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external monitoring)
 ```
+
+## Noise control, monitoring, and tooling
+
+- **Root-cause suppression.** Designate an *uplink port group* in Settings, then enable "suppress when uplink down" on a policy. When an uplink interface on a device is down, downstream customer interfaces on that device are suppressed (reason `uplink_down`) instead of storming.
+- **Flap dampening (per policy).** Set a flap threshold, window, and settle period. When an interface cycles down/up faster than the threshold, IAPM sends one `FLAPPING` notice and suppresses the routine churn until it settles.
+- **Escalation chains.** Add multiple `escalation` actions with increasing delays and different destinations/receivers; acknowledging the incident stops further escalation.
+- **Self-monitoring.** The Overview shows an IAPM health panel, and `iapm:health` exits non-zero when the scheduler has stalled, the gateway is failing, or notifications are stuck — point your own monitoring at it as a dead-man's switch.
+- **Statistics & SLA** (Monitor → Statistics): MTTA/MTTR, longest outage, notifications, flapping outages, noisiest interfaces, per-policy breakdown, and delivery success rate, computed from an append-only `iapm_outages` record.
+- **Simulate alert** (Tools): fire a synthetic alert for one interface through the real pipeline to validate policy/assignment/suppression behaviour without curl (respects dry-run).
+- **Import / Export** (Tools): back up or promote schedules, policies, actions, and assignments as JSON between installs. Destinations are excluded (they hold secrets); actions are matched to destinations by name on import.
+- **Comparison report** gains a per-policy breakdown and CSV export.
 
 The provider schedules reconciliation and action processing every minute and cleanup daily. Ensure `php artisan schedule:run` is executed every minute by the normal LibreNMS scheduler. While the plugin is disabled, its routes return `404` and the scheduled commands exit without acting, so disabling the plugin is a safe way to stop IAPM without removing it.
 

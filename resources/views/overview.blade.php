@@ -7,6 +7,16 @@
 
     @include('iapm::partials.setup-checklist')
 
+    @php($healthDown = collect($health)->where('ok',false))
+    @if($healthDown->isNotEmpty())
+    <div class="panel panel-danger">
+        <div class="panel-heading"><i class="fa fa-heartbeat"></i> <strong>IAPM health needs attention</strong></div>
+        <div class="list-group" style="margin-bottom:0;">
+            @foreach($health as $check)<div class="list-group-item"><i class="fa fa-{{ $check['ok']?'check text-success':'times text-danger' }}" style="width:1.2em;"></i> <strong>{{ $check['label'] }}</strong> <span class="text-muted">— {{ $check['detail'] }}</span></div>@endforeach
+        </div>
+    </div>
+    @endif
+
     <div class="row">
         <div class="col-sm-2"><div class="panel panel-danger"><div class="panel-heading">Active critical</div><div class="panel-body"><strong>{{ $metrics['active_critical'] }}</strong></div></div></div>
         <div class="col-sm-2"><div class="panel panel-warning"><div class="panel-heading">Active warning</div><div class="panel-body"><strong>{{ $metrics['active_warning'] }}</strong></div></div></div>

@@ -20,6 +20,9 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SetupHelperCon
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\TemplatePreviewController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\IncidentBulkController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\DestinationCloneController;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\StatsController;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SimulationController;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\ImportExportController;
 
 // Throttle is listed before authentication so an invalid-token flood is rate
 // limited before it reaches the DB read + decrypt performed by AuthenticateIngestion.
@@ -34,7 +37,10 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::resource('assignments', AssignmentController::class)->except('show');
     Route::get('interface-matrix', [InterfaceMatrixController::class, 'index'])->name('matrix'); Route::post('interface-matrix/bulk', [InterfaceMatrixController::class, 'bulk'])->name('matrix.bulk'); Route::get('interface-matrix/export', [InterfaceMatrixController::class, 'export'])->name('matrix.export');
     Route::get('policy-test', PolicyTestController::class)->name('policy-test');
-    Route::get('comparison-report', ComparisonReportController::class)->name('comparison-report');
+    Route::get('stats', StatsController::class)->name('stats');
+    Route::get('tools/simulate', [SimulationController::class, 'form'])->name('simulate'); Route::post('tools/simulate', [SimulationController::class, 'run'])->name('simulate.run');
+    Route::get('export', [ImportExportController::class, 'export'])->name('export'); Route::get('import', [ImportExportController::class, 'importForm'])->name('import.form'); Route::post('import', [ImportExportController::class, 'import'])->name('import');
+    Route::get('comparison-report', ComparisonReportController::class)->name('comparison-report'); Route::get('comparison-report/export', [ComparisonReportController::class, 'export'])->name('comparison-report.export');
     Route::get('setup-helper', SetupHelperController::class)->name('setup-helper');
     Route::match(['get','post'], 'template-preview', TemplatePreviewController::class)->name('template-preview');
     Route::delete('schedules-bulk', [ScheduleController::class, 'bulkDestroy'])->name('schedules.bulk-destroy');

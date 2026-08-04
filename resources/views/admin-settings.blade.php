@@ -43,6 +43,16 @@
     </div>
 </div>
 
+<div class="panel panel-default">
+    <div class="panel-heading">Root-cause suppression</div>
+    <div class="panel-body">
+        <div class="form-group"><label>Uplink port group</label>
+            <select class="form-control" name="uplink_port_group_id"><option value="">None</option>@foreach($portGroups as $g)<option value="{{ $g->id }}" @selected($values['uplink_port_group_id']==$g->id)>{{ $g->name }}</option>@endforeach</select>
+            <p class="help-block">Ports in this LibreNMS port group are treated as uplinks. When an uplink on a device is down, policies with "suppress when uplink down" will suppress the downstream customer interfaces on that device, avoiding an alert storm.</p>
+        </div>
+    </div>
+</div>
+
 <button class="btn btn-primary">Save settings</button>
 </form>
 

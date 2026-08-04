@@ -11,6 +11,7 @@ use LibreNMS\Interfaces\Plugins\PluginManagerInterface;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CacheClearCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CacheRebuildCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CleanupCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\HealthCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\InstallCheckCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ProcessActionsCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ReconcileCommand;
@@ -47,7 +48,7 @@ class IapmServiceProvider extends ServiceProvider
         $this->publishes([__DIR__.'/../config/iapm.php' => config_path('iapm.php')], 'iapm-config');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
+            $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
         }
 
         // The scheduler is resolved during app boot, when the plugins table may

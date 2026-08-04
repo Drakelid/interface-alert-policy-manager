@@ -6,11 +6,12 @@
 <div class="clearfix" style="margin-bottom:10px;">
     <ul class="nav nav-pills" style="display:inline-block;">
         <li class="{{ $iapmActive('iapm.overview') }}"><a href="{{ route('iapm.overview') }}"><i class="fa fa-dashboard"></i> Overview</a></li>
-        <li class="dropdown {{ $iapmActive('iapm.incidents.index','iapm.incidents.show','iapm.matrix') }}">
+        <li class="dropdown {{ $iapmActive('iapm.incidents.index','iapm.incidents.show','iapm.matrix','iapm.stats') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#">Monitor <span class="caret"></span></a>
             <ul class="dropdown-menu">
                 <li><a href="{{ route('iapm.incidents.index') }}">Active Incidents</a></li>
                 <li><a href="{{ route('iapm.matrix') }}">Interface Matrix</a></li>
+                <li><a href="{{ route('iapm.stats') }}">Statistics &amp; SLA</a></li>
             </ul>
         </li>
         <li class="dropdown {{ $iapmActive('iapm.policies.index','iapm.policies.create','iapm.policies.edit','iapm.assignments.index','iapm.assignments.create','iapm.assignments.edit','iapm.destinations.index','iapm.destinations.create','iapm.destinations.edit','iapm.schedules.index','iapm.schedules.create','iapm.schedules.edit') }}">
@@ -25,12 +26,14 @@
                 <li><a href="{{ route('iapm.setup-helper') }}">5. LibreNMS setup helper</a></li>
             </ul>
         </li>
-        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.comparison-report','iapm.setup-helper') }}">
+        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.import.form') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#">Tools <span class="caret"></span></a>
             <ul class="dropdown-menu">
                 <li><a href="{{ route('iapm.policy-test') }}">Policy Test</a></li>
                 <li><a href="{{ route('iapm.template-preview') }}">Template Preview</a></li>
+                <li><a href="{{ route('iapm.simulate') }}">Simulate Alert</a></li>
                 <li><a href="{{ route('iapm.comparison-report') }}">Comparison Report</a></li>
+                <li><a href="{{ route('iapm.import.form') }}">Import / Export</a></li>
                 <li><a href="{{ route('iapm.setup-helper') }}">Setup Helper</a></li>
             </ul>
         </li>

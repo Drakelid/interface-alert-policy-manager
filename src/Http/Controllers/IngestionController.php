@@ -11,6 +11,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\Severity;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests\IngestAlertRequest;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\DependencyResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\StateNormalizer;
@@ -18,7 +19,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SuppressionService;
 
 class IngestionController extends Controller
 {
-    public function __invoke(IngestAlertRequest $request, StateNormalizer $states, InterfaceContextService $contexts, PolicyResolver $policies, SuppressionService $suppression): JsonResponse
+    public function __invoke(IngestAlertRequest $request, StateNormalizer $states, InterfaceContextService $contexts, PolicyResolver $policies, SuppressionService $suppression, DependencyResolver $dependencies): JsonResponse
     {
         $data = $request->validated(); $state = $states->normalize($data['state']);
         if ($state === 'recovered' && ! isset($data['alert_id']) && ! isset($data['alert_uid']) && ! isset($data['rule_id'])) return response()->json(['error' => ['code' => 'correlation_required', 'message' => 'Recovery payload requires alert_id, alert_uid, or rule_id.']], 422);
@@ -43,11 +44,11 @@ class IngestionController extends Controller
                 });
                 continue;
             }
-            $this->runWithUniqueRetry(function () use ($data, $state, $context, $resolution, $suppression, $device, $fingerprint, &$counts): void {
+            $this->runWithUniqueRetry(function () use ($data, $state, $context, $resolution, $suppression, $dependencies, $device, $fingerprint, &$counts): void {
                 $incident = Incident::where('incident_key', Incident::key($context->deviceId, $context->portId))->lockForUpdate()->first();
                 if ($incident && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) { $counts['ignored']++; return; }
                 if ($state === 'recovered') { if ($incident && $incident->state !== IncidentState::Recovered) $this->requestRecovery($incident, $resolution->policy->recovery_after_seconds, 'Recovery received from LibreNMS.', $counts); return; }
-                $reason = $suppression->reason($resolution->policy, $context, ! (bool) $device->status, SuppressionService::maintenanceSuppresses($device), SuppressionService::anyParentDown($device->parents));
+                $reason = $suppression->reason($resolution->policy, $context, ! (bool) $device->status, SuppressionService::maintenanceSuppresses($device), SuppressionService::anyParentDown($device->parents), $dependencies->uplinkDown($device, $context->portId));
                 $target = $reason ? IncidentState::Suppressed : ($resolution->policy->trigger_after_seconds === 0 && $resolution->policy->failed_poll_count <= 1 ? IncidentState::Active : IncidentState::Pending);
                 $incident ??= new Incident(['incident_key' => Incident::key($context->deviceId, $context->portId), 'first_seen_at' => now(), 'notification_count' => 0]);
                 $reopening = $incident->exists && $incident->state === IncidentState::Recovered;
@@ -86,7 +87,7 @@ class IngestionController extends Controller
 
     private function requestRecovery(Incident $incident, int $holdDown, string $message, array &$counts): void
     {
-        if ($holdDown <= 0) { $incident->update(['state' => IncidentState::Recovered, 'recovered_at' => now(), 'last_seen_at' => now(), 'suppression_reason' => null]); $incident->events()->create(['event_type' => 'recovered', 'event_message' => $message]); $counts['recovered']++; return; }
+        if ($holdDown <= 0) { $incident->update(['state' => IncidentState::Recovered, 'recovered_at' => now(), 'last_seen_at' => now(), 'suppression_reason' => null]); $incident->events()->create(['event_type' => 'recovered', 'event_message' => $message]); app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\OutageRecorder::class)->record($incident); $counts['recovered']++; return; }
         $context = $incident->context_json; $context['up_seen_at'] ??= now()->toIso8601String(); $incident->update(['context_json' => $context, 'last_seen_at' => now()]);
         if (! $incident->events()->where('event_type', 'recovery_pending')->where('created_at', '>=', now()->subSeconds($holdDown))->exists()) $incident->events()->create(['event_type' => 'recovery_pending', 'event_message' => "$message Recovery hold-down is {$holdDown} seconds."]);
         $counts['pending']++;

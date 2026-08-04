@@ -50,6 +50,7 @@ class NotificationDispatcher
         }
 
         \Illuminate\Support\Facades\Log::channel('iapm')->log($result->successful ? 'info' : 'error', 'Notification delivery completed.', ['incident_id' => $incident->id, 'destination_id' => $destination->id, 'phase' => $phase, 'successful' => $result->successful, 'attempts' => $attempt, 'status' => $result->status, 'error' => $result->error]);
+        $this->settings->put($result->successful ? 'last_gateway_success_at' : 'last_gateway_failure_at', now()->toIso8601String());
 
         if ($result->successful) {
             $incident->increment('notification_count');

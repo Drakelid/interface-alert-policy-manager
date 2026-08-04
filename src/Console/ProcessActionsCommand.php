@@ -6,6 +6,8 @@ use Illuminate\Console\Command;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\Concerns\SkipsWhenPluginDisabled;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\FlapDetector;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReceiverResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
@@ -19,22 +21,45 @@ class ProcessActionsCommand extends Command
     protected $signature = 'iapm:process-actions {--incident=} {--action=} {--force : Send even when a successful delivery exists}';
     protected $description = 'Activate eligible pending incidents and process due IAPM actions';
 
-    public function handle(NotificationDispatcher $dispatcher, ReceiverResolver $receivers, SafeTemplateRenderer $templates, SettingStore $settings, TemplateContextBuilder $placeholders): int
+    private NotificationDispatcher $dispatcher;
+    private ReceiverResolver $receivers;
+    private SafeTemplateRenderer $templates;
+    private SettingStore $settings;
+    private TemplateContextBuilder $placeholders;
+    private FlapDetector $flapper;
+
+    public function handle(NotificationDispatcher $dispatcher, ReceiverResolver $receivers, SafeTemplateRenderer $templates, SettingStore $settings, TemplateContextBuilder $placeholders, FlapDetector $flapper): int
     {
         if ($this->pluginDisabled()) {
             return self::SUCCESS;
         }
 
+        [$this->dispatcher, $this->receivers, $this->templates, $this->settings, $this->placeholders, $this->flapper] = [$dispatcher, $receivers, $templates, $settings, $placeholders, $flapper];
+
         $processed = 0;
-        Incident::query()->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Recovered])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed, $dispatcher, $receivers, $templates, $settings, $placeholders): void {
+        Incident::query()->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Recovered])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed): void {
             foreach ($items as $incident) {
                 if ($incident->state === IncidentState::Pending && $incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->failed_poll_count) {
                     $incident->update(['state' => IncidentState::Active, 'triggered_at' => now()]);
                     $incident->events()->create(['event_type' => 'activated', 'event_message' => 'Trigger requirements satisfied.']);
                 }
                 if (! $incident->policy || ! $incident->policy->notifications_enabled) continue;
-                $phases = match ($incident->state) { IncidentState::Recovered => ['recovery'], IncidentState::Acknowledged => ['acknowledged'], IncidentState::Active => ['trigger', 'escalation', 'reminder'], default => [] };
                 if ($incident->muted_until?->isFuture()) continue;
+
+                // Flap dampening (opt-in per policy): while an interface is flapping,
+                // send one dampened notice and suppress the routine trigger/reminder/
+                // recovery churn until it stabilises.
+                if ($this->flapper->shouldDampen($incident, $incident->policy)) {
+                    if (! $this->option('force')) {
+                        $processed += $this->dampenFlapping($incident);
+                        continue;
+                    }
+                } elseif (! empty($incident->context_json['flap_notified'])) {
+                    $ctx = $incident->context_json; unset($ctx['flap_notified']); $incident->update(['context_json' => $ctx]);
+                    $incident->events()->create(['event_type' => 'flap_cleared', 'event_message' => 'Interface stabilised; normal notifications resume.']);
+                }
+
+                $phases = match ($incident->state) { IncidentState::Recovered => ['recovery'], IncidentState::Acknowledged => ['acknowledged'], IncidentState::Active => ['trigger', 'escalation', 'reminder'], default => [] };
                 foreach ($phases as $phase) {
                 if ($phase === 'recovery' && ! $incident->policy->notify_recovery) continue;
                 foreach ($incident->policy->actions->filter(fn ($action) => $action->enabled && $action->phase->value === $phase && (! $this->option('action') || (int) $this->option('action') === (int) $action->id)) as $action) {
@@ -47,17 +72,60 @@ class ProcessActionsCommand extends Command
                     if (! $this->option('force') && $lastSend && $repeatSeconds !== null && $lastSend->created_at->addSeconds($repeatSeconds)->isFuture()) continue;
                     $phaseStart = match ($phase) { 'recovery' => $incident->recovered_at, 'acknowledged' => $incident->acknowledged_at, default => $incident->triggered_at ?? $incident->first_seen_at };
                     if (! $phaseStart || (! $this->option('force') && $phaseStart->addSeconds($action->delay_seconds)->isFuture())) continue;
-                    $config = (array) $action->destination->configuration_encrypted;
-                    $resolved = $receivers->resolve((array) $action->receivers_json, (array) ($incident->context_json['assignment_receivers'] ?? []), (array) ($incident->context_json['device_group_receivers'] ?? []), [(string) ($incident->policy->default_receiver ?? '')], (array) ($config['receivers'] ?? []), [(string) ($config['default_receiver'] ?? '')], [(string) $settings->get('sms_default_receiver', config('iapm.sms.default_receiver'))]);
-                    if ($resolved === []) { $dispatcher->configurationFailure($incident, $action->destination, $action, $phase, 'No notification receiver could be resolved.'); continue; }
-                    try { $message = $templates->render($action->message_template ?: self::defaultTemplate($phase), $placeholders->forIncident($incident), (int) config('iapm.sms.message_length', 480)); } catch (\Throwable $e) { $dispatcher->configurationFailure($incident, $action->destination, $action, $phase, 'Template error: '.$e->getMessage()); continue; }
-                    foreach ($resolved as $receiver) $dispatcher->dispatch($incident, $action->destination, $action, $phase, $receiver, $message);
-                    $processed++;
+                    if ($this->sendAction($incident, $action, $phase)) $processed++;
                 }
                 }
             }
         });
+
+        $this->settings->put('last_process_actions_at', now()->toIso8601String());
         $this->info("Processed {$processed} action(s)."); return self::SUCCESS;
+    }
+
+    /** Send one dampened flap notice per episode via the policy's trigger actions. */
+    private function dampenFlapping(Incident $incident): int
+    {
+        if (! empty($incident->context_json['flap_notified'])) {
+            return 0;
+        }
+
+        $sent = 0;
+        foreach ($incident->policy->actions->filter(fn ($a) => $a->enabled && $a->phase->value === 'trigger') as $action) {
+            if ($this->sendAction($incident, $action, 'flapping', self::flapTemplate())) $sent++;
+        }
+        $ctx = $incident->context_json; $ctx['flap_notified'] = now()->toIso8601String(); $incident->update(['context_json' => $ctx]);
+        $incident->events()->create(['event_type' => 'flapping', 'event_message' => 'Interface is flapping; routine notifications are dampened until it stabilises.']);
+
+        return $sent > 0 ? 1 : 0;
+    }
+
+    /** Resolve receivers, render, and dispatch a single action. Returns true if a send was attempted. */
+    private function sendAction(Incident $incident, PolicyAction $action, string $phase, ?string $templateOverride = null): bool
+    {
+        $config = (array) $action->destination->configuration_encrypted;
+        $resolved = $this->receivers->resolve((array) $action->receivers_json, (array) ($incident->context_json['assignment_receivers'] ?? []), (array) ($incident->context_json['device_group_receivers'] ?? []), [(string) ($incident->policy->default_receiver ?? '')], (array) ($config['receivers'] ?? []), [(string) ($config['default_receiver'] ?? '')], [(string) $this->settings->get('sms_default_receiver', config('iapm.sms.default_receiver'))]);
+        if ($resolved === []) {
+            $this->dispatcher->configurationFailure($incident, $action->destination, $action, $phase, 'No notification receiver could be resolved.');
+
+            return false;
+        }
+        try {
+            $message = $this->templates->render($templateOverride ?? ($action->message_template ?: self::defaultTemplate($phase)), $this->placeholders->forIncident($incident), (int) config('iapm.sms.message_length', 480));
+        } catch (\Throwable $e) {
+            $this->dispatcher->configurationFailure($incident, $action->destination, $action, $phase, 'Template error: '.$e->getMessage());
+
+            return false;
+        }
+        foreach ($resolved as $receiver) {
+            $this->dispatcher->dispatch($incident, $action->destination, $action, $phase, $receiver, $message);
+        }
+
+        return true;
+    }
+
+    private static function flapTemplate(): string
+    {
+        return "FLAPPING: Interface unstable\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nFurther alerts dampened until stable.\nIncident: {{ incident_id }}";
     }
 
     public static function defaultTemplate(string $phase): string
