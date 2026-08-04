@@ -2,14 +2,19 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Hooks;
 
-use App\Models\User;
+use Illuminate\Contracts\Auth\Authenticatable;
 use LibreNMS\Interfaces\Plugins\Hooks\SettingsHook;
 
 class Settings implements SettingsHook
 {
-    public function authorize(User $user): bool
+    /**
+     * Type-hint the Authenticatable contract, not App\Models\User: LibreNMS
+     * resolves this from the container and a concrete User hint would be a new
+     * empty model, failing the gate and rendering the "missing view" fallback.
+     */
+    public function authorize(Authenticatable $user): bool
     {
-        return $user->can('manage iapm settings') || $user->hasRole('admin');
+        return $user->can('manage iapm settings');
     }
 
     public function handle(string $pluginName, array $settings): array
