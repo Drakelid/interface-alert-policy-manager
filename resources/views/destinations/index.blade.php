@@ -1,19 +1,20 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Destinations') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')
 <h2>Destinations <a class="btn btn-primary btn-sm" href="{{ route('iapm.destinations.create') }}"><i class="fa fa-plus"></i> Create</a></h2>
-<p class="text-muted">A destination is where notifications are delivered — the SMS gateway, or a generic webhook. Policy actions send to a destination.</p>
+@include('iapm::partials.step-header',['step'=>1,'total'=>4,'title'=>'Create a delivery destination','desc'=>'A destination is where notifications are sent — the SMS gateway, or a generic webhook. Create this first: policy actions send to a destination. Secrets are encrypted; you can send a test after saving.','nextRoute'=>route('iapm.policies.index'),'nextLabel'=>'Policies'])
 @if($destinations->count())
+<form id="iapm-bulk-destinations" method="post" action="{{ route('iapm.destinations.bulk-destroy') }}" onsubmit="return confirm('Delete the selected destinations? Any used by policy actions are skipped.')">@csrf @method('DELETE')
+    <button class="btn btn-danger btn-sm" style="margin-bottom:8px;"><i class="fa fa-trash"></i> Delete selected</button>
+</form>
 <div class="table-responsive"><table class="table table-hover">
-<thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Used by actions</th><th></th></tr></thead>
+<thead><tr><th style="width:2em;"><input type="checkbox" onclick="document.querySelectorAll('.iapm-bulk').forEach(e=>e.checked=this.checked)"></th><th>Name</th><th>Type</th><th>Status</th><th>Used by actions</th><th></th></tr></thead>
 <tbody>@foreach($destinations as $d)<tr>
+<td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-destinations" name="ids[]" value="{{ $d->id }}"></td>
 <td><a href="{{ route('iapm.destinations.edit',$d) }}">{{ $d->name }}</a></td>
 <td>{{ $d->type === 'sms_gateway' ? 'SMS gateway' : 'Generic webhook' }}</td>
 <td>@if($d->enabled)<span class="label label-success">Enabled</span>@else<span class="label label-default">Disabled</span>@endif</td>
 <td>{{ $d->actions_count }}</td>
-<td>
-<a class="btn btn-default btn-xs" href="{{ route('iapm.destinations.edit',$d) }}#test">Test</a>
-<form method="post" action="{{ route('iapm.destinations.clone',$d) }}" style="display:inline;">@csrf<button class="btn btn-default btn-xs">Clone disabled</button></form>
-</td>
+<td><a class="btn btn-default btn-xs" href="{{ route('iapm.destinations.edit',$d) }}#test">Test</a> <form method="post" action="{{ route('iapm.destinations.clone',$d) }}" style="display:inline;">@csrf<button class="btn btn-default btn-xs">Clone</button></form></td>
 </tr>@endforeach</tbody></table></div>
 {{ $destinations->links() }}
 @else
