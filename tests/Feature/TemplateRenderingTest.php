@@ -2,7 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ProcessActionsCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\TemplateContextBuilder;
@@ -41,7 +41,7 @@ class TemplateRenderingTest extends IntegrationTestCase
         $renderer = app(SafeTemplateRenderer::class);
 
         foreach (['trigger', 'escalation', 'reminder', 'recovery', 'acknowledged'] as $phase) {
-            $rendered = $renderer->render(ProcessActionsCommand::defaultTemplate($phase), $values);
+            $rendered = $renderer->render(MessageTemplates::default($phase), $values);
             self::assertStringContainsString((string) $incident->id, $rendered);
         }
     }

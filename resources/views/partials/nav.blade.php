@@ -26,9 +26,10 @@
                 <li><a href="{{ route('iapm.setup-helper') }}">5. LibreNMS setup helper</a></li>
             </ul>
         </li>
-        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.import.form') }}">
+        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.message-templates','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.import.form') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#">Tools <span class="caret"></span></a>
             <ul class="dropdown-menu">
+                <li><a href="{{ route('iapm.message-templates') }}">Message Templates</a></li>
                 <li><a href="{{ route('iapm.policy-test') }}">Policy Test</a></li>
                 <li><a href="{{ route('iapm.template-preview') }}">Template Preview</a></li>
                 <li><a href="{{ route('iapm.simulate') }}">Simulate Alert</a></li>

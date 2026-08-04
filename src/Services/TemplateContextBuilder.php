@@ -42,6 +42,12 @@ class TemplateContextBuilder
         ]);
     }
 
+    /** A synthetic placeholder map covering every placeholder, for template validation. */
+    public function sample(): array
+    {
+        return $this->forPreview(new InterfaceContext(1, 2, 'core-router-01', null, 'xe-0/0/4', 'xe-0/0/4', 'CUST: Example customer', 'ethernetCsmacd', 'up', 'down', false, false, false, [], [], 'core-router-01', 'core-router-01', 'HQ'));
+    }
+
     public function forPreview(InterfaceContext $context, string $policyName = 'Preview policy'): array
     {
         return $this->placeholders((array) $context, [

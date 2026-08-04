@@ -8,6 +8,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\FlapDetector;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReceiverResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
@@ -27,14 +28,15 @@ class ProcessActionsCommand extends Command
     private SettingStore $settings;
     private TemplateContextBuilder $placeholders;
     private FlapDetector $flapper;
+    private MessageTemplates $messages;
 
-    public function handle(NotificationDispatcher $dispatcher, ReceiverResolver $receivers, SafeTemplateRenderer $templates, SettingStore $settings, TemplateContextBuilder $placeholders, FlapDetector $flapper): int
+    public function handle(NotificationDispatcher $dispatcher, ReceiverResolver $receivers, SafeTemplateRenderer $templates, SettingStore $settings, TemplateContextBuilder $placeholders, FlapDetector $flapper, MessageTemplates $messages): int
     {
         if ($this->pluginDisabled()) {
             return self::SUCCESS;
         }
 
-        [$this->dispatcher, $this->receivers, $this->templates, $this->settings, $this->placeholders, $this->flapper] = [$dispatcher, $receivers, $templates, $settings, $placeholders, $flapper];
+        [$this->dispatcher, $this->receivers, $this->templates, $this->settings, $this->placeholders, $this->flapper, $this->messages] = [$dispatcher, $receivers, $templates, $settings, $placeholders, $flapper, $messages];
 
         $processed = 0;
         Incident::query()->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Recovered])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed): void {
@@ -91,7 +93,7 @@ class ProcessActionsCommand extends Command
 
         $sent = 0;
         foreach ($incident->policy->actions->filter(fn ($a) => $a->enabled && $a->phase->value === 'trigger') as $action) {
-            if ($this->sendAction($incident, $action, 'flapping', self::flapTemplate())) $sent++;
+            if ($this->sendAction($incident, $action, 'flapping', $this->messages->resolve('flapping'))) $sent++;
         }
         $ctx = $incident->context_json; $ctx['flap_notified'] = now()->toIso8601String(); $incident->update(['context_json' => $ctx]);
         $incident->events()->create(['event_type' => 'flapping', 'event_message' => 'Interface is flapping; routine notifications are dampened until it stabilises.']);
@@ -110,7 +112,7 @@ class ProcessActionsCommand extends Command
             return false;
         }
         try {
-            $message = $this->templates->render($templateOverride ?? ($action->message_template ?: self::defaultTemplate($phase)), $this->placeholders->forIncident($incident), (int) config('iapm.sms.message_length', 480));
+            $message = $this->templates->render($templateOverride ?? ($action->message_template ?: $this->messages->resolve($phase)), $this->placeholders->forIncident($incident), (int) config('iapm.sms.message_length', 480));
         } catch (\Throwable $e) {
             $this->dispatcher->configurationFailure($incident, $action->destination, $action, $phase, 'Template error: '.$e->getMessage());
 
@@ -123,19 +125,4 @@ class ProcessActionsCommand extends Command
         return true;
     }
 
-    private static function flapTemplate(): string
-    {
-        return "FLAPPING: Interface unstable\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nFurther alerts dampened until stable.\nIncident: {{ incident_id }}";
-    }
-
-    public static function defaultTemplate(string $phase): string
-    {
-        return match ($phase) {
-            'recovery' => "RECOVERED: Interface restored\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nOutage: {{ outage_duration }}\nIncident: {{ incident_id }}",
-            'acknowledged' => "ACKNOWLEDGED: Interface down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nBy: {{ acknowledgement_user }}\nIncident: {{ incident_id }}",
-            'escalation' => "ESCALATION: Interface still down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nDown since: {{ first_seen_at }}\nIncident: {{ incident_id }}",
-            'reminder' => "REMINDER: Interface still down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDown since: {{ first_seen_at }}\nIncident: {{ incident_id }}",
-            default => "CRITICAL: Interface down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nLocation: {{ location }}\nDown since: {{ first_seen_at }}\nPolicy: {{ policy_name }}\nIncident: {{ incident_id }}",
-        };
-    }
 }

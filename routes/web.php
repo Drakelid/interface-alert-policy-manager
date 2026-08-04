@@ -43,6 +43,7 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::get('comparison-report', ComparisonReportController::class)->name('comparison-report'); Route::get('comparison-report/export', [ComparisonReportController::class, 'export'])->name('comparison-report.export');
     Route::get('setup-helper', SetupHelperController::class)->name('setup-helper');
     Route::match(['get','post'], 'template-preview', TemplatePreviewController::class)->name('template-preview');
+    Route::get('message-templates', [\LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\MessageTemplateController::class, 'edit'])->name('message-templates'); Route::put('message-templates', [\LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\MessageTemplateController::class, 'update'])->name('message-templates.update');
     Route::delete('schedules-bulk', [ScheduleController::class, 'bulkDestroy'])->name('schedules.bulk-destroy');
     Route::resource('schedules', ScheduleController::class)->except('show');
     Route::delete('destinations-bulk', [DestinationController::class, 'bulkDestroy'])->name('destinations.bulk-destroy');

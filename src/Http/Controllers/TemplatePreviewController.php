@@ -5,8 +5,8 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 use App\Models\Port;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ProcessActionsCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\TemplateContextBuilder;
 
@@ -32,6 +32,6 @@ class TemplatePreviewController extends Controller
             }
         }
 
-        return view('iapm::template-preview', ['rendered' => $rendered, 'warning' => $warning, 'defaultTemplate' => ProcessActionsCommand::defaultTemplate('trigger')]);
+        return view('iapm::template-preview', ['rendered' => $rendered, 'warning' => $warning, 'defaultTemplate' => MessageTemplates::default('trigger')]);
     }
 }
