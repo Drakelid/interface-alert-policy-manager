@@ -1,0 +1,61 @@
+# Secrets / local environment
+# Never commit real gateway credentials or ingestion tokens.
+.env
+.env.*
+!.env.example
+
+# AI assistant files
+# Config, rules, memory, chat history and caches created by AI coding tools.
+
+# Claude / Claude Code (Anthropic)
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.anthropic/
+
+# OpenAI Codex / generic agents
+.codex/
+AGENTS.md
+
+# Cursor
+.cursor/
+.cursorrules
+.cursorignore
+.cursorindexingignore
+
+# GitHub Copilot
+.github/copilot-instructions.md
+.copilot/
+
+# Windsurf / Codeium
+.windsurf/
+.windsurfrules
+.codeium/
+
+# Continue
+.continue/
+
+# Cline / Roo Code
+.clinerules
+.clinerules/
+.roo/
+.roomodes
+
+# Aider
+.aider*
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache.v*/
+
+# Google Gemini CLI
+.gemini/
+GEMINI.md
+
+# Sourcegraph Cody
+.cody/
+.sourcegraph/
+
+# Miscellaneous AI tooling
+.ai/
+.llm/
+.prompts/
