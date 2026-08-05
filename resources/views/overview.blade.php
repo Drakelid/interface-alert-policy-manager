@@ -1,10 +1,12 @@
 @extends('layouts.librenmsv1')
 @section('title', 'Interface Alert Policy Manager')
 @section('content')
-@php($tile = function ($label, $value, $href, $accent = '', $hot = false) {
+@php
+$tile = function ($label, $value, $href, $accent = '', $hot = false) {
     $cls = 'iapm-tile '.$accent.($hot && $value > 0 ? ' hot' : '');
     return '<a href="'.e($href).'" style="text-decoration:none;"><div class="panel panel-default '.$cls.'"><div class="panel-heading">'.e($label).'</div><div class="panel-body"><strong style="font-size:20px;">'.e($value).'</strong></div></div></a>';
-})
+};
+@endphp
 <div class="container-fluid">
     @include('iapm::partials.nav')
     <div class="iapm-toolbar">

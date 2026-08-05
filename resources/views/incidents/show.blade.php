@@ -26,13 +26,13 @@
 
 <div class="panel panel-default"><div class="panel-heading">Actions</div><div class="panel-body form-inline">
 @if($incident->state->value!=='acknowledged'&&$incident->state->value!=='recovered')<form method="post" action="{{ route('iapm.incidents.acknowledge',$incident) }}" style="display:inline;">@csrf<button class="btn btn-primary btn-sm">Acknowledge</button></form>@elseif($incident->state->value==='acknowledged')<form method="post" action="{{ route('iapm.incidents.unacknowledge',$incident) }}" style="display:inline;">@csrf<button class="btn btn-default btn-sm">Unacknowledge</button></form>@endif
-<form method="post" action="{{ route('iapm.incidents.reconcile',$incident) }}" style="display:inline;">@csrf<button class="btn btn-default btn-sm">Reconcile now</button></form>
+<form method="post" action="{{ route('iapm.incidents.reconcile',$incident) }}" style="display:inline;" data-iapm-busy>@csrf<button class="btn btn-default btn-sm" data-busy="Reconciling…">Reconcile now</button></form>
 <form method="post" action="{{ route('iapm.incidents.mute',$incident) }}" style="display:inline;">@csrf<input type="datetime-local" name="muted_until" required class="form-control input-sm"><button class="btn btn-warning btn-sm">Mute</button></form>
 @if($incident->muted_until)<form method="post" action="{{ route('iapm.incidents.unmute',$incident) }}" style="display:inline;">@csrf<button class="btn btn-default btn-sm">Unmute</button></form>@endif
 </div></div>
 
 @if($incident->policy)<div class="panel panel-default"><div class="panel-heading">Controlled resend</div><div class="panel-body">
-<form class="form-inline" method="post" action="{{ route('iapm.incidents.resend',$incident) }}" onsubmit="return confirm('Send this notification action now? Dry-run settings still apply.')">@csrf
+<form class="form-inline" method="post" action="{{ route('iapm.incidents.resend',$incident) }}" data-iapm-busy onsubmit="return confirm('Send this notification action now? Dry-run settings still apply.')">@csrf
 <select class="form-control input-sm" name="action_id">@foreach($incident->policy->actions as $action)<option value="{{ $action->id }}">{{ $action->phase->value }} — {{ $action->destination?->name }}</option>@endforeach</select>
 <button class="btn btn-warning btn-sm">Resend action</button></form>
 </div></div>@endif

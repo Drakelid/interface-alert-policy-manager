@@ -27,6 +27,14 @@ $fmt = function ($seconds) {
     <div class="col-sm-2"><div class="panel panel-default"><div class="panel-heading">Flapping outages</div><div class="panel-body"><strong>{{ $metrics['flapping'] }}</strong></div></div></div>
 </div>
 
+<div class="panel panel-default">
+    <div class="panel-heading">Outages per day</div>
+    <div class="panel-body text-primary" style="text-align:center;">
+        @include('iapm::partials.sparkline',['values'=>array_values($spark),'iapmLabels'=>array_keys($spark),'label'=>'Outages per day','width'=>720,'height'=>48])
+        <div class="text-muted small">{{ array_key_first($spark) }} → {{ array_key_last($spark) }}</div>
+    </div>
+</div>
+
 @if($deliverySuccessRate !== null)
 <p><strong>Delivery success rate:</strong> {{ $deliverySuccessRate }}%
     <span class="text-muted">(@foreach($delivery as $status => $count){{ $status }}: {{ $count }}@if(!$loop->last), @endif @endforeach)</span></p>
@@ -35,15 +43,15 @@ $fmt = function ($seconds) {
 <div class="row">
 <div class="col-md-6">
 <div class="panel panel-default"><div class="panel-heading">Noisiest interfaces</div>
-<table class="table table-condensed"><thead><tr><th>Device</th><th>Port</th><th>Outages</th><th>Total down</th></tr></thead><tbody>
-@forelse($topInterfaces as $row)<tr><td><a href="{{ route('device',$row->device_id) }}">{{ $row->device_id }}</a></td><td><a href="{{ url('device/'.$row->device_id.'/port/'.$row->port_id) }}">{{ $row->port_id }}</a></td><td>{{ $row->outages }}</td><td>{{ $fmt($row->total_down) }}</td></tr>@empty<tr><td colspan="4" class="text-muted">No outages in this period.</td></tr>@endforelse
-</tbody></table></div>
+<div class="iapm-table-wrap"><table class="table table-condensed"><thead><tr><th>Device</th><th>Port</th><th class="iapm-num">Outages</th><th class="iapm-num">Total down</th></tr></thead><tbody>
+@forelse($topInterfaces as $row)<tr><td><a href="{{ route('device',$row->device_id) }}">{{ $row->device_id }}</a></td><td><a href="{{ url('device/'.$row->device_id.'/port/'.$row->port_id) }}">{{ $row->port_id }}</a></td><td class="iapm-num">{{ $row->outages }}</td><td class="iapm-num">{{ $fmt($row->total_down) }}</td></tr>@empty<tr><td colspan="4" class="text-muted">No outages in this period.</td></tr>@endforelse
+</tbody></table></div></div>
 </div>
 <div class="col-md-6">
 <div class="panel panel-default"><div class="panel-heading">By policy</div>
-<table class="table table-condensed"><thead><tr><th>Policy</th><th>Outages</th><th>Avg duration</th></tr></thead><tbody>
-@forelse($byPolicy as $row)<tr><td>{{ $policyNames[$row->policy_id] ?? '—' }}</td><td>{{ $row->outages }}</td><td>{{ $fmt($row->avg_duration) }}</td></tr>@empty<tr><td colspan="3" class="text-muted">No outages in this period.</td></tr>@endforelse
-</tbody></table></div>
+<div class="iapm-table-wrap"><table class="table table-condensed"><thead><tr><th>Policy</th><th class="iapm-num">Outages</th><th class="iapm-num">Avg duration</th></tr></thead><tbody>
+@forelse($byPolicy as $row)<tr><td>{{ $policyNames[$row->policy_id] ?? '—' }}</td><td class="iapm-num">{{ $row->outages }}</td><td class="iapm-num">{{ $fmt($row->avg_duration) }}</td></tr>@empty<tr><td colspan="3" class="text-muted">No outages in this period.</td></tr>@endforelse
+</tbody></table></div></div>
 </div>
 </div>
 </div>@endsection

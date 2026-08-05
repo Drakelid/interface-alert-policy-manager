@@ -45,8 +45,8 @@
     <div class="panel-heading">Send a test notification</div>
     <div class="panel-body">
         <p class="help-block">Sends one clearly-labelled test message and records it in the delivery log. This sends even in dry-run mode, so confirm the receiver.</p>
-        <form method="post" action="{{ route('iapm.destinations.test',$destination) }}">@csrf
-            <div class="input-group"><input class="form-control" name="receiver" required placeholder="Test receiver (e.g. your number)"><span class="input-group-btn"><button class="btn btn-warning"><i class="fa fa-paper-plane"></i> Send test</button></span></div>
+        <form method="post" action="{{ route('iapm.destinations.test',$destination) }}" data-iapm-busy>@csrf
+            <div class="input-group"><input class="form-control" name="receiver" required placeholder="Test receiver (e.g. your number)"><span class="input-group-btn"><button class="btn btn-warning" data-busy="Sending…"><i class="fa fa-paper-plane"></i> Send test</button></span></div>
         </form>
     </div>
 </div>

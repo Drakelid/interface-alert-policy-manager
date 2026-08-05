@@ -31,6 +31,15 @@ class StatsController extends Controller
         $byPolicy = $base()->selectRaw('policy_id, count(*) as outages, avg(duration_seconds) as avg_duration')
             ->groupBy('policy_id')->orderByDesc('outages')->get();
 
+        // Daily outage counts for a sparkline (gap-filled over the window).
+        $perDay = Outage::query()->where('recovered_at', '>=', $since)->selectRaw('date(recovered_at) as d, count(*) as c')->groupBy('d')->pluck('c', 'd');
+        $spark = [];
+        $sparkDays = min($days, 60);
+        for ($i = $sparkDays - 1; $i >= 0; $i--) {
+            $day = now()->subDays($i)->toDateString();
+            $spark[$day] = (int) ($perDay[$day] ?? 0);
+        }
+
         $delivery = DeliveryLog::where('created_at', '>=', $since)->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status');
         $deliveryTotal = $delivery->sum();
         $deliverySuccessRate = $deliveryTotal > 0 ? round(100 * (($delivery['sent'] ?? 0) + ($delivery['dry_run'] ?? 0)) / $deliveryTotal, 1) : null;
@@ -43,6 +52,7 @@ class StatsController extends Controller
             'policyNames' => Policy::pluck('name', 'id'),
             'delivery' => $delivery,
             'deliverySuccessRate' => $deliverySuccessRate,
+            'spark' => $spark,
         ]);
     }
 }
