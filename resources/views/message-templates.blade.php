@@ -16,6 +16,14 @@
 </div>
 @endforeach
 </div>
+<hr>
+<h3>Device digest</h3>
+<p class="text-muted">Sent once when many interfaces on the same device go down together (enable it under Settings → Storm control). It uses a <strong>device-level</strong> placeholder set: <code>@{{ hostname }}</code>, <code>@{{ device_id }}</code>, <code>@{{ interface_count }}</code>, <code>@{{ interfaces }}</code> (comma list, truncated), <code>@{{ severity }}</code>, <code>@{{ first_seen_at }}</code>, <code>@{{ device_url }}</code>.</p>
+<div class="form-group">
+    <textarea name="digest" rows="6" class="form-control" style="font-family:monospace;max-width:640px;" placeholder="{{ $digest['default'] }}">{{ old('digest', $digest['custom']) }}</textarea>
+    @error('digest')<span class="help-block text-danger">{{ $message }}</span>@enderror
+</div>
+
 <button class="btn btn-primary">Save templates</button>
 <span class="text-muted" style="margin-left:8px;">Respects the configured SMS length limit; long messages are truncated but keep the incident id.</span>
 </form>

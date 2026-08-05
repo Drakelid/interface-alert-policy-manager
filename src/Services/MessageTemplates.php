@@ -25,6 +25,26 @@ class MessageTemplates
         return is_string($custom) && trim($custom) !== '' ? $custom : self::default($phase);
     }
 
+    /** The device-digest template (one message for many interfaces on a device). */
+    public function resolveDigest(): string
+    {
+        $custom = $this->settings->get('template_digest');
+
+        return is_string($custom) && trim($custom) !== '' ? $custom : self::defaultDigest();
+    }
+
+    public function customDigest(): string
+    {
+        $custom = $this->settings->get('template_digest');
+
+        return is_string($custom) ? $custom : '';
+    }
+
+    public static function defaultDigest(): string
+    {
+        return "{{ severity }}: {{ hostname }} — {{ interface_count }} interfaces down\n{{ interfaces }}\nDown since: {{ first_seen_at }}\nDevice: {{ device_url }}";
+    }
+
     /** The administrator-customised template for a phase, or '' if none is set. */
     public function custom(string $phase): string
     {

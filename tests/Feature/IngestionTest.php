@@ -203,6 +203,34 @@ class IngestionTest extends IntegrationTestCase
         self::assertTrue($incident->events()->where('event_type', 'recovered')->exists());
     }
 
+    public function test_an_upstream_acknowledgement_acknowledges_without_retriggering(): void
+    {
+        $this->defaultPolicy();
+        $device = $this->device();
+        $port = $this->downPort($device);
+
+        $this->ingest($this->alertPayload($device, [$this->fault($port)]))->assertOk();
+        self::assertSame(IncidentState::Active, Incident::first()->state);
+
+        // LibreNMS re-sends the full fault set with an acknowledged state; this must
+        // acknowledge the incident, not re-observe it as a fresh active alert.
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], \LibreNMS\Enum\AlertState::ACKNOWLEDGED, ['timestamp' => now()->addMinute()->toIso8601String()]))
+            ->assertOk()
+            ->assertJsonPath('counts.processed', 1);
+
+        $incident = Incident::first();
+        self::assertSame(IncidentState::Acknowledged, $incident->state);
+        self::assertNotNull($incident->acknowledged_at);
+        self::assertTrue($incident->events()->where('event_type', 'acknowledged')->exists());
+
+        // A repeated acknowledgement is a no-op — it does not re-acknowledge or notify.
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], \LibreNMS\Enum\AlertState::ACKNOWLEDGED, ['timestamp' => now()->addMinutes(2)->toIso8601String()]))
+            ->assertOk()
+            ->assertJsonPath('counts.ignored', 1);
+
+        self::assertSame(1, Incident::first()->events()->where('event_type', 'acknowledged')->count());
+    }
+
     public function test_an_interface_without_a_policy_is_recorded_and_suppressed(): void
     {
         $device = $this->device();

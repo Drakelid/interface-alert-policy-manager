@@ -39,6 +39,19 @@ class ProcessActionsCommand extends Command
         [$this->dispatcher, $this->receivers, $this->templates, $this->settings, $this->placeholders, $this->flapper, $this->messages] = [$dispatcher, $receivers, $templates, $settings, $placeholders, $flapper, $messages];
 
         $processed = 0;
+
+        // Device digest: when many interfaces on the same device trigger together,
+        // send one grouped "device down" notice instead of an SMS per interface.
+        // Runs before the per-incident loop so it can mark incidents as digested.
+        $threshold = (int) $this->settings->get('aggregate_threshold', 0);
+        if ($threshold >= 2 && ! $this->option('incident') && ! $this->option('force')) {
+            // Activate any due Pending incidents first, so ports that trip together on
+            // a failing device are already Active (with a fresh triggered_at) and can
+            // be grouped — otherwise they'd each fire an individual trigger this run.
+            $this->activateEligiblePending();
+            $processed += $this->emitDeviceDigests($threshold, max(30, (int) $this->settings->get('aggregate_window_seconds', 120)));
+        }
+
         Incident::query()->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Recovered])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed): void {
             foreach ($items as $incident) {
                 if ($incident->state === IncidentState::Pending && $incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->failed_poll_count) {
@@ -64,6 +77,7 @@ class ProcessActionsCommand extends Command
                 $phases = match ($incident->state) { IncidentState::Recovered => ['recovery'], IncidentState::Acknowledged => ['acknowledged'], IncidentState::Active => ['trigger', 'escalation', 'reminder'], default => [] };
                 foreach ($phases as $phase) {
                 if ($phase === 'recovery' && ! $incident->policy->notify_recovery) continue;
+                if ($phase === 'trigger' && ! empty($incident->context_json['trigger_notified_via_digest'])) continue; // grouped into a device digest
                 foreach ($incident->policy->actions->filter(fn ($action) => $action->enabled && $action->phase->value === $phase && (! $this->option('action') || (int) $this->option('action') === (int) $action->id)) as $action) {
                     if (! $this->option('force') && $incident->deliveries()->where('policy_action_id', $action->id)->where('phase', $phase)->where('status', 'failed_configuration')->where('created_at', '>=', now()->subMinutes(5))->exists()) continue;
                     $successful = $incident->deliveries()->where('policy_action_id', $action->id)->where('phase', $phase)->whereIn('status', ['sent', 'dry_run']);
@@ -82,6 +96,108 @@ class ProcessActionsCommand extends Command
 
         $this->settings->put('last_process_actions_at', now()->toIso8601String());
         $this->info("Processed {$processed} action(s)."); return self::SUCCESS;
+    }
+
+    /**
+     * Promote due Pending incidents to Active (same rule the per-incident loop
+     * uses) so the device digest can group ports that just tripped together.
+     */
+    private function activateEligiblePending(): void
+    {
+        Incident::query()->where('state', IncidentState::Pending)->with('policy')->chunkById((int) config('iapm.processing.batch_size', 500), function ($items): void {
+            foreach ($items as $incident) {
+                if ($incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->failed_poll_count) {
+                    $incident->update(['state' => IncidentState::Active, 'triggered_at' => now()]);
+                    $incident->events()->create(['event_type' => 'activated', 'event_message' => 'Trigger requirements satisfied.']);
+                }
+            }
+        });
+    }
+
+    /**
+     * Group active, not-yet-notified incidents by device; where a device has at
+     * least $threshold that triggered within the window, send one digest instead
+     * of an SMS per interface, and mark each so the per-incident loop skips it.
+     */
+    private function emitDeviceDigests(int $threshold, int $window): int
+    {
+        $cutoff = now()->subSeconds($window);
+        $sent = 0;
+
+        $groups = Incident::query()
+            ->where('state', IncidentState::Active)
+            ->whereNotNull('triggered_at')->where('triggered_at', '>=', $cutoff)
+            ->where(fn ($q) => $q->whereNull('muted_until')->orWhere('muted_until', '<=', now()))
+            ->whereHas('policy', fn ($q) => $q->where('notifications_enabled', true))
+            ->whereDoesntHave('deliveries', fn ($q) => $q->where('phase', 'trigger')->whereIn('status', ['sent', 'dry_run']))
+            ->with(['policy.actions.destination'])
+            ->get()
+            ->filter(fn ($i) => empty($i->context_json['trigger_notified_via_digest']))
+            ->groupBy('device_id');
+
+        foreach ($groups as $incidents) {
+            if ($incidents->count() < $threshold) {
+                continue; // below threshold: the per-incident loop notifies individually
+            }
+            $sent += $this->sendDeviceDigest($incidents);
+        }
+
+        return $sent;
+    }
+
+    private function sendDeviceDigest(\Illuminate\Support\Collection $incidents): int
+    {
+        $first = $incidents->first();
+        $ctx = (array) $first->context_json;
+        $hostname = (string) (($ctx['hostname'] ?? '') ?: ('device '.$first->device_id));
+        $names = $incidents->map(fn ($i) => (string) ((($i->context_json['ifName'] ?? '') ?: ('port '.$i->port_id))))->values();
+        $listed = $names->take(10)->implode(', ').($names->count() > 10 ? ' +'.($names->count() - 10).' more' : '');
+        $firstSeen = $incidents->min(fn ($i) => $i->first_seen_at);
+        $base = rtrim((string) ($this->settings->get('url_base') ?: config('app.url', '')), '/');
+
+        $values = [
+            'severity' => $first->severity?->value ?? 'critical',
+            'hostname' => $hostname,
+            'device_id' => (int) $first->device_id,
+            'interface_count' => $incidents->count(),
+            'interfaces' => $listed,
+            'first_seen_at' => $firstSeen ? $firstSeen->format('Y-m-d H:i:s') : '',
+            'device_url' => $base === '' ? '' : "$base/device/{$first->device_id}",
+        ];
+
+        // One digest per distinct trigger destination across the grouped policies.
+        $actions = $incidents->flatMap(fn ($i) => $i->policy ? $i->policy->actions->filter(fn ($a) => $a->enabled && $a->phase->value === 'trigger') : collect())->unique('destination_id')->values();
+        $sentAny = false;
+        foreach ($actions as $action) {
+            $config = (array) $action->destination->configuration_encrypted;
+            // Device-level receivers only — per-interface assignment receivers don't apply to a device digest.
+            $resolved = $this->receivers->resolve((array) $action->receivers_json, (array) ($ctx['device_group_receivers'] ?? []), [(string) ($first->policy->default_receiver ?? '')], (array) ($config['receivers'] ?? []), [(string) ($config['default_receiver'] ?? '')], [(string) $this->settings->get('sms_default_receiver', config('iapm.sms.default_receiver'))]);
+            if ($resolved === []) {
+                $this->dispatcher->configurationFailure($first, $action->destination, $action, 'digest', 'No notification receiver could be resolved for the device digest.');
+
+                continue;
+            }
+            try {
+                $message = $this->templates->render($this->messages->resolveDigest(), $values, (int) config('iapm.sms.message_length', 480));
+            } catch (\Throwable $e) {
+                $this->dispatcher->configurationFailure($first, $action->destination, $action, 'digest', 'Digest template error: '.$e->getMessage());
+
+                continue;
+            }
+            foreach ($resolved as $receiver) {
+                $this->dispatcher->dispatch($first, $action->destination, $action, 'digest', $receiver, $message);
+            }
+            $sentAny = true;
+        }
+
+        // Mark every incident in the group so the per-incident loop skips its trigger.
+        foreach ($incidents as $incident) {
+            $data = $incident->context_json; $data['trigger_notified_via_digest'] = now()->toIso8601String();
+            $incident->update(['context_json' => $data, 'last_notification_at' => now()]);
+            $incident->events()->create(['event_type' => 'digested', 'event_message' => "Trigger grouped into a device digest for {$hostname} ({$incidents->count()} interfaces down).", 'event_data' => ['device_id' => (int) $first->device_id, 'count' => $incidents->count()]]);
+        }
+
+        return $sentAny ? 1 : 0;
     }
 
     /** Send one dampened flap notice per episode via the policy's trigger actions. */

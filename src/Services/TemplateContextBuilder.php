@@ -48,6 +48,20 @@ class TemplateContextBuilder
         return $this->forPreview(new InterfaceContext(1, 2, 'core-router-01', null, 'xe-0/0/4', 'xe-0/0/4', 'CUST: Example customer', 'ethernetCsmacd', 'up', 'down', false, false, false, [], [], 'core-router-01', 'core-router-01', 'HQ'));
     }
 
+    /** Placeholder map for the device-digest template (a different, device-level set). */
+    public function digestSample(): array
+    {
+        return [
+            'severity' => 'critical',
+            'hostname' => 'core-router-01',
+            'device_id' => 1,
+            'interface_count' => 42,
+            'interfaces' => 'xe-0/0/1, xe-0/0/2, xe-0/0/3 +39 more',
+            'first_seen_at' => now()->subMinutes(2)->format('Y-m-d H:i:s'),
+            'device_url' => rtrim((string) ($this->settings->get('url_base') ?: config('app.url', '')), '/').'/device/1',
+        ];
+    }
+
     public function forPreview(InterfaceContext $context, string $policyName = 'Preview policy'): array
     {
         return $this->placeholders((array) $context, [

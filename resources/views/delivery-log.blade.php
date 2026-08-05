@@ -4,7 +4,7 @@
     <input class="form-control input-sm" name="incident_id" value="{{ request('incident_id') }}" placeholder="Incident ID">
     <input class="form-control input-sm" name="destination_id" value="{{ request('destination_id') }}" placeholder="Destination ID">
     <select class="form-control input-sm" name="status"><option value="">Any status</option>@foreach(['sent','failed','failed_configuration','dry_run'] as $v)<option @selected(request('status')===$v)>{{ $v }}</option>@endforeach</select>
-    <select class="form-control input-sm" name="phase"><option value="">Any phase</option>@foreach(['trigger','escalation','reminder','recovery','acknowledged','flapping','test'] as $v)<option @selected(request('phase')===$v)>{{ $v }}</option>@endforeach</select>
+    <select class="form-control input-sm" name="phase"><option value="">Any phase</option>@foreach(['trigger','escalation','reminder','recovery','acknowledged','flapping','digest','test'] as $v)<option @selected(request('phase')===$v)>{{ $v }}</option>@endforeach</select>
     <button class="btn btn-default btn-sm">Filter</button>
 </form>
 <div class="iapm-table-wrap"><table class="table table-condensed table-hover">

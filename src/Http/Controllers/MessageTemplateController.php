@@ -27,17 +27,22 @@ class MessageTemplateController extends Controller
             ];
         }
 
-        return view('iapm::message-templates', ['rows' => $rows]);
+        return view('iapm::message-templates', [
+            'rows' => $rows,
+            'digest' => ['custom' => $templates->customDigest(), 'default' => MessageTemplates::defaultDigest()],
+        ]);
     }
 
     public function update(Request $request, SettingStore $settings, SafeTemplateRenderer $renderer, TemplateContextBuilder $placeholders, AuditService $audit)
     {
         abort_unless($request->user()->can('manage iapm settings'), 403);
 
-        $input = $request->validate([
+        $data = $request->validate([
             'templates' => ['array'],
             'templates.*' => ['nullable', 'string', 'max:10000'],
-        ])['templates'] ?? [];
+            'digest' => ['nullable', 'string', 'max:10000'],
+        ]);
+        $input = $data['templates'] ?? [];
 
         $sample = $placeholders->sample();
         $saved = [];
@@ -56,6 +61,18 @@ class MessageTemplateController extends Controller
             $settings->put('template_'.$phase, $template);
             $saved[$phase] = $template === '' ? '(default)' : 'custom';
         }
+
+        // The device digest uses a different, device-level placeholder set.
+        $digest = trim((string) ($data['digest'] ?? ''));
+        if ($digest !== '') {
+            try {
+                $renderer->render($digest, $placeholders->digestSample());
+            } catch (\Throwable $e) {
+                return back()->withErrors(['digest' => 'Device digest: '.$e->getMessage()])->withInput();
+            }
+        }
+        $settings->put('template_digest', $digest);
+        $saved['digest'] = $digest === '' ? '(default)' : 'custom';
 
         $audit->record($request, 'updated', 'message_templates', null, null, $saved);
 

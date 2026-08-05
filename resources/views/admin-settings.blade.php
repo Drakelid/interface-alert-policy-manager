@@ -44,6 +44,21 @@
 </div>
 
 <div class="panel panel-default">
+    <div class="panel-heading">Storm control — device digest</div>
+    <div class="panel-body">
+        <div class="form-group"><label>Aggregate threshold</label>
+            <input class="form-control" name="aggregate_threshold" value="{{ old('aggregate_threshold',$values['aggregate_threshold']) }}">
+            <p class="help-block">When this many interfaces on the <strong>same device</strong> go down together, send one grouped "device down" SMS instead of one per interface. Set <code>0</code> to disable (always notify per interface). Recommended: 3.</p>
+        </div>
+        <div class="form-group"><label>Aggregation window (seconds)</label>
+            <input class="form-control" name="aggregate_window_seconds" value="{{ old('aggregate_window_seconds',$values['aggregate_window_seconds']) }}">
+            <p class="help-block">Interfaces that trigger within this window of each other are grouped. Default 120.</p>
+        </div>
+        <p class="help-block">Customise the digest wording under <a href="{{ route('iapm.message-templates') }}">Message Templates</a>.</p>
+    </div>
+</div>
+
+<div class="panel panel-default">
     <div class="panel-heading">Root-cause suppression</div>
     <div class="panel-body">
         <div class="form-group"><label>Uplink port group</label>
