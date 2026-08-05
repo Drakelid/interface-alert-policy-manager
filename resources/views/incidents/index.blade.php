@@ -1,10 +1,42 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Incidents') @section('content')
-<div class="container-fluid">@include('iapm::partials.nav')<h2>Incidents</h2>
-<form class="form-inline" method="get"><select name="state" class="form-control"><option value="">All states</option>@foreach(['pending','active','acknowledged','suppressed','recovered'] as $v)<option @selected(request('state')===$v)>{{ $v }}</option>@endforeach</select><input class="form-control" name="device_id" value="{{ request('device_id') }}" placeholder="Device ID"><button class="btn btn-default">Filter</button></form>
-<form method="post" action="{{ route('iapm.incidents.bulk') }}">@csrf<div class="form-inline"><select name="operation" class="form-control"><option value="acknowledge">Acknowledge</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select><input type="datetime-local" name="muted_until" class="form-control"><button class="btn btn-warning" onclick="return confirm('Apply to selected incidents?')">Apply</button></div>
+<div class="container-fluid">@include('iapm::partials.nav')
+<h2>Active Incidents</h2>
+
+<div class="iapm-toolbar">
+    <form class="form-inline" method="get">
+        <select name="state" class="form-control input-sm"><option value="">All states</option>@foreach(['active','pending','acknowledged','suppressed','recovered'] as $v)<option @selected(request('state')===$v)>{{ $v }}</option>@endforeach</select>
+        <input class="form-control input-sm" name="device_id" value="{{ request('device_id') }}" placeholder="Device ID">
+        <button class="btn btn-default btn-sm">Filter</button>
+    </form>
+    <span class="spacer"></span>
+    <span id="iapm-autorefresh" data-interval="30"><label class="text-muted" style="font-weight:normal;"><input type="checkbox"> Auto-refresh</label> <span class="text-muted small iapm-updated"></span></span>
+</div>
+
 @if($incidents->count())
-<div class="table-responsive"><table class="table table-hover"><thead><tr><th><input type="checkbox" onclick="document.querySelectorAll('.iapm-incident').forEach(e=>e.checked=this.checked)"></th><th>ID</th><th>Interface</th><th>Policy</th><th>State</th><th>Severity</th><th>Last seen</th></tr></thead><tbody>@foreach($incidents as $i)@php($c=(array)$i->context_json)<tr><td><input class="iapm-incident" type="checkbox" name="incident_ids[]" value="{{ $i->id }}"></td><td><a href="{{ route('iapm.incidents.show',$i) }}">{{ $i->id }}</a></td><td><a href="{{ route('device',$i->device_id) }}">{{ $c['hostname'] ?? $i->device_id }}</a> — {{ $c['ifName'] ?? $i->port_id }}</td><td>@if($i->policy)<a href="{{ route('iapm.policies.edit',$i->policy) }}">{{ $i->policy->name }}</a>@else<span class="text-warning">none</span>@endif</td><td>@include('iapm::partials.state-label',['state'=>$i->state->value])</td><td>{{ $i->severity->value }}</td><td style="white-space:nowrap;">{{ $i->last_seen_at }}</td></tr>@endforeach</tbody></table></div></form>{{ $incidents->links() }}
+{{-- Bulk form lives outside the table; checkboxes attach via the form= attribute so per-row action forms aren't nested. --}}
+<form id="iapm-bulk-incidents" method="post" action="{{ route('iapm.incidents.bulk') }}" class="form-inline" data-iapm-busy onsubmit="return confirm('Apply to the selected incidents?')">@csrf
+    <select name="operation" class="form-control input-sm"><option value="acknowledge">Acknowledge</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select>
+    <input type="datetime-local" name="muted_until" class="form-control input-sm" title="Required when muting">
+    <button class="btn btn-warning btn-sm">Apply to selected</button>
+</form>
+<div class="iapm-table-wrap" style="margin-top:8px;"><table class="table table-hover table-condensed iapm-sticky">
+<thead><tr><th style="width:2em;"><input type="checkbox" onclick="document.querySelectorAll('.iapm-bulk').forEach(e=>e.checked=this.checked)"></th><th>ID</th><th>Interface</th><th>Policy</th><th>State</th><th>Severity</th><th>Down</th><th>Last seen</th><th>Actions</th></tr></thead>
+<tbody>@foreach($incidents as $i)@php($c=(array)$i->context_json)<tr>
+<td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-incidents" name="incident_ids[]" value="{{ $i->id }}"></td>
+<td><a href="{{ route('iapm.incidents.show',$i) }}">{{ $i->id }}</a></td>
+<td class="iapm-truncate" title="{{ ($c['hostname'] ?? $i->device_id).' — '.($c['ifAlias'] ?? '') }}"><a href="{{ route('device',$i->device_id) }}">{{ $c['hostname'] ?? $i->device_id }}</a> — {{ $c['ifName'] ?? $i->port_id }}</td>
+<td>@if($i->policy)<a href="{{ route('iapm.policies.edit',$i->policy) }}">{{ $i->policy->name }}</a>@else<span class="text-warning">none</span>@endif</td>
+<td>@include('iapm::partials.state-label',['state'=>$i->state->value])@if($i->muted_until && $i->muted_until->isFuture()) <i class="fa fa-volume-off text-muted" title="Muted until {{ $i->muted_until }}"></i>@endif</td>
+<td>{{ $i->severity->value }}</td>
+<td>@include('iapm::partials.time',['at'=>$i->first_seen_at])</td>
+<td>@include('iapm::partials.time',['at'=>$i->last_seen_at])</td>
+<td class="iapm-actions" style="white-space:nowrap;">
+    @if($i->state->value!=='acknowledged' && $i->state->value!=='recovered')<form method="post" action="{{ route('iapm.incidents.acknowledge',$i) }}">@csrf<button class="btn btn-default btn-xs" title="Acknowledge"><i class="fa fa-check"></i></button></form>@endif
+    @if(!($i->muted_until && $i->muted_until->isFuture()) && $i->state->value!=='recovered')<form method="post" action="{{ route('iapm.incidents.mute',$i) }}">@csrf<input type="hidden" name="muted_until" value="{{ now()->addHour()->format('Y-m-d\TH:i:s') }}"><button class="btn btn-default btn-xs" title="Mute 1 hour"><i class="fa fa-volume-off"></i></button></form>@elseif($i->muted_until && $i->muted_until->isFuture())<form method="post" action="{{ route('iapm.incidents.unmute',$i) }}">@csrf<button class="btn btn-default btn-xs" title="Unmute"><i class="fa fa-volume-up"></i></button></form>@endif
+    <form method="post" action="{{ route('iapm.incidents.reconcile',$i) }}" data-iapm-busy>@csrf<button class="btn btn-default btn-xs" title="Reconcile now" data-busy="…"><i class="fa fa-refresh"></i></button></form>
+</td>
+</tr>@endforeach</tbody></table></div>{{ $incidents->links() }}
 @else
-</form>@include('iapm::partials.empty-state',['title'=>'No incidents match','body'=>'No interface incidents recorded yet, or none match the current filter. Incidents appear once LibreNMS posts an alert to IAPM.','route'=>route('iapm.setup-helper'),'action'=>'Open setup helper'])
+@include('iapm::partials.empty-state',['title'=>'No incidents match','body'=>'No interface incidents recorded yet, or none match the current filter. Incidents appear once LibreNMS posts an alert to IAPM.','route'=>route('iapm.setup-helper'),'action'=>'Open setup helper'])
 @endif
 </div>@endsection
