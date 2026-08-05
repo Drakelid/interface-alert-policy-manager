@@ -44,5 +44,5 @@ class PolicyResolver
     }
 
     private function regex(?string $pattern, string $subject): bool { if (! $pattern || strlen($pattern) > 1000) return false; set_error_handler(static fn () => true); try { return preg_match($pattern, $subject, $m, PREG_UNMATCHED_AS_NULL) === 1; } finally { restore_error_handler(); } }
-    private function groups(Assignment $a, array $actual): bool { $selected = $a->deviceGroups->pluck('device_group_id')->map(fn ($id) => (int) $id)->all(); return match ($a->match_mode) { 'all' => array_diff($selected, $actual) === [], 'exclude' => array_intersect($selected, $actual) === [], default => array_intersect($selected, $actual) !== [] }; }
+    private function groups(Assignment $a, array $actual): bool { $selected = $a->deviceGroups->pluck('device_group_id')->map(fn ($id) => (int) $id)->all(); if ($selected === []) return false; /* no groups chosen => match nothing (matches the preview), never a catch-all */ return match ($a->match_mode) { 'all' => array_diff($selected, $actual) === [], 'exclude' => array_intersect($selected, $actual) === [], default => array_intersect($selected, $actual) !== [] }; }
 }

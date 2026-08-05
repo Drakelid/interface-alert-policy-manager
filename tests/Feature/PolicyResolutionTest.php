@@ -126,6 +126,22 @@ class PolicyResolutionTest extends IntegrationTestCase
         self::assertSame('Everything except', $this->resolve($port->fresh())->policy->name);
     }
 
+    public function test_a_device_group_assignment_with_no_groups_selected_never_matches(): void
+    {
+        $device = $this->device();
+        $device->groups()->attach(DeviceGroup::factory()->create()->id);
+        $port = $this->downPort($device);
+
+        // An assignment saved without picking any group must not become a catch-all,
+        // regardless of match mode (array_diff([], …) / array_intersect([], …) are []).
+        foreach (['all', 'exclude', 'any'] as $mode) {
+            $this->policy(['name' => "Empty {$mode}"])
+                ->assignments()->create(['assignment_type' => 'device_group', 'match_mode' => $mode]);
+        }
+
+        self::assertNull($this->resolve($port)->policy, 'An empty device-group selection must match nothing.');
+    }
+
     public function test_port_group_location_and_interface_type_assignments(): void
     {
         $location = Location::factory()->create();
