@@ -95,6 +95,35 @@ class DeviceDigestTest extends IntegrationTestCase
         Http::assertSentCount(2);
     }
 
+    public function test_a_prior_episodes_trigger_does_not_block_regrouping(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $this->settings->put('aggregate_threshold', 3);
+        $this->settings->put('aggregate_window_seconds', 3600);
+
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination());
+        $device = $this->device();
+
+        collect(range(1, 3))->each(function () use ($policy, $device, $action): void {
+            // Reopened this episode (triggered_at = now), but with a trigger delivery
+            // from a *previous* outage. The digest must still group it.
+            $incident = $this->incident($policy, $this->downPort($device), ['triggered_at' => now()]);
+            $incident->deliveries()->create([
+                'destination_id' => $action->destination_id,
+                'policy_action_id' => $action->id,
+                'phase' => 'trigger',
+                'status' => 'sent',
+                'created_at' => now()->subMinutes(30),
+                'updated_at' => now()->subMinutes(30),
+            ]);
+        });
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        self::assertSame(1, DeliveryLog::where('phase', 'digest')->count());
+    }
+
     public function test_a_pending_device_outage_is_activated_then_grouped(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);

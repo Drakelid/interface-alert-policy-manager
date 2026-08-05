@@ -129,7 +129,10 @@ class ProcessActionsCommand extends Command
             ->whereNotNull('triggered_at')->where('triggered_at', '>=', $cutoff)
             ->where(fn ($q) => $q->whereNull('muted_until')->orWhere('muted_until', '<=', now()))
             ->whereHas('policy', fn ($q) => $q->where('notifications_enabled', true))
-            ->whereDoesntHave('deliveries', fn ($q) => $q->where('phase', 'trigger')->whereIn('status', ['sent', 'dry_run']))
+            // "Not yet trigger-notified" is scoped to the current outage episode
+            // (deliveries at/after triggered_at) so a device that recovers and then
+            // fails again is grouped afresh instead of storming individually.
+            ->whereDoesntHave('deliveries', fn ($q) => $q->where('phase', 'trigger')->whereIn('status', ['sent', 'dry_run'])->whereColumn('iapm_delivery_logs.created_at', '>=', 'iapm_incidents.triggered_at'))
             ->with(['policy.actions.destination'])
             ->get()
             ->filter(fn ($i) => empty($i->context_json['trigger_notified_via_digest']))
