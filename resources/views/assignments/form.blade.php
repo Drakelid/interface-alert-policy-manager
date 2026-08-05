@@ -132,6 +132,9 @@
         var result = document.getElementById('iapm-preview-result');
         result.textContent = 'Evaluating…';
         var body = new URLSearchParams(new FormData(form));
+        // On the edit form the hidden _method=PUT would spoof this POST into a PUT
+        // and hit the resource update route instead of the preview route — drop it.
+        body.delete('_method');
         fetch('{{ route('iapm.assignments.preview') }}', {
             method: 'POST',
             headers: {'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
