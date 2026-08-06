@@ -41,11 +41,19 @@ class NotificationDispatcher
         }
 
         if ($this->settings->get('dispatch_mode', 'sync') === 'queue') {
-            $marker = $this->record($incident, $destination, $action, $phase, $receiver, new TransportResult(false, null, null, 'Queued for delivery.'), 'queued');
-            \LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\SendNotificationJob::dispatch($incident->id, $destination->id, $action?->id, $phase, $receiver, $message, $marker->id);
-            $incident->events()->create(['event_type' => 'notification_queued', 'event_message' => ucfirst($phase).' notification queued for delivery.', 'event_data' => ['destination_id' => $destination->id]]);
+            $marker = null;
+            try {
+                $marker = $this->record($incident, $destination, $action, $phase, $receiver, new TransportResult(false, null, null, 'Queued for delivery.'), 'queued');
+                \LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\SendNotificationJob::dispatch($incident->id, $destination->id, $action?->id, $phase, $receiver, $message, $marker->id);
+                $incident->events()->create(['event_type' => 'notification_queued', 'event_message' => ucfirst($phase).' notification queued for delivery.', 'event_data' => ['destination_id' => $destination->id]]);
 
-            return new TransportResult(true, null, 'queued');
+                return new TransportResult(true, null, 'queued');
+            } catch (\Throwable $e) {
+                // Queue backend unavailable (e.g. no jobs table, unreachable redis): never
+                // drop a notification — clear the marker and deliver synchronously instead.
+                if ($marker) { try { $marker->delete(); } catch (\Throwable) {} }
+                \Illuminate\Support\Facades\Log::channel('iapm')->error('Queued dispatch failed; delivering synchronously. Check the queue connection/worker.', ['incident_id' => $incident->id, 'error' => $e->getMessage()]);
+            }
         }
 
         return $this->performSync($incident, $destination, $action, $phase, $receiver, $message);

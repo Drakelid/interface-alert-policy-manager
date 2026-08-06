@@ -74,6 +74,25 @@ class QueueDispatchTest extends IntegrationTestCase
         self::assertNotNull($this->settings->get('last_queue_worker_at'));
     }
 
+    public function test_a_broken_queue_backend_falls_back_to_synchronous_delivery(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        // Point at a queue connection that isn't configured, so enqueue throws.
+        config(['iapm.queue.connection' => 'this-connection-does-not-exist']);
+        $this->settings->put('dispatch_mode', 'queue');
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $this->incident($policy, $this->downPort($this->device()));
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        // The alert is delivered synchronously rather than dropped, and no stray
+        // in-flight marker is left behind.
+        Http::assertSentCount(1);
+        self::assertSame(1, DeliveryLog::where('status', 'sent')->count());
+        self::assertSame(0, DeliveryLog::where('status', 'queued')->count());
+    }
+
     public function test_a_deleted_incident_makes_the_job_a_safe_no_op(): void
     {
         Http::fake();
