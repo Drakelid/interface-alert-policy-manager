@@ -133,4 +133,28 @@ class AssignmentPreviewTest extends IntegrationTestCase
             ->assertJsonPath('devices', 1)
             ->assertJsonPath('capped', false);
     }
+
+    public function test_device_search_returns_matches_for_an_administrator(): void
+    {
+        $device = $this->device(['hostname' => 'core-router-01']);
+        $this->device(['hostname' => 'edge-switch-42']);
+
+        $this->actingAs($this->admin())
+            ->getJson(route('iapm.devices.search', ['q' => 'core-router']))
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonFragment(['id' => (int) $device->device_id]);
+    }
+
+    public function test_device_search_needs_a_query_and_the_assignment_ability(): void
+    {
+        $this->actingAs($this->admin())
+            ->getJson(route('iapm.devices.search'))
+            ->assertOk()
+            ->assertExactJson([]);
+
+        $this->actingAs(\App\Models\User::factory()->create())
+            ->getJson(route('iapm.devices.search', ['q' => 'core']))
+            ->assertForbidden();
+    }
 }

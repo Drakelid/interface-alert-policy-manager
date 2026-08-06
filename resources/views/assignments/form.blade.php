@@ -23,14 +23,13 @@
 {{-- Default catch-all warning --}}
 <div class="alert alert-info iapm-field" data-types="default"><i class="fa fa-info-circle"></i> A <strong>default</strong> assignment applies this policy to <strong>every interface</strong> not matched by a more specific assignment. Usually you want only one.</div>
 
-{{-- Device dropdown --}}
-<div class="form-group iapm-field" data-types="device">
+{{-- Device type-ahead (search endpoint; scales to very large device counts) --}}
+<div class="form-group iapm-field" data-types="device" style="position:relative;">
     <label>Device</label>
-    <select name="assignment_reference" class="form-control iapm-devsel" disabled>
-        <option value="">— select a device —</option>
-        @foreach($devices as $d)<option value="{{ $d->device_id }}" @selected(old('assignment_reference',$assignment->assignment_reference)==$d->device_id)>{{ $d->hostname }}@if($d->sysName && $d->sysName!==$d->hostname) ({{ $d->sysName }})@endif</option>@endforeach
-    </select>
-    <p class="help-block">All interfaces on this device.</p>
+    <input type="text" class="form-control" id="iapm-dev-search" autocomplete="off" placeholder="Type a hostname to search…" value="{{ $deviceLabel }}" disabled>
+    <input type="hidden" name="assignment_reference" id="iapm-dev-id" value="{{ $selectedType==='device' ? old('assignment_reference',$assignment->assignment_reference) : '' }}" disabled>
+    <div id="iapm-dev-results" class="list-group" style="display:none;position:absolute;z-index:1000;width:100%;max-height:240px;overflow:auto;margin-top:-6px;box-shadow:0 2px 6px rgba(0,0,0,.15);"></div>
+    <p class="help-block">Start typing and pick a device from the list. All interfaces on the selected device.</p>
 </div>
 
 {{-- Port group dropdown --}}
@@ -137,6 +136,37 @@
 
     typeSelect.addEventListener('change', sync);
     sync();
+
+    // Device type-ahead: query the search endpoint and store the chosen device_id in
+    // a hidden field, so we never render every device into the page.
+    var devSearch = document.getElementById('iapm-dev-search');
+    var devId = document.getElementById('iapm-dev-id');
+    var devResults = document.getElementById('iapm-dev-results');
+    if (devSearch) {
+        var debounce;
+        devSearch.addEventListener('input', function () {
+            devId.value = ''; // cleared until the user picks a result
+            var q = devSearch.value.trim();
+            clearTimeout(debounce);
+            if (q.length < 1) { devResults.style.display = 'none'; devResults.innerHTML = ''; return; }
+            debounce = setTimeout(function () {
+                fetch('{{ route('iapm.devices.search') }}?q=' + encodeURIComponent(q), {headers: {'Accept': 'application/json'}})
+                    .then(function (r) { return r.json(); })
+                    .then(function (list) {
+                        devResults.innerHTML = '';
+                        if (!list.length) { devResults.style.display = 'none'; return; }
+                        list.forEach(function (item) {
+                            var a = document.createElement('a');
+                            a.href = '#'; a.className = 'list-group-item'; a.textContent = item.label;
+                            a.addEventListener('click', function (e) { e.preventDefault(); devSearch.value = item.label; devId.value = item.id; devResults.style.display = 'none'; });
+                            devResults.appendChild(a);
+                        });
+                        devResults.style.display = 'block';
+                    }).catch(function () { devResults.style.display = 'none'; });
+            }, 200);
+        });
+        document.addEventListener('click', function (e) { if (! devResults.contains(e.target) && e.target !== devSearch) devResults.style.display = 'none'; });
+    }
 
     document.getElementById('iapm-preview-btn').addEventListener('click', function () {
         var result = document.getElementById('iapm-preview-result');

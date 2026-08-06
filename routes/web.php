@@ -33,6 +33,7 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::resource('policies', PolicyController::class)->except('show'); Route::post('policies/{policy}/clone', [PolicyController::class, 'clone'])->name('policies.clone');
     Route::get('policies/{policy}/actions/create', [PolicyActionController::class, 'create'])->name('actions.create'); Route::post('policies/{policy}/actions', [PolicyActionController::class, 'store'])->name('actions.store'); Route::get('actions/{action}/edit', [PolicyActionController::class, 'edit'])->name('actions.edit'); Route::put('actions/{action}', [PolicyActionController::class, 'update'])->name('actions.update'); Route::delete('actions/{action}', [PolicyActionController::class, 'destroy'])->name('actions.destroy');
     Route::post('assignments/preview', [AssignmentController::class, 'preview'])->name('assignments.preview');
+    Route::get('devices/search', [AssignmentController::class, 'deviceSearch'])->middleware('can:manage iapm assignments')->name('devices.search');
     Route::delete('assignments-bulk', [AssignmentController::class, 'bulkDestroy'])->name('assignments.bulk-destroy');
     Route::resource('assignments', AssignmentController::class)->except('show');
     Route::get('interface-matrix', [InterfaceMatrixController::class, 'index'])->name('matrix'); Route::post('interface-matrix/bulk', [InterfaceMatrixController::class, 'bulk'])->name('matrix.bulk'); Route::get('interface-matrix/export', [InterfaceMatrixController::class, 'export'])->name('matrix.export');
