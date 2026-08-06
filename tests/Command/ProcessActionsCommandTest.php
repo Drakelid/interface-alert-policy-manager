@@ -123,6 +123,20 @@ class ProcessActionsCommandTest extends IntegrationTestCase
         self::assertSame(1, DeliveryLog::where('phase', 'acknowledged')->count());
     }
 
+    public function test_a_long_recovered_incident_is_not_reprocessed(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $policy = $this->policy(['notify_recovery' => true]);
+        $this->triggerAction($policy, $this->smsDestination(), ['phase' => 'recovery']);
+        // Recovered 3 days ago — outside the 48h window, so it must not be scanned or
+        // re-notified (recovered rows are retained for a year).
+        $this->incident($policy, $this->downPort($this->device()), ['state' => IncidentState::Recovered, 'recovered_at' => now()->subDays(3)]);
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        self::assertSame(0, DeliveryLog::where('phase', 'recovery')->count());
+    }
+
     public function test_a_zero_time_budget_stops_before_sending(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);

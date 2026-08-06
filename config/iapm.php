@@ -4,7 +4,13 @@ return [
     'route_prefix' => 'plugin/interface-alert-policy-manager',
     'ingestion' => [
         'max_bytes' => 1048576,
-        'rate_limit' => '120,1',
+        // requests,minutes ceiling on the ingestion endpoint. This is a DoS guard on
+        // the pre-auth path, keyed by source IP — so it caps ALL of LibreNMS's alert
+        // POSTs together. A fleet-wide event posts one webhook per alerting device;
+        // on a large network (thousands of devices) 120/min would 429 — and dropped
+        // alerts are lost. Default is generous; raise it further for very large fleets
+        // (IAPM_INGEST_RATE) and firewall the endpoint to the LibreNMS host.
+        'rate_limit' => env('IAPM_INGEST_RATE', '2000,1'),
         'clock_skew_seconds' => 900,
     ],
     'processing' => [

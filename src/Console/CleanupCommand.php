@@ -30,7 +30,19 @@ class CleanupCommand extends Command
         $outageCount = DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff)->count();
         $this->table(['Record type', 'Eligible'], [['Recovered incidents', $incidentCount], ['Incident events', $eventCount], ['Delivery logs', $deliveryCount], ['Audit logs', $auditCount], ['Outage records', $outageCount]]);
         if (! $this->option('force')) { $this->info('Dry-run only. Re-run with --force to delete eligible records.'); return self::SUCCESS; }
-        DB::transaction(function () use ($recovered, $cutoff): void { DB::table('iapm_audit_logs')->where('created_at', '<', $cutoff)->delete(); DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff)->delete(); $recovered->chunkById(500, fn ($incidents) => Incident::whereKey($incidents->modelKeys())->delete()); });
+        // Batched, autocommitting deletes — never one giant transaction. At ISP scale a
+        // year of recovered incidents (plus cascaded events/deliveries) is tens of
+        // millions of rows; a single transaction would hold locks and bloat the undo log.
+        $this->purge(fn () => DB::table('iapm_audit_logs')->where('created_at', '<', $cutoff));
+        $this->purge(fn () => DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff));
+        // Deleting the incident cascades its events and delivery logs at the DB level.
+        $this->purge(fn () => DB::table('iapm_incidents')->where('state', 'recovered')->where('recovered_at', '<', $cutoff));
         $this->info('Retention cleanup completed.'); return self::SUCCESS;
+    }
+
+    /** Delete matching rows in bounded batches so no single statement locks the table. */
+    private function purge(\Closure $builder, int $batch = 1000): void
+    {
+        do { $deleted = $builder()->limit($batch)->delete(); } while ($deleted >= $batch);
     }
 }

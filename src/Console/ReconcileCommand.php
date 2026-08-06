@@ -38,7 +38,7 @@ class ReconcileCommand extends Command
                         if ($settings->get('deleted_port_behavior', 'recover') === 'retain') continue;
                         $this->transition($incident, IncidentState::Recovered, 'Port no longer exists in LibreNMS.', ['recovered_at' => now()]); $changed++; continue;
                     }
-                    $context = $contexts->forPort($port); $resolution = $resolver->resolve($context); $policy = $resolution->policy ?? $incident->policy;
+                    $context = $contexts->forPort($port); $resolution = $resolver->resolve($context, writeCache: false); $policy = $resolution->policy ?? $incident->policy;
                     if (! $policy) {
                         // Port recovered? Close it even without a policy, rather than re-suppress.
                         if ($context->operStatus === 'up') { $this->transition($incident, IncidentState::Recovered, 'Port is operationally up (no effective policy).', ['recovered_at' => now(), 'suppression_reason' => null]); $changed++; continue; }

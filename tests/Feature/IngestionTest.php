@@ -247,6 +247,19 @@ class IngestionTest extends IntegrationTestCase
         self::assertSame(0, \Illuminate\Support\Facades\DB::table('iapm_interface_policy_cache')->count());
     }
 
+    public function test_unpoliced_alerts_can_be_ignored_instead_of_recorded(): void
+    {
+        $this->settings->put('record_unpoliced', false);
+        $device = $this->device();
+
+        $this->ingest($this->alertPayload($device, [$this->fault($this->downPort($device))]))
+            ->assertOk()
+            ->assertJsonPath('counts.ignored', 1);
+
+        // No suppressed no_policy row is persisted — the large-fleet safety valve.
+        self::assertSame(0, Incident::count());
+    }
+
     public function test_a_continued_alert_does_not_resurrect_an_acknowledged_incident(): void
     {
         $this->defaultPolicy();

@@ -48,6 +48,10 @@
         <div class="form-group"><label>Notification timeout (seconds)</label><input class="form-control" name="notification_timeout" value="{{ old('notification_timeout',$values['notification_timeout']) }}"><p class="help-block">How long to wait for the gateway before recording a failure.</p></div>
         <div class="form-group"><label>Notification retries</label><input class="form-control" name="notification_retry_count" value="{{ old('notification_retry_count',$values['notification_retry_count']) }}"><p class="help-block">Extra attempts per delivery when the gateway errors (0–10).</p></div>
         <div class="form-group"><label>Retention (days)</label><input class="form-control" name="retention_days" value="{{ old('retention_days',$values['retention_days']) }}"><p class="help-block">Recovered incidents, events, delivery and audit logs older than this are cleaned up daily. Active incidents are never deleted.</p></div>
+        <input type="hidden" name="record_unpoliced" value="0">
+        <div class="checkbox"><label><input type="checkbox" name="record_unpoliced" value="1" @checked(old('record_unpoliced',$values['record_unpoliced']))> <strong>Record alerts for interfaces with no policy</strong></label>
+            <p class="help-block">On (default): un-matched interfaces are stored as suppressed <code>no_policy</code> incidents for visibility. <strong>Turn off on very large fleets</strong> that intentionally scope IAPM to specific interfaces — alerts for everything else are then ignored instead of creating hundreds of thousands of rows.</p>
+        </div>
         <div class="form-group"><label>Deleted-port behaviour</label>
             <select class="form-control" name="deleted_port_behavior"><option value="recover" @selected($values['deleted_port_behavior']==='recover')>Recover incident when the port is deleted</option><option value="retain" @selected($values['deleted_port_behavior']==='retain')>Retain the open incident</option></select>
         </div>

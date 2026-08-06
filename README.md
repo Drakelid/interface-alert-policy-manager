@@ -106,6 +106,16 @@ Incidents, timelines, deliveries, and audit history live in `iapm_*` tables; inc
 
 Back up all `iapm_*` tables together with the LibreNMS application encryption key. Encrypted destination and setting values cannot be recovered with the database alone. Restore into the same LibreNMS/application-key environment, run migrations, clear/rebuild IAPM caches, and run `iapm:install-check` before enabling live delivery.
 
+### Running at large scale (100k+ interfaces)
+
+IAPM is built to scale to very large fleets, but a few things must be configured deliberately:
+
+- **Set a default assignment/policy _or_ turn off "Record alerts for interfaces with no policy"** (Settings). Otherwise every alerting interface without a matching policy is stored as a suppressed `no_policy` incident — at hundreds of thousands of interfaces that is a lot of rows. Scope IAPM to the interfaces you care about, then disable `record_unpoliced` so the rest are ignored.
+- **Tune the ingestion rate limit.** `iapm.ingestion.rate_limit` (env `IAPM_INGEST_RATE`, default `2000,1`) caps all of LibreNMS's alert POSTs together; a fleet-wide event can exceed it and rejected alerts are lost. Raise it for large fleets and firewall the endpoint to the LibreNMS host.
+- **Enable the device digest** (`aggregate_threshold`) so a device dropping many interfaces sends one message instead of hundreds, and consider **queued dispatch** for very wide simultaneous events.
+- **Schedule `iapm:cache-rebuild`** (e.g. hourly) if you rely on the Interface Matrix policy filters — the per-request/reconcile cache writes were removed to keep the hot paths write-light, so the matrix cache is refreshed on view and by the rebuild command.
+- Recovered incidents are retained (`retention_days`, default 365) and cleaned up in batches nightly; process-actions only re-scans recoveries from the last 48h, so old history doesn't slow the every-minute run.
+
 ### Known limitations
 
 - Materialized policy filters are complete only after `iapm:cache-rebuild` has covered the relevant ports.

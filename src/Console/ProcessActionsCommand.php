@@ -60,7 +60,15 @@ class ProcessActionsCommand extends Command
             $processed += $this->emitDeviceDigests($threshold, max(30, (int) $this->settings->get('aggregate_window_seconds', 120)));
         }
 
-        Incident::query()->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Recovered])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed) {
+        // A targeted --incident run processes exactly that incident. Otherwise take the
+        // open working set plus only *recently* recovered incidents — recovered rows are
+        // retained for a year, so scanning them all every minute would be crippling at
+        // ISP scale. 48h is a generous window for a recovery notification (survives a
+        // scheduler outage) while keeping the scan bounded to a day or two of recoveries.
+        Incident::query()->when($this->option('incident'),
+                fn ($q, $id) => $q->whereKey($id),
+                fn ($q) => $q->where(fn ($w) => $w->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged])->orWhere(fn ($r) => $r->where('state', IncidentState::Recovered)->where('recovered_at', '>=', now()->subHours(48)))))
+            ->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed) {
             foreach ($items as $incident) {
                 if (microtime(true) >= $this->deadline) return false; // out of time budget; the next scheduled run continues the backlog
                 if ($incident->state === IncidentState::Pending && $incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->failed_poll_count) {

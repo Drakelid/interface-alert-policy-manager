@@ -27,12 +27,17 @@ class IngestionController extends Controller
         if (! $device) return response()->json(['error' => ['code' => 'device_not_found', 'message' => 'Referenced device does not exist.']], 422);
         $device->loadMissing('parents');
         $counts = array_fill_keys(['processed', 'activated', 'pending', 'suppressed', 'recovered', 'ignored', 'failed'], 0); $seen = [];
+        // When false, alerts for interfaces with no effective policy are ignored rather
+        // than persisted as suppressed no_policy incidents — the safety valve for large
+        // fleets that scope IAPM to specific interfaces instead of a catch-all default.
+        $recordUnpoliced = (bool) app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class)->get('record_unpoliced', true);
         foreach ($data['faults'] as $fault) {
             $port = Port::where('port_id', $fault['port_id'])->where('device_id', $device->device_id)->first();
             if (! $port) { $counts['failed']++; continue; }
             $seen[] = (int) $port->port_id; $context = $contexts->forPort($port); $resolution = $policies->resolve($context, writeCache: false);
             $fingerprint = hash('sha256', implode('|', [(string) ($data['alert_uid'] ?? ''), (string) ($data['alert_id'] ?? ''), (string) ($data['timestamp'] ?? ''), $state, (string) $context->portId]));
             if (! $resolution->policy) {
+                if (! $recordUnpoliced) { $counts['ignored']++; continue; }
                 $this->runWithUniqueRetry(function () use ($data, $context, $fingerprint, &$counts): void {
                     $incident = Incident::where('incident_key', Incident::key($context->deviceId, $context->portId))->lockForUpdate()->first() ?? new Incident(['incident_key' => Incident::key($context->deviceId, $context->portId), 'first_seen_at' => now(), 'notification_count' => 0]);
                     if (($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) { $counts['ignored']++; return; }
