@@ -231,6 +231,22 @@ class IngestionTest extends IntegrationTestCase
         self::assertSame(1, Incident::first()->events()->where('event_type', 'acknowledged')->count());
     }
 
+    public function test_ingestion_does_not_write_the_policy_cache_on_the_hot_path(): void
+    {
+        $this->defaultPolicy();
+        $device = $this->device();
+
+        $this->ingest($this->alertPayload($device, [$this->fault($this->downPort($device))]))
+            ->assertOk()
+            ->assertJsonPath('counts.processed', 1);
+
+        // Resolution still worked (an incident with a policy was created)...
+        self::assertNotNull(Incident::first()->policy_id);
+        // ...but the materialised policy cache is not written per-fault during ingestion;
+        // the per-minute reconcile maintains it, keeping the storm hot path write-light.
+        self::assertSame(0, \Illuminate\Support\Facades\DB::table('iapm_interface_policy_cache')->count());
+    }
+
     public function test_an_interface_without_a_policy_is_recorded_and_suppressed(): void
     {
         $device = $this->device();

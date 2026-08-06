@@ -29,6 +29,7 @@ class ProcessActionsCommand extends Command
     private TemplateContextBuilder $placeholders;
     private FlapDetector $flapper;
     private MessageTemplates $messages;
+    private float $deadline = 0.0;
 
     public function handle(NotificationDispatcher $dispatcher, ReceiverResolver $receivers, SafeTemplateRenderer $templates, SettingStore $settings, TemplateContextBuilder $placeholders, FlapDetector $flapper, MessageTemplates $messages): int
     {
@@ -37,6 +38,13 @@ class ProcessActionsCommand extends Command
         }
 
         [$this->dispatcher, $this->receivers, $this->templates, $this->settings, $this->placeholders, $this->flapper, $this->messages] = [$dispatcher, $receivers, $templates, $settings, $placeholders, $flapper, $messages];
+
+        // Wall-clock budget: stop before the next scheduler tick so a storm's backlog
+        // drains across runs instead of one run overrunning the minute (see config).
+        // A targeted single-incident/force run is never budget-limited; a budget of 0
+        // stops immediately (test/kill-switch), otherwise a 5s floor applies.
+        $budget = (int) config('iapm.processing.max_seconds', 50);
+        $this->deadline = ($this->option('incident') || $this->option('force')) ? PHP_FLOAT_MAX : ($budget <= 0 ? microtime(true) : microtime(true) + max(5, $budget));
 
         $processed = 0;
 
@@ -52,8 +60,9 @@ class ProcessActionsCommand extends Command
             $processed += $this->emitDeviceDigests($threshold, max(30, (int) $this->settings->get('aggregate_window_seconds', 120)));
         }
 
-        Incident::query()->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Recovered])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed): void {
+        Incident::query()->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Recovered])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed) {
             foreach ($items as $incident) {
+                if (microtime(true) >= $this->deadline) return false; // out of time budget; the next scheduled run continues the backlog
                 if ($incident->state === IncidentState::Pending && $incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->failed_poll_count) {
                     $incident->update(['state' => IncidentState::Active, 'triggered_at' => now()]);
                     $incident->events()->create(['event_type' => 'activated', 'event_message' => 'Trigger requirements satisfied.']);
@@ -124,28 +133,36 @@ class ProcessActionsCommand extends Command
         $cutoff = now()->subSeconds($window);
         $sent = 0;
 
-        $groups = Incident::query()
-            ->where('state', IncidentState::Active)
-            ->whereNotNull('triggered_at')->where('triggered_at', '>=', $cutoff)
-            ->where(fn ($q) => $q->whereNull('muted_until')->orWhere('muted_until', '<=', now()))
-            ->whereHas('policy', fn ($q) => $q->where('notifications_enabled', true))
-            // "Not yet trigger-notified" is scoped to the current outage episode
-            // (deliveries at/after triggered_at) so a device that recovers and then
-            // fails again is grouped afresh instead of storming individually.
-            ->whereDoesntHave('deliveries', fn ($q) => $q->where('phase', 'trigger')->whereIn('status', ['sent', 'dry_run'])->whereColumn('iapm_delivery_logs.created_at', '>=', 'iapm_incidents.triggered_at'))
-            ->with(['policy.actions.destination'])
-            ->get()
-            ->filter(fn ($i) => empty($i->context_json['trigger_notified_via_digest']))
-            ->groupBy('device_id');
+        // Find candidate devices with a grouped count first, then load one device's
+        // incidents at a time — a simultaneous multi-thousand-port event never pulls
+        // every eligible incident into memory at once.
+        $deviceIds = $this->digestBase($cutoff)->groupBy('device_id')->havingRaw('COUNT(*) >= ?', [$threshold])->pluck('device_id');
 
-        foreach ($groups as $incidents) {
-            if ($incidents->count() < $threshold) {
-                continue; // below threshold: the per-incident loop notifies individually
-            }
+        foreach ($deviceIds as $deviceId) {
+            $incidents = $this->digestBase($cutoff)->where('device_id', $deviceId)->with(['policy.actions.destination'])->get()
+                ->filter(fn ($i) => empty($i->context_json['trigger_notified_via_digest']))
+                ->values();
+            if ($incidents->count() < $threshold) continue; // already-digested incidents dropped it below threshold
             $sent += $this->sendDeviceDigest($incidents);
         }
 
         return $sent;
+    }
+
+    /**
+     * Incidents eligible for device-level grouping this run: active, triggered within
+     * the window, not muted, under a notifying policy, and not yet trigger-notified in
+     * the current outage episode (deliveries scoped to at/after triggered_at, so a
+     * device that recovers then fails again is grouped afresh rather than storming).
+     */
+    private function digestBase(\Carbon\CarbonInterface $cutoff): \Illuminate\Database\Eloquent\Builder
+    {
+        return Incident::query()
+            ->where('state', IncidentState::Active)
+            ->whereNotNull('triggered_at')->where('triggered_at', '>=', $cutoff)
+            ->where(fn ($q) => $q->whereNull('muted_until')->orWhere('muted_until', '<=', now()))
+            ->whereHas('policy', fn ($q) => $q->where('notifications_enabled', true))
+            ->whereDoesntHave('deliveries', fn ($q) => $q->where('phase', 'trigger')->whereIn('status', ['sent', 'dry_run'])->whereColumn('iapm_delivery_logs.created_at', '>=', 'iapm_incidents.triggered_at'));
     }
 
     private function sendDeviceDigest(\Illuminate\Support\Collection $incidents): int

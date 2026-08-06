@@ -30,7 +30,7 @@ class IngestionController extends Controller
         foreach ($data['faults'] as $fault) {
             $port = Port::where('port_id', $fault['port_id'])->where('device_id', $device->device_id)->first();
             if (! $port) { $counts['failed']++; continue; }
-            $seen[] = (int) $port->port_id; $context = $contexts->forPort($port); $resolution = $policies->resolve($context);
+            $seen[] = (int) $port->port_id; $context = $contexts->forPort($port); $resolution = $policies->resolve($context, writeCache: false);
             $fingerprint = hash('sha256', implode('|', [(string) ($data['alert_uid'] ?? ''), (string) ($data['alert_id'] ?? ''), (string) ($data['timestamp'] ?? ''), $state, (string) $context->portId]));
             if (! $resolution->policy) {
                 $this->runWithUniqueRetry(function () use ($data, $context, $fingerprint, &$counts): void {
@@ -67,7 +67,14 @@ class IngestionController extends Controller
         if (isset($data['alert_id']) || isset($data['alert_uid']) || isset($data['rule_id'])) {
             $query = Incident::where('device_id', $device->device_id)->where('state', '!=', IncidentState::Recovered)->where(function ($query) use ($data): void { if (isset($data['alert_id'])) $query->orWhere('source_alert_id', $data['alert_id']); if (isset($data['alert_uid'])) $query->orWhere('source_alert_uid', (string) $data['alert_uid']); if (! isset($data['alert_id']) && ! isset($data['alert_uid']) && isset($data['rule_id'])) $query->orWhere('source_rule_id', $data['rule_id']); });
             if ($state === 'recovered') $seen = [];
-            $query->with('policy')->when($seen !== [], fn ($q) => $q->whereNotIn('port_id', $seen))->each(function (Incident $incident) use (&$counts): void { $this->requestRecovery($incident, (int) ($incident->policy?->recovery_after_seconds ?? 0), 'Interface disappeared from current fault set.', $counts); });
+            // A whole-chassis recovery can touch thousands of incidents; process them
+            // in bounded chunks, each in one transaction, so we don't run thousands of
+            // autocommitted writes (and open a giant lock) inside a single web request.
+            $query->with('policy')->when($seen !== [], fn ($q) => $q->whereNotIn('port_id', $seen))->chunkById((int) config('iapm.processing.batch_size', 500), function ($incidents) use (&$counts): void {
+                DB::transaction(function () use ($incidents, &$counts): void {
+                    foreach ($incidents as $incident) $this->requestRecovery($incident, (int) ($incident->policy?->recovery_after_seconds ?? 0), 'Interface disappeared from current fault set.', $counts);
+                });
+            });
         }
         \Illuminate\Support\Facades\Log::channel('iapm')->info('Alert ingestion completed.', ['device_id' => $device->device_id, 'alert_id' => $data['alert_id'] ?? null, 'alert_uid' => $data['alert_uid'] ?? null, 'state' => $state, 'counts' => $counts]);
         return response()->json(['status' => 'accepted', 'counts' => $counts]);

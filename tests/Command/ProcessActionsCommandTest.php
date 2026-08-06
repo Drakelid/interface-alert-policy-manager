@@ -123,6 +123,22 @@ class ProcessActionsCommandTest extends IntegrationTestCase
         self::assertSame(1, DeliveryLog::where('phase', 'acknowledged')->count());
     }
 
+    public function test_a_zero_time_budget_stops_before_sending(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        config(['iapm.processing.max_seconds' => 0]);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $this->incident($policy, $this->downPort($this->device()));
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        // The wall-clock budget is exhausted immediately, so nothing is dispatched;
+        // the backlog is left for the next scheduled run.
+        self::assertSame(0, DeliveryLog::count());
+        Http::assertNothingSent();
+    }
+
     public function test_force_resends_a_specific_action(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);

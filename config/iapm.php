@@ -11,6 +11,12 @@ return [
         'batch_size' => 500,
         'reconciliation_interval' => 1,
         'action_interval' => 1,
+        // Per-run wall-clock budget for iapm:process-actions. A large outage can
+        // produce more notifications than one minute of synchronous sends can drain;
+        // the command stops after this many seconds and the next scheduled run (the
+        // overlap lock has cleared) continues the backlog. Keep it under 60.
+        // For very high burst volume, move delivery onto a queue with workers.
+        'max_seconds' => 50,
     ],
     'http' => [
         'connect_timeout' => 5,

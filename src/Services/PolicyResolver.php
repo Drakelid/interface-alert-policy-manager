@@ -16,7 +16,7 @@ class PolicyResolver
 
     public function __construct(private readonly SettingStore $settings) {}
 
-    public function resolve(InterfaceContext $context): PolicyResolution
+    public function resolve(InterfaceContext $context, bool $writeCache = true): PolicyResolution
     {
         $matches = ($this->assignments ??= Assignment::query()->with(['policy.schedule', 'deviceGroups'])->where('enabled', true)->whereHas('policy', fn ($q) => $q->where('enabled', true))->get())->filter(fn (Assignment $a) => $this->matches($a, $context))->sort(function (Assignment $a, Assignment $b): int {
             return [$b->assignment_type->specificity(), $b->priority, $b->policy->priority, $b->updated_at?->timestamp ?? 0] <=> [$a->assignment_type->specificity(), $a->priority, $a->policy->priority, $a->updated_at?->timestamp ?? 0];
@@ -24,7 +24,14 @@ class PolicyResolver
         $winner = $matches->first();
         if (! $winner && $this->configuredDefault === null) { $id = $this->settings->get('default_policy_id'); $this->configuredDefault = $id ? (Policy::where('enabled', true)->find($id) ?: false) : false; }
         $resolution = new PolicyResolution($winner?->policy ?? ($this->configuredDefault ?: null), $winner, $matches->all());
-        try { DB::table('iapm_interface_policy_cache')->updateOrInsert(['port_id' => $context->portId], ['policy_id' => $resolution->policy?->id, 'assignment_id' => $winner?->id, 'assignment_source' => $winner?->assignment_type->value ?? ($resolution->policy ? 'configured_default' : null), 'candidate_assignment_ids' => json_encode($matches->pluck('id')->all()), 'resolved_at' => now()]); } catch (\Throwable) { /* installation may not be migrated yet */ }
+        // The policy cache is a materialised view for the UI matrix. Writing it on
+        // every resolve means one upsert per fault on the ingestion hot path — heavy
+        // during a storm. Callers on that path pass writeCache=false; the per-minute
+        // reconcile (and the rebuild command) keep the cache current for alerting
+        // interfaces without adding write amplification to ingestion.
+        if ($writeCache) {
+            try { DB::table('iapm_interface_policy_cache')->updateOrInsert(['port_id' => $context->portId], ['policy_id' => $resolution->policy?->id, 'assignment_id' => $winner?->id, 'assignment_source' => $winner?->assignment_type->value ?? ($resolution->policy ? 'configured_default' : null), 'candidate_assignment_ids' => json_encode($matches->pluck('id')->all()), 'resolved_at' => now()]); } catch (\Throwable) { /* installation may not be migrated yet */ }
+        }
         return $resolution;
     }
 
