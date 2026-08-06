@@ -21,19 +21,43 @@ class NotificationDispatcher
         return $result;
     }
 
+    /**
+     * Route a single notification: dry-run and disabled-destination handling, then
+     * either enqueue it (dispatch_mode=queue) for a worker to deliver, or deliver it
+     * synchronously here. The queue path records a "queued" marker so the caller's
+     * dedup guard won't re-enqueue while the job is in flight.
+     */
     public function dispatch(Incident $incident, Destination $destination, ?PolicyAction $action, string $phase, string $receiver, string $message): TransportResult
     {
         if ($this->settings->get('dry_run', true)) {
-            $result = $this->record($incident, $destination, $action, $phase, $receiver, new TransportResult(true, null, 'dry-run'), 'dry_run');
+            $this->record($incident, $destination, $action, $phase, $receiver, new TransportResult(true, null, 'dry-run'), 'dry_run');
             $incident->events()->create(['event_type' => 'notification_suppressed', 'event_message' => "Dry-run: $phase notification would be sent.", 'event_data' => ['destination_id' => $destination->id]]);
 
-            return $result;
+            return new TransportResult(true, null, 'dry-run');
         }
 
         if (! $destination->enabled) {
             return $this->configurationFailure($incident, $destination, $action, $phase, 'Destination is disabled.');
         }
 
+        if ($this->settings->get('dispatch_mode', 'sync') === 'queue') {
+            $marker = $this->record($incident, $destination, $action, $phase, $receiver, new TransportResult(false, null, null, 'Queued for delivery.'), 'queued');
+            \LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\SendNotificationJob::dispatch($incident->id, $destination->id, $action?->id, $phase, $receiver, $message, $marker->id);
+            $incident->events()->create(['event_type' => 'notification_queued', 'event_message' => ucfirst($phase).' notification queued for delivery.', 'event_data' => ['destination_id' => $destination->id]]);
+
+            return new TransportResult(true, null, 'queued');
+        }
+
+        return $this->performSync($incident, $destination, $action, $phase, $receiver, $message);
+    }
+
+    /**
+     * Perform the actual synchronous transport send with retry/backoff and record
+     * the outcome. Called directly in sync mode, and by SendNotificationJob when a
+     * worker delivers a queued notification.
+     */
+    public function performSync(Incident $incident, Destination $destination, ?PolicyAction $action, string $phase, string $receiver, string $message): TransportResult
+    {
         $configuration = (array) $destination->configuration_encrypted;
         $attempts = 1 + max(0, min(10, (int) ($configuration['retry_count'] ?? config('iapm.http.retries', 2))));
         $result = new TransportResult(false, null, null, 'No delivery attempt was made.');
@@ -78,9 +102,9 @@ class NotificationDispatcher
         return $result;
     }
 
-    private function record(?Incident $incident, Destination $destination, ?PolicyAction $action, string $phase, string $receiver, TransportResult $result, string $status, int $attempt = 1): TransportResult
+    private function record(?Incident $incident, Destination $destination, ?PolicyAction $action, string $phase, string $receiver, TransportResult $result, string $status, int $attempt = 1): DeliveryLog
     {
-        DeliveryLog::create([
+        return DeliveryLog::create([
             'incident_id' => $incident?->id,
             'destination_id' => $destination->id,
             'policy_action_id' => $action?->id,
@@ -94,7 +118,5 @@ class NotificationDispatcher
             'error_message' => $result->error,
             'sent_at' => $result->successful ? now() : null,
         ]);
-
-        return $result;
     }
 }

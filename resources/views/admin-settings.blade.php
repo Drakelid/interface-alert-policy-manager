@@ -44,6 +44,19 @@
 </div>
 
 <div class="panel panel-default">
+    <div class="panel-heading">Delivery dispatch</div>
+    <div class="panel-body">
+        <div class="form-group"><label>Dispatch mode</label>
+            <select class="form-control" name="dispatch_mode">
+                <option value="sync" @selected($values['dispatch_mode']==='sync')>Synchronous (default) — send during the scheduled run</option>
+                <option value="queue" @selected($values['dispatch_mode']==='queue')>Queued — hand off to queue workers</option>
+            </select>
+            <p class="help-block"><strong>Synchronous</strong> is right for most sites: notifications send inside the every-minute job (bounded by a wall-clock budget). <strong>Queued</strong> hands each notification to a Laravel queue for worker concurrency during very large storms — it requires a running worker (<code>php artisan queue:work</code>) and, for true async, a real queue driver via <code>IAPM_QUEUE_CONNECTION</code>. If you switch to Queued without a worker, notifications will sit in the queue undelivered.</p>
+        </div>
+    </div>
+</div>
+
+<div class="panel panel-default">
     <div class="panel-heading">Storm control — device digest</div>
     <div class="panel-body">
         <div class="form-group"><label>Aggregate threshold</label>

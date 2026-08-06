@@ -23,11 +23,39 @@ class HealthService
     /** @return list<array{key:string,label:string,ok:bool,detail:string}> */
     public function checks(): array
     {
-        return [
+        $checks = [
             $this->schedulerCheck('reconcile', 'Reconciliation running', 'last_reconcile_at'),
             $this->schedulerCheck('process_actions', 'Action processing running', 'last_process_actions_at'),
             $this->gatewayCheck(),
             $this->backlogCheck(),
+        ];
+
+        // Only relevant when queued delivery is enabled: a worker must be draining
+        // the queue, or notifications pile up undelivered.
+        if ($this->settings->get('dispatch_mode', 'sync') === 'queue') {
+            $checks[] = $this->queueWorkerCheck();
+        }
+
+        return $checks;
+    }
+
+    private function queueWorkerCheck(): array
+    {
+        $last = $this->timestamp('last_queue_worker_at');
+        $pending = 0;
+        try {
+            $pending = \LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog::where('status', 'queued')->where('created_at', '<', now()->subSeconds(self::STALE_AFTER_SECONDS))->count();
+        } catch (\Throwable) {
+        }
+        $ok = $pending === 0 && ($last === null || $last->addSeconds(self::STALE_AFTER_SECONDS)->isFuture());
+
+        return [
+            'key' => 'queue_worker',
+            'label' => 'Queue worker delivering',
+            'ok' => $ok,
+            'detail' => $ok
+                ? ($last ? 'Last worker activity '.$last->diffForHumans() : 'Queued mode enabled; no traffic yet.')
+                : "Queued delivery is enabled but a worker is not draining the queue ({$pending} stuck). Run `php artisan queue:work`.",
         ];
     }
 

@@ -26,6 +26,17 @@ return [
         'verify_tls' => true,
         'allow_private_networks' => false,
     ],
+    // Optional queued delivery (dispatch_mode setting = "queue"). Leave connection
+    // null to use LibreNMS's default queue connection; set IAPM_QUEUE_CONNECTION to a
+    // real async driver (redis/database) and run `php artisan queue:work` for true
+    // concurrency during large storms. With a "sync" connection jobs run inline
+    // (still works, no worker needed, but no concurrency gain).
+    'queue' => [
+        'connection' => env('IAPM_QUEUE_CONNECTION'),
+        'name' => env('IAPM_QUEUE_NAME', 'iapm'),
+        'tries' => 3,
+        'timeout' => 60,
+    ],
     'sms' => [
         'gateway_url' => env('IAPM_SMS_GATEWAY_URL'),
         'username' => env('IAPM_SMS_GATEWAY_USERNAME'),

@@ -89,6 +89,8 @@ class ProcessActionsCommand extends Command
                 if ($phase === 'trigger' && ! empty($incident->context_json['trigger_notified_via_digest'])) continue; // grouped into a device digest
                 foreach ($incident->policy->actions->filter(fn ($action) => $action->enabled && $action->phase->value === $phase && (! $this->option('action') || (int) $this->option('action') === (int) $action->id)) as $action) {
                     if (! $this->option('force') && $incident->deliveries()->where('policy_action_id', $action->id)->where('phase', $phase)->where('status', 'failed_configuration')->where('created_at', '>=', now()->subMinutes(5))->exists()) continue;
+                    // Queue mode: a fresh in-flight "queued" delivery blocks re-enqueue; a stale one (worker down >15m) is ignored so it retries.
+                    if (! $this->option('force') && $incident->deliveries()->where('policy_action_id', $action->id)->where('phase', $phase)->where('status', 'queued')->where('created_at', '>=', now()->subMinutes(15))->exists()) continue;
                     $successful = $incident->deliveries()->where('policy_action_id', $action->id)->where('phase', $phase)->whereIn('status', ['sent', 'dry_run']);
                     $sendCount = (clone $successful)->count(); $lastSend = (clone $successful)->latest('created_at')->first();
                     $repeatSeconds = $action->repeat_seconds ?? (in_array($phase, ['trigger','reminder'], true) ? $incident->policy->repeat_seconds : null);
