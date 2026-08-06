@@ -21,6 +21,41 @@ class ReconcileCommandTest extends IntegrationTestCase
         self::assertSame(IncidentState::Acknowledged, $incident->fresh()->state);
     }
 
+    public function test_reconcile_does_not_bounce_an_acknowledged_incident_that_has_no_policy(): void
+    {
+        // No effective policy (policy_id null) + acknowledged by an operator. Reconcile
+        // must leave it acknowledged, not re-suppress it every run.
+        $incident = $this->incident($this->policy(), $this->downPort($this->device()), ['policy_id' => null, 'state' => IncidentState::Acknowledged, 'acknowledged_at' => now()]);
+
+        $this->artisan('iapm:reconcile')->assertExitCode(0);
+        $this->artisan('iapm:reconcile')->assertExitCode(0);
+
+        self::assertSame(IncidentState::Acknowledged, $incident->fresh()->state);
+    }
+
+    public function test_reconcile_is_idempotent_for_a_no_policy_suppressed_incident(): void
+    {
+        $incident = $this->incident($this->policy(), $this->downPort($this->device()), ['policy_id' => null, 'state' => IncidentState::Suppressed, 'suppression_reason' => 'no_policy']);
+
+        $this->artisan('iapm:reconcile');
+        $this->artisan('iapm:reconcile');
+
+        // Already suppressed/no_policy: no repeated state churn or event spam.
+        self::assertSame(0, $incident->events()->where('event_type', 'reconciled')->count());
+        self::assertSame(IncidentState::Suppressed, $incident->fresh()->state);
+    }
+
+    public function test_a_no_policy_incident_recovers_when_its_port_comes_back_up(): void
+    {
+        $port = $this->downPort($this->device());
+        $incident = $this->incident($this->policy(), $port, ['policy_id' => null, 'state' => IncidentState::Suppressed, 'suppression_reason' => 'no_policy']);
+        $port->update(['ifOperStatus' => 'up']);
+
+        $this->artisan('iapm:reconcile')->assertExitCode(0);
+
+        self::assertSame(IncidentState::Recovered, $incident->fresh()->state);
+    }
+
     public function test_an_incident_whose_port_came_back_up_is_recovered(): void
     {
         $policy = $this->defaultPolicy();

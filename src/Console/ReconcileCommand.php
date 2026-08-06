@@ -39,7 +39,16 @@ class ReconcileCommand extends Command
                         $this->transition($incident, IncidentState::Recovered, 'Port no longer exists in LibreNMS.', ['recovered_at' => now()]); $changed++; continue;
                     }
                     $context = $contexts->forPort($port); $resolution = $resolver->resolve($context); $policy = $resolution->policy ?? $incident->policy;
-                    if (! $policy) { $this->transition($incident, IncidentState::Suppressed, 'No effective policy during reconciliation.', ['suppression_reason' => 'no_policy']); $changed++; continue; }
+                    if (! $policy) {
+                        // Port recovered? Close it even without a policy, rather than re-suppress.
+                        if ($context->operStatus === 'up') { $this->transition($incident, IncidentState::Recovered, 'Port is operationally up (no effective policy).', ['recovered_at' => now(), 'suppression_reason' => null]); $changed++; continue; }
+                        // Honour an operator acknowledgement — don't bounce it back to suppressed.
+                        if ($incident->state === IncidentState::Acknowledged) continue;
+                        // Idempotent: only transition (and log an event) when the state actually changes,
+                        // otherwise a permanently un-policied port logs a "reconciled" event every minute.
+                        if ($incident->state !== IncidentState::Suppressed || $incident->suppression_reason !== 'no_policy') { $this->transition($incident, IncidentState::Suppressed, 'No effective policy during reconciliation.', ['suppression_reason' => 'no_policy']); $changed++; }
+                        continue;
+                    }
                     $oper = $context->operStatus;
                     if ($oper === 'up') {
                         $data = $incident->context_json; $upSince = isset($data['up_seen_at']) ? \Carbon\CarbonImmutable::parse($data['up_seen_at']) : null;
