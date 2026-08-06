@@ -55,9 +55,12 @@ class IapmServiceProvider extends ServiceProvider
         // not exist yet on a fresh install. So entries are always registered and
         // each scheduled command checks enablement when it actually runs.
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
-            $schedule->command('iapm:reconcile')->everyMinute()->withoutOverlapping();
-            $schedule->command('iapm:process-actions')->everyMinute()->withoutOverlapping();
-            $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping();
+            // A 10-minute lock expiry: without it Laravel holds the overlap lock for
+            // 24h, so a run killed mid-outage (OOM, deploy) would silently freeze all
+            // processing for a day. 10m lets a stuck run self-clear on the next tick.
+            $schedule->command('iapm:reconcile')->everyMinute()->withoutOverlapping(10);
+            $schedule->command('iapm:process-actions')->everyMinute()->withoutOverlapping(10);
+            $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping(10);
         });
     }
 }
