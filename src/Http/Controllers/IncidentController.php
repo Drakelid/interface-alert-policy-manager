@@ -1,7 +1,11 @@
 <?php
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 use Illuminate\Http\Request; use Illuminate\Routing\Controller; use Illuminate\Support\Facades\Artisan; use Illuminate\Support\Facades\DB; use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState; use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident; use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
-class IncidentController extends Controller { public function index(Request $r){$q=Incident::with('policy');if($r->filled('state'))$q->where('state',$r->string('state'));if($r->filled('device_id'))$q->where('device_id',$r->integer('device_id'));
+class IncidentController extends Controller { public function index(Request $r){$q=Incident::with('policy');$state=(string)$r->query('state','');
+        // Default landing ('' / no param) shows the OPEN working set (recovered hidden);
+        // 'all' shows every state; a specific value filters to it.
+        if($state==='all'){}elseif($state!==''){$q->where('state',$state);}else{$q->where('state','!=',IncidentState::Recovered->value);}
+        if($r->filled('device_id'))$q->where('device_id',$r->integer('device_id'));
         // Urgent-first: active before pending/ack/suppressed/recovered, critical
         // before warning, then oldest first — so a triage screen surfaces what matters.
         $q->orderByRaw("CASE state WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'acknowledged' THEN 2 WHEN 'suppressed' THEN 3 ELSE 4 END")

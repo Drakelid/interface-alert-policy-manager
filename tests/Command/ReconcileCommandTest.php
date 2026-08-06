@@ -7,6 +7,20 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class ReconcileCommandTest extends IntegrationTestCase
 {
+    public function test_reconcile_preserves_an_acknowledgement_even_when_a_suppression_condition_applies(): void
+    {
+        // Device down would normally suppress the incident; but an operator has
+        // acknowledged it, and reconcile must not bounce it through suppressed/active
+        // (which is how an acknowledged incident used to "come back").
+        $policy = $this->policy();
+        $device = $this->device(['status' => 0]);
+        $incident = $this->incident($policy, $this->downPort($device), ['state' => IncidentState::Acknowledged, 'acknowledged_at' => now()]);
+
+        $this->artisan('iapm:reconcile')->assertExitCode(0);
+
+        self::assertSame(IncidentState::Acknowledged, $incident->fresh()->state);
+    }
+
     public function test_an_incident_whose_port_came_back_up_is_recovered(): void
     {
         $policy = $this->defaultPolicy();

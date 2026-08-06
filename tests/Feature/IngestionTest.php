@@ -247,6 +247,25 @@ class IngestionTest extends IntegrationTestCase
         self::assertSame(0, \Illuminate\Support\Facades\DB::table('iapm_interface_policy_cache')->count());
     }
 
+    public function test_a_continued_alert_does_not_resurrect_an_acknowledged_incident(): void
+    {
+        $this->defaultPolicy();
+        $device = $this->device();
+        $port = $this->downPort($device);
+
+        $this->ingest($this->alertPayload($device, [$this->fault($port)]))->assertOk();
+        $incident = Incident::first();
+        $incident->update(['state' => IncidentState::Acknowledged, 'acknowledged_at' => now()]);
+
+        // LibreNMS keeps posting the still-down interface as active (new timestamp each
+        // interval). This must not flip the incident back to Active and re-notify.
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], 1, ['timestamp' => now()->addMinute()->toIso8601String()]))
+            ->assertOk()
+            ->assertJsonPath('counts.ignored', 1);
+
+        self::assertSame(IncidentState::Acknowledged, Incident::first()->state);
+    }
+
     public function test_an_interface_without_a_policy_is_recorded_and_suppressed(): void
     {
         $device = $this->device();

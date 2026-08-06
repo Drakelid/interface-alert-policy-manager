@@ -51,6 +51,10 @@ class IngestionController extends Controller
                 // An upstream LibreNMS acknowledgement acknowledges the incident — it must
                 // not be re-processed as a fresh active observation (which would re-notify).
                 if ($state === 'acknowledged') { if ($incident && ! in_array($incident->state, [IncidentState::Recovered, IncidentState::Acknowledged], true)) { $incident->update(['state' => IncidentState::Acknowledged, 'acknowledged_at' => now(), 'last_seen_at' => now()]); $incident->events()->create(['event_type' => 'acknowledged', 'event_message' => 'Acknowledged upstream in LibreNMS.']); $counts['processed']++; } else { $counts['ignored']++; } return; }
+                // A continued active observation on an already-acknowledged incident must not
+                // revert it to Active (that resurrects it and re-notifies). Refresh liveness
+                // and keep the acknowledgement — only a recovery clears it.
+                if ($incident && $incident->state === IncidentState::Acknowledged) { $ackCtx = $incident->context_json; $ackCtx['observation_count'] = (int) ($ackCtx['observation_count'] ?? 0) + 1; $ackCtx['last_event_fingerprint'] = $fingerprint; $incident->update(['last_seen_at' => now(), 'context_json' => $ackCtx]); $counts['ignored']++; return; }
                 $reason = $suppression->reason($resolution->policy, $context, ! (bool) $device->status, SuppressionService::maintenanceSuppresses($device), SuppressionService::anyParentDown($device->parents), $dependencies->uplinkDown($device, $context->portId));
                 $target = $reason ? IncidentState::Suppressed : ($resolution->policy->trigger_after_seconds === 0 && $resolution->policy->failed_poll_count <= 1 ? IncidentState::Active : IncidentState::Pending);
                 $incident ??= new Incident(['incident_key' => Incident::key($context->deviceId, $context->portId), 'first_seen_at' => now(), 'notification_count' => 0]);

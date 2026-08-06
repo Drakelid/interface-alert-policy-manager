@@ -4,7 +4,7 @@
 
 <div class="iapm-toolbar">
     <form class="form-inline" method="get">
-        <select name="state" class="form-control input-sm"><option value="">All states</option>@foreach(['active','pending','acknowledged','suppressed','recovered'] as $v)<option @selected(request('state')===$v)>{{ $v }}</option>@endforeach</select>
+        <select name="state" class="form-control input-sm"><option value="">Open incidents</option><option value="all" @selected(request('state')==='all')>All states</option>@foreach(['active','pending','acknowledged','suppressed','recovered'] as $v)<option @selected(request('state')===$v)>{{ $v }}</option>@endforeach</select>
         <input class="form-control input-sm" name="device_id" value="{{ request('device_id') }}" placeholder="Device ID">
         <button class="btn btn-default btn-sm">Filter</button>
     </form>
