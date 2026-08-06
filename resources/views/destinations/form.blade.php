@@ -24,10 +24,10 @@
 <div class="form-group"><label>Encoding</label><select name="mode" class="form-control"><option value="json" @selected(old('mode',$configuration['mode']??'json')==='json')>JSON body (recommended)</option><option value="form" @selected(old('mode',$configuration['mode']??'json')==='form')>Form-encoded</option></select></div>
 
 <div class="row">
-    <div class="col-sm-3 form-group"><label>Connect timeout (s)</label><input class="form-control" name="connect_timeout" value="{{ old('connect_timeout',$configuration['connect_timeout']??5) }}"></div>
-    <div class="col-sm-3 form-group"><label>Request timeout (s)</label><input class="form-control" name="timeout" value="{{ old('timeout',$configuration['timeout']??15) }}"></div>
-    <div class="col-sm-3 form-group"><label>Retry count</label><input class="form-control" name="retry_count" value="{{ old('retry_count',$configuration['retry_count']??2) }}"></div>
-    <div class="col-sm-3 form-group"><label>Retry delay (ms)</label><input class="form-control" name="retry_delay_ms" value="{{ old('retry_delay_ms',$configuration['retry_delay_ms']??500) }}"></div>
+    <div class="col-sm-3 form-group"><label>Connect timeout (s)</label><input class="form-control" type="number" min="1" max="300" name="connect_timeout" value="{{ old('connect_timeout',$configuration['connect_timeout']??5) }}"></div>
+    <div class="col-sm-3 form-group"><label>Request timeout (s)</label><input class="form-control" type="number" min="1" max="300" name="timeout" value="{{ old('timeout',$configuration['timeout']??15) }}"></div>
+    <div class="col-sm-3 form-group"><label>Retry count</label><input class="form-control" type="number" min="0" max="10" name="retry_count" value="{{ old('retry_count',$configuration['retry_count']??2) }}"></div>
+    <div class="col-sm-3 form-group"><label>Retry delay (ms)</label><input class="form-control" type="number" min="0" max="60000" name="retry_delay_ms" value="{{ old('retry_delay_ms',$configuration['retry_delay_ms']??500) }}"></div>
 </div>
 
 <div class="form-group"><label>Custom headers (JSON object)</label><textarea name="headers_json" class="form-control" rows="2">{{ old('headers_json',json_encode($configuration['headers']??[],JSON_PRETTY_PRINT)) }}</textarea><p class="help-block"><code>Authorization</code> and <code>Host</code> are stripped for safety.</p></div>

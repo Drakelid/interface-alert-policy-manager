@@ -76,6 +76,7 @@ class IngestionController extends Controller
                 });
             });
         }
+        app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class)->put('last_ingestion_at', now()->toIso8601String());
         \Illuminate\Support\Facades\Log::channel('iapm')->info('Alert ingestion completed.', ['device_id' => $device->device_id, 'alert_id' => $data['alert_id'] ?? null, 'alert_uid' => $data['alert_uid'] ?? null, 'state' => $state, 'counts' => $counts]);
         return response()->json(['status' => 'accepted', 'counts' => $counts]);
     }

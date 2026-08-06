@@ -15,7 +15,7 @@
 <td>{{ $p->priority }}</td>
 <td>@if($p->enabled)<span class="label label-success">Enabled</span>@else<span class="label label-default">Disabled</span>@endif</td>
 <td>@if($p->assignments_count)<a href="{{ route('iapm.assignments.index') }}">{{ $p->assignments_count }}</a>@else<span class="text-warning" title="No interfaces use this policy">0</span>@endif</td>
-<td>{{ $p->actions_count }}</td>
+<td>@if($p->enabled_actions_count>0){{ $p->enabled_actions_count }}@else<span class="label label-warning" title="This policy has no enabled notification action — matched interfaces will not page anyone."><i class="fa fa-bell-slash"></i> won't notify</span>@endif</td>
 <td><form method="post" action="{{ route('iapm.policies.clone',$p) }}" style="display:inline;">@csrf<button class="btn btn-default btn-xs">Clone</button></form></td>
 </tr>@endforeach</tbody></table></div>
 {{ $policies->links() }}

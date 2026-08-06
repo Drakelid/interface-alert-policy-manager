@@ -2,6 +2,17 @@
 <div class="container-fluid">@include('iapm::partials.nav')
 <h2>Settings</h2>
 
+<div class="panel {{ $values['has_token'] ? 'panel-default' : 'panel-warning' }}" id="ingestion-token">
+    <div class="panel-heading"><i class="fa fa-key"></i> Ingestion token @unless($values['has_token'])<span class="label label-warning pull-right">Step 0 — start here</span>@endunless</div>
+    <div class="panel-body">
+        <p class="help-block">The bearer token LibreNMS uses to authenticate to <code>/plugin/interface-alert-policy-manager/api/v1/alerts</code>. Rotating keeps the previous token valid for 15 minutes so you can update the transport without missing alerts.</p>
+        <p>Status: @if($values['has_token'])<span class="label label-success">Configured</span>@else<span class="label label-warning">Not generated</span>@endif</p>
+        <form method="post" action="{{ route('iapm.settings.rotate-token') }}" onsubmit="return confirm('Rotate ingestion token? The previous token stays valid for 15 minutes.')">@csrf
+            <button class="btn btn-warning">{{ $values['has_token']?'Rotate':'Generate' }} ingestion token</button>
+        </form>
+    </div>
+</div>
+
 <form method="post" action="{{ route('iapm.settings.update') }}" id="iapm-settings-form" data-dry-run-was="{{ $values['dry_run']?'1':'0' }}">@csrf @method('PUT')
 
 <div class="panel panel-default">
@@ -83,17 +94,6 @@
 
 <button class="btn btn-primary">Save settings</button>
 </form>
-
-<div class="panel panel-default" style="margin-top:20px;">
-    <div class="panel-heading">Ingestion token</div>
-    <div class="panel-body">
-        <p class="help-block">The bearer token LibreNMS uses to authenticate to <code>/plugin/interface-alert-policy-manager/api/v1/alerts</code>. Rotating keeps the previous token valid for 15 minutes so you can update the transport without missing alerts.</p>
-        <p>Status: @if($values['has_token'])<span class="label label-success">Configured</span>@else<span class="label label-warning">Not generated</span>@endif</p>
-        <form method="post" action="{{ route('iapm.settings.rotate-token') }}" onsubmit="return confirm('Rotate ingestion token? The previous token stays valid for 15 minutes.')">@csrf
-            <button class="btn btn-warning">{{ $values['has_token']?'Rotate':'Generate' }} ingestion token</button>
-        </form>
-    </div>
-</div>
 </div>
 
 <script>

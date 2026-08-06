@@ -20,11 +20,34 @@
     </select>
 </div>
 
-{{-- Reference-ID field, reused by port / port_group / device --}}
-<div class="form-group iapm-field" data-types="port,port_group,device">
-    <label id="iapm-ref-label">Reference ID</label>
-    <input name="assignment_reference" id="iapm-ref" class="form-control" value="{{ old('assignment_reference',$assignment->assignment_reference) }}">
-    <p class="help-block" id="iapm-ref-help">Numeric LibreNMS identifier.</p>
+{{-- Default catch-all warning --}}
+<div class="alert alert-info iapm-field" data-types="default"><i class="fa fa-info-circle"></i> A <strong>default</strong> assignment applies this policy to <strong>every interface</strong> not matched by a more specific assignment. Usually you want only one.</div>
+
+{{-- Device dropdown --}}
+<div class="form-group iapm-field" data-types="device">
+    <label>Device</label>
+    <select name="assignment_reference" class="form-control iapm-devsel" disabled>
+        <option value="">— select a device —</option>
+        @foreach($devices as $d)<option value="{{ $d->device_id }}" @selected(old('assignment_reference',$assignment->assignment_reference)==$d->device_id)>{{ $d->hostname }}@if($d->sysName && $d->sysName!==$d->hostname) ({{ $d->sysName }})@endif</option>@endforeach
+    </select>
+    <p class="help-block">All interfaces on this device.</p>
+</div>
+
+{{-- Port group dropdown --}}
+<div class="form-group iapm-field" data-types="port_group">
+    <label>Port group</label>
+    <select name="assignment_reference" class="form-control iapm-pgsel" disabled>
+        <option value="">— select a port group —</option>
+        @foreach($portGroups as $g)<option value="{{ $g->id }}" @selected(old('assignment_reference',$assignment->assignment_reference)==$g->id)>{{ $g->name }}</option>@endforeach
+    </select>
+    <p class="help-block">All interfaces in this LibreNMS port group.</p>
+</div>
+
+{{-- Specific port (by numeric id — there can be too many to list) --}}
+<div class="form-group iapm-field" data-types="port">
+    <label>Port ID</label>
+    <input name="assignment_reference" id="iapm-ref" class="form-control" value="{{ old('assignment_reference',$assignment->assignment_reference) }}" placeholder="e.g. 1143">
+    <p class="help-block">The stable LibreNMS <code>port_id</code>. Find it on the <a href="{{ route('iapm.matrix') }}" target="_blank">Interface Matrix</a>.</p>
 </div>
 
 {{-- Location dropdown --}}
@@ -99,14 +122,6 @@
     var typeSelect = document.getElementById('iapm-type');
     var form = document.getElementById('iapm-assignment-form');
 
-    function refFor(type) {
-        return ({
-            port: ['Port ID', 'The stable LibreNMS port_id (see the Interface Matrix).'],
-            port_group: ['Port group ID', 'Numeric LibreNMS port group id.'],
-            device: ['Device ID', 'Numeric LibreNMS device_id.']
-        })[type] || ['Reference', ''];
-    }
-
     function sync() {
         var type = typeSelect.value;
         // Show only fields whose data-types includes the current type.
@@ -116,11 +131,6 @@
             // Disable hidden inputs so their (stale) values are not submitted.
             el.querySelectorAll('input,select,textarea').forEach(function (i) { i.disabled = ! show; });
         });
-        // Relabel the shared reference field.
-        var info = refFor(type);
-        var label = document.getElementById('iapm-ref-label'), help = document.getElementById('iapm-ref-help');
-        if (label) label.textContent = info[0];
-        if (help) help.textContent = info[1];
         // match_mode: the group select owns it for device_group; otherwise submit a hidden default.
         document.getElementById('iapm-mode-fallback').disabled = (type === 'device_group');
     }
