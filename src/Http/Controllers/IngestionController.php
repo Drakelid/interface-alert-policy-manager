@@ -63,6 +63,7 @@ class IngestionController extends Controller
                 $reason = $suppression->reason($resolution->policy, $context, ! (bool) $device->status, SuppressionService::maintenanceSuppresses($device), SuppressionService::anyParentDown($device->parents), $dependencies->uplinkDown($device, $context->portId));
                 $target = $reason ? IncidentState::Suppressed : ($resolution->policy->trigger_after_seconds === 0 && $resolution->policy->failed_poll_count <= 1 ? IncidentState::Active : IncidentState::Pending);
                 $incident ??= new Incident(['incident_key' => Incident::key($context->deviceId, $context->portId), 'first_seen_at' => now(), 'notification_count' => 0]);
+                $priorState = $incident->exists ? $incident->state : null;
                 $reopening = $incident->exists && $incident->state === IncidentState::Recovered;
                 $portReceivers = collect($resolution->candidates)->first(fn ($candidate) => $candidate->assignment_type === \LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\AssignmentType::Port)?->metadata_json['receivers'] ?? [];
                 $groupReceivers = collect($resolution->candidates)->where('assignment_type', \LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\AssignmentType::DeviceGroup)->flatMap(fn ($candidate) => $candidate->metadata_json['receivers'] ?? [])->unique()->values()->all();
@@ -70,7 +71,12 @@ class IngestionController extends Controller
                 if (! $reason && $resolution->policy->failed_poll_count <= $contextData['observation_count'] && $resolution->policy->trigger_after_seconds === 0) $target = IncidentState::Active;
                 $incident->fill(['source_alert_id' => $data['alert_id'] ?? null, 'source_alert_uid' => $data['alert_uid'] ?? null, 'source_rule_id' => $data['rule_id'] ?? null, 'device_id' => $context->deviceId, 'port_id' => $context->portId, 'policy_id' => $resolution->policy->id, 'state' => $target, 'severity' => Severity::tryFrom($data['severity'] ?? '') ?? $resolution->policy->severity, 'first_seen_at' => $reopening ? now() : $incident->first_seen_at, 'last_seen_at' => now(), 'triggered_at' => $target === IncidentState::Active ? ($reopening ? now() : ($incident->triggered_at ?? now())) : null, 'recovered_at' => null, 'acknowledged_at' => null, 'acknowledged_by' => null, 'muted_until' => $reopening ? null : $incident->muted_until, 'notification_count' => $reopening ? 0 : $incident->notification_count, 'last_notification_at' => $reopening ? null : $incident->last_notification_at, 'suppression_reason' => $reason, 'context_json' => $contextData])->save();
                 if ($reopening) $incident->events()->create(['event_type' => 'reopened', 'event_message' => 'A new failure reopened the recovered interface incident.']);
-                $incident->events()->create(['event_type' => 'received', 'event_message' => 'Alert observation received.']); $incident->events()->create(['event_type' => $target->value, 'event_message' => 'Alert observation processed.', 'event_data' => ['assignment_id' => $resolution->winner?->id]]); $counts[$target->value]++; $counts['processed']++;
+                // Only write the observation/state events on a meaningful change (new incident,
+                // reopen, or state transition). A continued same-state re-alert just refreshes
+                // liveness above — writing 'received'+state events every interval would bloat the
+                // events table unboundedly for persistently-down interfaces at fleet scale.
+                if ($priorState === null || $reopening || $priorState !== $target) { $incident->events()->create(['event_type' => 'received', 'event_message' => 'Alert observation received.']); $incident->events()->create(['event_type' => $target->value, 'event_message' => 'Alert observation processed.', 'event_data' => ['assignment_id' => $resolution->winner?->id]]); }
+                $counts[$target->value]++; $counts['processed']++;
             });
         }
         if (isset($data['alert_id']) || isset($data['alert_uid']) || isset($data['rule_id'])) {

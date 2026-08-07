@@ -247,6 +247,24 @@ class IngestionTest extends IntegrationTestCase
         self::assertSame(0, \Illuminate\Support\Facades\DB::table('iapm_interface_policy_cache')->count());
     }
 
+    public function test_a_continued_active_observation_does_not_spam_events(): void
+    {
+        $this->defaultPolicy();
+        $device = $this->device();
+        $port = $this->downPort($device);
+
+        $this->ingest($this->alertPayload($device, [$this->fault($port)]))->assertOk();
+        $incident = Incident::first();
+        $eventsAfterFirst = $incident->events()->count();
+
+        // Same still-down interface re-alerted (new timestamp), state unchanged (active).
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], 1, ['timestamp' => now()->addMinute()->toIso8601String()]))->assertOk();
+
+        // Liveness advanced, but no new received/state events were written.
+        self::assertSame($eventsAfterFirst, $incident->fresh()->events()->count());
+        self::assertSame(2, (int) $incident->fresh()->context_json['observation_count']);
+    }
+
     public function test_unpoliced_alerts_can_be_ignored_instead_of_recorded(): void
     {
         $this->settings->put('record_unpoliced', false);
