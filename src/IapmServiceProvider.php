@@ -77,7 +77,7 @@ class IapmServiceProvider extends ServiceProvider
             if ($queued && $workers > 0 && $backendReady) {
                 for ($i = 1; $i <= $workers; $i++) {
                     $args = $conn ? [$conn] : [];
-                    $args += ['--queue' => (string) config('iapm.queue.name', 'iapm'), '--name' => 'iapm-'.$i, '--sleep' => 1, '--tries' => (int) config('iapm.queue.tries', 3), '--max-time' => 3600, '--rest' => 0];
+                    $args += ['--queue' => (string) config('iapm.queue.name', 'iapm'), '--name' => 'iapm-'.$i, '--sleep' => 1, '--tries' => (int) config('iapm.queue.tries', 3), '--max-time' => 3600];
                     $schedule->command('queue:work', $args)->everyMinute()->withoutOverlapping(70)->runInBackground();
                 }
             }
