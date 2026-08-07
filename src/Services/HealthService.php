@@ -32,7 +32,7 @@ class HealthService
 
         // Only relevant when queued delivery is enabled: a worker must be draining
         // the queue, or notifications pile up undelivered.
-        if ($this->settings->get('dispatch_mode', 'sync') === 'queue') {
+        if ($this->settings->get('dispatch_mode', 'queue') === 'queue') {
             $checks[] = $this->queueWorkerCheck();
         }
 

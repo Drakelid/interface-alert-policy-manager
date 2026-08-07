@@ -61,6 +61,26 @@ class IapmServiceProvider extends ServiceProvider
             $schedule->command('iapm:reconcile')->everyMinute()->withoutOverlapping(10);
             $schedule->command('iapm:process-actions')->everyMinute()->withoutOverlapping(10);
             $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping(10);
+
+            // When queued dispatch is enabled (the default), keep queue workers running
+            // via the scheduler so notifications drain without requiring systemd. Each is
+            // a background, non-overlapping worker that recycles hourly (avoids leaks,
+            // picks up new code). --name makes each command distinct so N run in parallel.
+            // For heavier throughput add dedicated systemd workers (they safely share the
+            // same queue); set IAPM_QUEUE_WORKERS=0 to let the scheduler manage none.
+            try { $queued = app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class)->get('dispatch_mode', 'queue') === 'queue'; } catch (\Throwable) { $queued = true; }
+            $workers = max(0, (int) config('iapm.queue.workers', 3));
+            $conn = config('iapm.queue.connection');
+            // Don't spawn database workers before the jobs table exists (fresh install
+            // pre-migration) — they'd just crash-loop. Redis needs no such table.
+            $backendReady = $conn === 'redis' || (function () { try { return \Illuminate\Support\Facades\Schema::hasTable('jobs'); } catch (\Throwable) { return false; } })();
+            if ($queued && $workers > 0 && $backendReady) {
+                for ($i = 1; $i <= $workers; $i++) {
+                    $args = $conn ? [$conn] : [];
+                    $args += ['--queue' => (string) config('iapm.queue.name', 'iapm'), '--name' => 'iapm-'.$i, '--sleep' => 1, '--tries' => (int) config('iapm.queue.tries', 3), '--max-time' => 3600, '--rest' => 0];
+                    $schedule->command('queue:work', $args)->everyMinute()->withoutOverlapping(70)->runInBackground();
+                }
+            }
         });
     }
 }

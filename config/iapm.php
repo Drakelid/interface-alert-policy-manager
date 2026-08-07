@@ -42,6 +42,11 @@ return [
         'name' => env('IAPM_QUEUE_NAME', 'iapm'),
         'tries' => 3,
         'timeout' => 60,
+        // How many queue workers the scheduler keeps running when dispatch_mode=queue.
+        // Each is one concurrent SMS in flight — raise for wider parallel delivery,
+        // but not beyond what your SMS gateway accepts concurrently. Set 0 to let the
+        // scheduler manage none (e.g. when you run dedicated systemd workers instead).
+        'workers' => (int) env('IAPM_QUEUE_WORKERS', 3),
     ],
     'sms' => [
         'gateway_url' => env('IAPM_SMS_GATEWAY_URL'),

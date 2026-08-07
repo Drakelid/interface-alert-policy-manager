@@ -40,7 +40,7 @@ class NotificationDispatcher
             return $this->configurationFailure($incident, $destination, $action, $phase, 'Destination is disabled.');
         }
 
-        if ($this->settings->get('dispatch_mode', 'sync') === 'queue') {
+        if ($this->settings->get('dispatch_mode', 'queue') === 'queue') {
             $marker = null;
             try {
                 $marker = $this->record($incident, $destination, $action, $phase, $receiver, new TransportResult(false, null, null, 'Queued for delivery.'), 'queued');

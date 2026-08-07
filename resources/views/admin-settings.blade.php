@@ -63,10 +63,10 @@
     <div class="panel-body">
         <div class="form-group"><label>Dispatch mode</label>
             <select class="form-control" name="dispatch_mode">
-                <option value="sync" @selected($values['dispatch_mode']==='sync')>Synchronous (default) — send during the scheduled run</option>
-                <option value="queue" @selected($values['dispatch_mode']==='queue')>Queued — hand off to queue workers</option>
+                <option value="queue" @selected($values['dispatch_mode']==='queue')>Queued (default) — parallel delivery via queue workers</option>
+                <option value="sync" @selected($values['dispatch_mode']==='sync')>Synchronous — send inside the every-minute job</option>
             </select>
-            <p class="help-block"><strong>Synchronous</strong> is right for most sites: notifications send inside the every-minute job (bounded by a wall-clock budget). <strong>Queued</strong> hands each notification to a Laravel queue for worker concurrency during very large storms — it requires a running worker (<code>php artisan queue:work</code>) and, for true async, a real queue driver via <code>IAPM_QUEUE_CONNECTION</code>. If you switch to Queued without a worker, notifications will sit in the queue undelivered.</p>
+            <p class="help-block"><strong>Queued</strong> delivers notifications in parallel, so large simultaneous events drain quickly. Everything needed is set up automatically: the queue tables are created on install, and the LibreNMS scheduler keeps <code>{{ (int) config('iapm.queue.workers', 3) }}</code> worker(s) running (tune with <code>IAPM_QUEUE_WORKERS</code>; point at Redis with <code>IAPM_QUEUE_CONNECTION</code>). The Overview health panel flags it if the queue ever stops draining. <strong>Synchronous</strong> sends inside the every-minute job (bounded by a wall-clock budget) — simpler, no workers, but serial.</p>
         </div>
     </div>
 </div>

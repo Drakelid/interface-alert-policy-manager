@@ -12,6 +12,22 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class QueueDispatchTest extends IntegrationTestCase
 {
+    public function test_queued_is_the_default_dispatch_mode(): void
+    {
+        Queue::fake();
+        Http::fake();
+        // Remove the test harness's sync override so the production default applies.
+        \Illuminate\Support\Facades\DB::table('iapm_settings')->where('setting_key', 'dispatch_mode')->delete();
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $this->incident($policy, $this->downPort($this->device()));
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        Queue::assertPushed(SendNotificationJob::class, 1);
+        Http::assertNothingSent();
+    }
+
     public function test_queue_mode_enqueues_a_job_instead_of_sending(): void
     {
         Queue::fake();

@@ -42,6 +42,9 @@ abstract class IntegrationTestCase extends TestCase
         $this->settings = app(SettingStore::class);
         $this->settings->put('dry_run', false);
         $this->settings->put('ingestion_token', 'test-ingestion-token');
+        // Default delivery to synchronous in tests (production default is queued);
+        // QueueDispatchTest opts back into 'queue' explicitly.
+        $this->settings->put('dispatch_mode', 'sync');
     }
 
     protected function device(array $attributes = []): Device
