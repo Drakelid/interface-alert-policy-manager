@@ -44,7 +44,10 @@ class InstallCheckCommand extends Command
         $this->report('scheduler_registration', $scheduled);
         $ok = $ok && $scheduled;
 
-        $this->line('[INFO] queue='.$this->laravel['config']->get('queue.default', 'sync').'; IAPM uses durable database incidents/actions and does not require queues.');
+        $dispatchMode = app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class)->get('dispatch_mode', 'queue');
+        $this->line('[INFO] delivery='.$dispatchMode.($dispatchMode === 'queue'
+            ? ' (queue connection='.$this->laravel['config']->get('queue.default', 'sync').'; requires running workers — `queue:work --queue=iapm` or systemd)'
+            : ' (synchronous, sent inside the scheduled run)'));
         $this->line('[INFO] dry_run='.($readiness->dryRun() ? 'enabled (no external delivery)' : 'disabled (live delivery)'));
 
         if ($this->option('gateway')) {

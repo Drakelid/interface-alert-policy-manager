@@ -43,6 +43,16 @@ class ReadinessTest extends IntegrationTestCase
         self::assertTrue($readiness->ready(), 'All setup checks pass.');
     }
 
+    public function test_disabling_record_unpoliced_satisfies_the_coverage_check(): void
+    {
+        $this->policy();   // a policy exists, but no default assignment / default policy
+        self::assertFalse($this->keyed()['default_policy'], 'No default coverage configured yet.');
+
+        // Intentionally ignoring unmatched interfaces is a valid coverage decision.
+        $this->settings->put('record_unpoliced', false);
+        self::assertTrue($this->keyed()['default_policy']);
+    }
+
     public function test_the_alert_source_check_is_informational_not_a_setup_gate(): void
     {
         $this->settings->put('ingestion_token', 'a-token');

@@ -38,7 +38,7 @@ class ReadinessService
             $this->check('ingestion_token', 'Ingestion token generated', $migrated && filled($this->settings->get('ingestion_token')), 'setup', 'Generate the bearer token LibreNMS uses to post alerts.', 'iapm.settings.edit', 'Generate token'),
             $this->check('policy_exists', 'At least one enabled policy', $migrated && Policy::where('enabled', true)->exists(), 'setup', 'Create a policy describing trigger, repeat, and recovery behaviour.', 'iapm.policies.create', 'Create policy'),
             $this->check('policy_action', 'A policy has an enabled notification action', $migrated && Policy::where('enabled', true)->whereHas('actions', fn ($q) => $q->where('enabled', true))->exists(), 'setup', 'Add an enabled action to a policy — without one, matched interfaces trigger incidents but never notify.', 'iapm.policies.index', 'Open policies'),
-            $this->check('default_policy', 'A default assignment or default policy', $migrated && $this->hasDefaultPolicy(), 'setup', 'Add a default assignment so interfaces without a specific match are still covered.', 'iapm.assignments.create', 'Create assignment'),
+            $this->check('default_policy', 'Coverage for unmatched interfaces decided', $migrated && $this->hasDefaultPolicy(), 'setup', 'Add a default assignment/policy so interfaces without a specific match are covered — or turn off "Record alerts for interfaces with no policy" (Settings) to intentionally ignore them.', 'iapm.assignments.create', 'Create assignment'),
             $this->check('enabled_destination', 'An enabled delivery destination', $migrated && Destination::where('enabled', true)->exists(), 'setup', 'Create the SMS gateway (or webhook) destination that will deliver notifications.', 'iapm.destinations.create', 'Create destination'),
             $this->check('sms_receiver', 'A resolvable default receiver', $migrated && $this->hasReceiver(), 'setup', 'Set a global SMS receiver or a per-destination default receiver.', 'iapm.settings.edit', 'Set receiver'),
             $this->check('alert_source', 'LibreNMS is posting alerts', $migrated && $this->hasReceivedAlerts(), 'info', 'Configure the LibreNMS alert rule, template and API transport to post here.', 'iapm.setup-helper', 'Open setup helper'),
@@ -57,6 +57,12 @@ class ReadinessService
 
     private function hasDefaultPolicy(): bool
     {
+        // Recording unpoliced interfaces off = they are intentionally ignored, so a
+        // default assignment/policy is not required — the coverage decision is made.
+        if (! (bool) $this->settings->get('record_unpoliced', true)) {
+            return true;
+        }
+
         return \Illuminate\Support\Facades\DB::table('iapm_assignments')->where('assignment_type', 'default')->where('enabled', true)->exists()
             || filled($this->settings->get('default_policy_id'));
     }
