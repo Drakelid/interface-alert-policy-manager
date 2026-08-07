@@ -1,8 +1,20 @@
 {
-    "name": "librenms/interface-alert-policy-manager",
+    "name": "drakelid/interface-alert-policy-manager",
     "description": "Scalable per-interface alert policies for LibreNMS",
     "type": "library",
     "license": "GPL-3.0-or-later",
+    "keywords": ["librenms", "plugin", "alerting", "interface", "sms"],
+    "homepage": "https://github.com/Drakelid/interface-alert-policy-manager",
+    "support": {
+        "issues": "https://github.com/Drakelid/interface-alert-policy-manager/issues",
+        "source": "https://github.com/Drakelid/interface-alert-policy-manager"
+    },
+    "authors": [
+        {
+            "name": "Drakelid",
+            "homepage": "https://github.com/Drakelid"
+        }
+    ],
     "require": {
         "php": "^8.2",
         "illuminate/contracts": "^12.10",
