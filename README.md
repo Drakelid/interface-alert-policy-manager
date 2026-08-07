@@ -172,6 +172,40 @@ sudo -u librenms env FORCE=1 composer require drakelid/interface-alert-policy-ma
 php artisan migrate && ./lnms plugin:enable interface-alert-policy-manager && php artisan iapm:install-check
 ```
 
+### Troubleshooting
+
+**`env: 'composer': No such file or directory`, or composer commands seem to do nothing.**
+On many LibreNMS hosts `composer` is not on the PATH (it's a phar), so bare `composer …` silently fails. Use the LibreNMS wrapper (`./scripts/composer_wrapper.php …`) for install/update, and for any *manual* composer step use the phar directly, e.g. `sudo -u librenms php /opt/librenms/composer.phar dump-autoload`. Find it with `sudo find /opt/librenms -maxdepth 2 -name 'composer*'`.
+
+**`Ambiguous class resolution … InterfaceAlertPolicyManager … the first will be used` during `composer` dump / update.**
+The plugin is installed **twice** — usually a leftover `vendor/librenms/interface-alert-policy-manager` (an old path-repo/dev install) next to the Packagist `vendor/drakelid/…`. "The first will be used" means the **old** copy wins, so you run stale code. Remove the old one:
+```bash
+cd /opt/librenms
+grep -c "librenms/interface-alert-policy-manager" composer.json composer.plugins.json   # find where it's required
+# delete that require from composer.json AND composer.plugins.json, then:
+sudo -u librenms php /opt/librenms/composer.phar remove librenms/interface-alert-policy-manager   # if in composer.json
+sudo rm -rf vendor/librenms/interface-alert-policy-manager
+sudo -u librenms php /opt/librenms/composer.phar dump-autoload 2>&1 | grep -c InterfaceAlertPolicyManager   # want 0
+```
+If you previously ran a self-heal cron to survive updates (`/etc/cron.d/iapm`), delete it — Packagist + `composer.plugins.json` replaces it, and it will keep re-adding the old package: `sudo rm -f /etc/cron.d/iapm /opt/iapm/ensure-iapm.sh`.
+
+**Notifications aren't delivered even though everything is green.**
+Check the delivery mode and workers. `iapm:install-check` prints `delivery=queue` or `delivery=sync`:
+- `delivery=sync` — sent inline by the scheduler; no workers needed. Fine, but no parallelism.
+- `delivery=queue` — requires running workers. Confirm with `pgrep -af 'queue:work --queue=iapm'`. If nothing is draining, jobs pile up in the `jobs` table. Either start workers (scheduler-managed needs `IAPM_QUEUE_WORKERS>0`; or the systemd units above) or switch to sync: Settings → *Delivery dispatch*.
+
+To read or change the mode from the CLI:
+```bash
+sudo -u librenms php artisan tinker --execute="\$s=app(LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class); echo \$s->get('dispatch_mode','queue').PHP_EOL;"
+sudo -u librenms php artisan tinker --execute="app(LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class)->put('dispatch_mode','queue');"
+```
+
+**`Table 'librenms.jobs' doesn't exist`.** Queued delivery needs the queue tables — run `php artisan migrate --force` (the plugin ships the migration). Until then, IAPM automatically falls back to synchronous delivery, so no alert is lost.
+
+**`install-check` shows `[FAIL] default_policy`.** Decide coverage: add a **Default** assignment (or set a default policy) so unmatched interfaces are covered, **or** Settings → turn off *Record alerts for interfaces with no policy* to intentionally ignore them (recommended when you scope IAPM to specific interfaces).
+
+**Plugin missing from the menu / "must be run as the user librenms".** Run `artisan`/`lnms` as `sudo -u librenms`. If the plugin vanished after an update, confirm it's in `composer.plugins.json` (that's what `daily.sh` reinstalls from) and that `vendor/drakelid/interface-alert-policy-manager` exists; re-run step 1 if not.
+
 ## Configuration and security
 
 Create a cryptographically random ingestion token (at least 32 random bytes), store it under `ingestion_token` in encrypted IAPM settings, and use a short overlap in `previous_ingestion_token` during rotation. Destination configuration uses Laravel encrypted casts. Environment placeholders are supported, but encrypted database configuration is preferred for administration. Never put credentials in a URL.
