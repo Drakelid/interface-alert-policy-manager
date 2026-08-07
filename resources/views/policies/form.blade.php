@@ -15,10 +15,18 @@ $fields = [
   'maximum_repeats'=>['label'=>'Maximum repeats','type'=>'number','min'=>0,'help'=>'Cap on reminder re-sends. Blank = unlimited.'],
 ];
 @endphp
-@foreach($fields as $key=>$f)<div class="form-group"><label>{{ $f['label'] }}@isset($f['unit']) <span class="text-muted">({{ $f['unit'] }})</span>@endisset</label>
-@if($f['type']==='textarea')<textarea class="form-control" name="{{ $key }}">{{ old($key,$policy->$key) }}</textarea>
-@else<input class="form-control{{ !empty($f['seconds'])?' iapm-seconds':'' }}" type="{{ $f['type'] }}" @isset($f['min'])min="{{ $f['min'] }}"@endisset name="{{ $key }}" value="{{ old($key,$policy->$key) }}" {{ !empty($f['required'])?'required':'' }}>@if(!empty($f['seconds']))<span class="help-block iapm-seconds-hint text-info" style="display:inline;margin-left:6px;"></span>@endif@endif
-@isset($f['help'])<p class="help-block">{{ $f['help'] }}</p>@endisset</div>@endforeach
+@foreach($fields as $key => $f)
+<div class="form-group">
+    <label>{{ $f['label'] }}@if(!empty($f['unit'])) <span class="text-muted">({{ $f['unit'] }})</span>@endif</label>
+    @if($f['type']==='textarea')
+    <textarea class="form-control" name="{{ $key }}">{{ old($key,$policy->$key) }}</textarea>
+    @else
+    <input class="form-control {{ !empty($f['seconds'])?'iapm-seconds':'' }}" type="{{ $f['type'] }}" name="{{ $key }}" value="{{ old($key,$policy->$key) }}"{{ isset($f['min']) ? ' min='.$f['min'] : '' }}{{ !empty($f['required']) ? ' required' : '' }}>
+    @if(!empty($f['seconds']))<span class="help-block iapm-seconds-hint text-info" style="display:inline;margin-left:6px;"></span>@endif
+    @endif
+    @if(!empty($f['help']))<p class="help-block">{{ $f['help'] }}</p>@endif
+</div>
+@endforeach
 <div class="form-group"><label>Severity</label><select class="form-control" name="severity">@foreach(['info','warning','critical'] as $v)<option @selected(old('severity',$policy->severity?->value??'critical')===$v)>{{ $v }}</option>@endforeach</select></div></div><div class="col-md-6">
 @foreach(['enabled','notifications_enabled','notify_recovery','suppress_device_down','suppress_admin_down','suppress_ignored_port','suppress_disabled_port','suppress_deleted_port','suppress_maintenance','suppress_parent_down'] as $key)<input type="hidden" name="{{ $key }}" value="0"><div class="checkbox"><label><input type="checkbox" name="{{ $key }}" value="1" @checked(old($key,$policy->exists?$policy->$key:true))> {{ str_replace('_',' ',ucfirst($key)) }}</label></div>@endforeach
 <input type="hidden" name="suppress_uplink_down" value="0"><div class="checkbox"><label><input type="checkbox" name="suppress_uplink_down" value="1" @checked(old('suppress_uplink_down',$policy->exists?$policy->suppress_uplink_down:false))> Suppress when uplink down <span class="help-block" style="display:inline">(root-cause: needs an uplink port group set in Settings)</span></label></div>
