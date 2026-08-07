@@ -2,6 +2,21 @@
 
 IAPM is a LibreNMS package plugin that turns one broad interface-down alert into independently managed per-`port_id` incidents. It resolves policy assignments, records decisions and delivery attempts, reconciles current port state, and owns SMS/webhook delivery.
 
+## Quick start
+
+For the impatient — install and enable, then finish configuration in the UI. See [Installation](#installation) for the full walkthrough and the production queue-worker setup.
+
+```bash
+cd /opt/librenms
+sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php require drakelid/interface-alert-policy-manager
+sudo -u librenms php artisan migrate --force
+sudo -u librenms ./lnms plugin:enable interface-alert-policy-manager
+sudo -u librenms php artisan optimize:clear && sudo systemctl reload php8.4-fpm
+sudo -u librenms php artisan iapm:install-check
+```
+
+Then open **Plugins → Interface Alert Policy Manager** and follow the Overview setup checklist: generate the ingestion token, add a destination, a policy with a notification action, and an assignment — then wire up the LibreNMS rule/template/transport from **Tools → Setup Helper**. Queued delivery and its workers start automatically. It begins in dry-run; turn that off when you're ready to send.
+
 ## Compatibility discovered
 
 Development targets LibreNMS `master` commit `9be80715833d7b350e423301e8b005ac730d8abd` (2026-07-09), PHP `^8.2`, and Laravel `^12.10`. The current LibreNMS package system uses Laravel Composer discovery plus `librenms/plugin-interfaces`; `PluginManagerInterface::publishHook()` supplies menu/settings integration. IAPM references `App\Models\Device`, `Port`, `DeviceGroup`, `PortGroup`, `Location`, and related models directly without copying core models. LibreNMS alert states are `CLEAR/RECOVERED=0`, `ACTIVE=1`, `ACKNOWLEDGED=2`, `WORSE=3`, `BETTER=4`, and `CHANGED=5`.
