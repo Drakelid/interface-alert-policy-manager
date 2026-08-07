@@ -8,17 +8,154 @@ Development targets LibreNMS `master` commit `9be80715833d7b350e423301e8b005ac73
 
 ## Installation
 
-For local development, from the LibreNMS directory:
+Follow these steps in order. At the end the plugin is fully operational and delivering notifications. All commands run on the LibreNMS host; `php artisan` must run as the `librenms` user.
 
-```sh
-composer config repositories.iapm '{"type":"path","url":"../interface-alert-policy-manager","options":{"symlink":true}}'
-./lnms plugin:add librenms/interface-alert-policy-manager @dev
-php artisan migrate
-./lnms plugin:enable interface-alert-policy-manager
-php artisan iapm:install-check
+### Requirements
+
+- LibreNMS on Laravel 12+ with its scheduler running (the standard `* * * * * librenms /opt/librenms/lnms schedule:run` cron). IAPM's reconcile, action processing, and queue workers all rely on it.
+- PHP 8.2+ and Composer.
+- An SMS gateway (or webhook) reachable from the LibreNMS host.
+
+### 1. Install the package (Packagist)
+
+Installs via LibreNMS's composer wrapper so it is written to `composer.plugins.json` and **survives `daily.sh` updates**:
+
+```bash
+cd /opt/librenms
+sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php require drakelid/interface-alert-policy-manager
 ```
 
-Keep the package outside LibreNMS core so updates do not overwrite it. Production releases should be installed from a versioned Composer repository. Back up the database before upgrades; migrations are additive and reversible. Disable the plugin before uninstalling, retain a database backup, then remove the Composer package. Uninstall migrations deliberately delete IAPM data.
+<sub>If your LibreNMS version's wrapper has no `require` subcommand: add `{"require":{"drakelid/interface-alert-policy-manager":"^1.0"}}` to `/opt/librenms/composer.plugins.json`, then `sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php update drakelid/interface-alert-policy-manager`.</sub>
+
+### 2. Migrate and enable
+
+```bash
+sudo -u librenms php artisan migrate --force          # IAPM tables + queue tables + scale indexes
+sudo -u librenms ./lnms plugin:enable interface-alert-policy-manager    # if not already active
+sudo -u librenms php artisan optimize:clear && sudo systemctl reload php8.4-fpm
+sudo -u librenms php artisan iapm:install-check        # should report all green
+```
+
+Refresh LibreNMS — **Plugins → Interface Alert Policy Manager** is now in the menu, starting in **dry-run** (nothing is sent until you go live in step 7).
+
+### 3. Configure the essentials (UI)
+
+Open the plugin and work down the **Overview setup checklist** (or the numbered **Configure** menu). Each step has a Fix button:
+
+1. **Settings → generate the ingestion token** (top of the page).
+2. **Destinations → create** your SMS gateway (URL, credentials, default receiver). Use *Send test* to confirm it reaches the gateway.
+3. **Policies → create** a policy (trigger delay, repeats, recovery), then **add at least one notification Action** pointing at the destination — a policy with no action never notifies.
+4. **Assignments → create** how interfaces map to the policy. A **Default** assignment covers every interface; or scope to specific devices/groups/port-groups/regex.
+5. **Large fleets:** either set a default assignment/policy so nothing is unmatched, **or** Settings → turn **off** *Record alerts for interfaces with no policy* so un-scoped interfaces are ignored instead of stored.
+
+### 4. Point LibreNMS at IAPM (Setup Helper)
+
+Open **Tools → Setup Helper**. Copy the three blocks into LibreNMS alerting:
+
+1. **Alert rule** — build it in the rule editor so LibreNMS validates it.
+2. **Alert template** — paste as the rule's template.
+3. **API transport** — an *API* transport (POST, "send as form" OFF) to the ingestion URL with the `Authorization: Bearer <token>` header; route the rule to it.
+
+The Setup Helper's **"Confirm it's working"** panel turns green once LibreNMS posts its first alert.
+
+### 5. Delivery workers (queued dispatch is the default)
+
+Queued delivery is on by default and **self-provisions**: the queue tables were created in step 2, and the scheduler keeps `IAPM_QUEUE_WORKERS` (default 3) background workers draining the queue — nothing else to do for a working setup. To confirm:
+
+```bash
+pgrep -af 'queue:work --queue=iapm'     # workers appear within ~1 minute
+```
+
+For a **production-hardened** setup (supervised, boot-persistent, auto-restarting workers), see [Rock-solid queue workers](#rock-solid-queue-workers-production) below and set `IAPM_QUEUE_WORKERS=0` so systemd owns the workers. To use synchronous delivery instead (no workers), Settings → *Delivery dispatch* → Synchronous.
+
+### 6. Test before going live
+
+With dry-run still on, fire a synthetic alert and confirm the pipeline without sending anything:
+
+- **Tools → Simulate Alert** for one interface, then check the **Delivery Log** (rows show `dry_run`).
+- **Tools → Policy Test** shows the effective policy and *who would be paged* for a given `port_id`.
+
+### 7. Go live
+
+Settings → turn **off Dry-run** (you'll be asked to confirm). Real notifications now flow. Watch the first genuine interface-down incident through the **Overview** and **Delivery Log**.
+
+### Verify it's healthy
+
+The **Overview health panel** should be all green, and:
+
+```bash
+sudo -u librenms php artisan iapm:health   # exits 0 when scheduler, gateway, backlog, and queue are healthy
+```
+
+Point external monitoring at `iapm:health` as a dead-man's switch.
+
+---
+
+### Rock-solid queue workers (production)
+
+For large fleets, run the workers under **systemd** (auto-restart, boot-persistent, memory-capped) instead of the scheduler. First disable the scheduler-managed workers:
+
+```bash
+echo 'IAPM_QUEUE_WORKERS=0' | sudo tee -a /opt/librenms/.env
+# optional: keep queue load off MySQL at scale
+# echo 'IAPM_QUEUE_CONNECTION=redis' | sudo tee -a /opt/librenms/.env
+cd /opt/librenms && sudo -u librenms php artisan config:clear
+sudo -u librenms bash -lc 'command -v php'    # note the php path for the unit below
+```
+
+Install the worker template and start N instances (concurrency = instance count; match your gateway):
+
+```bash
+sudo tee /etc/systemd/system/iapm-worker@.service >/dev/null <<'UNIT'
+[Unit]
+Description=IAPM notification queue worker %i
+After=network-online.target mariadb.service mysql.service redis-server.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=librenms
+Group=librenms
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/php /opt/librenms/artisan queue:work --queue=iapm --name=iapm-%i --sleep=1 --tries=3 --backoff=10 --max-time=3600 --timeout=90
+KillSignal=SIGTERM
+TimeoutStopSec=120
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now iapm-worker@{1..6}
+```
+
+<sub>Adjust the `ExecStart` php path to match `command -v php`. For Redis, insert `redis` right after `queue:work`. Failed sends land in `failed_jobs` — inspect with `php artisan queue:failed`, retry with `queue:retry all`.</sub>
+
+### Updating
+
+`daily.sh` reinstalls the package from `composer.plugins.json`, so updates are automatic within your version constraint. Publish a new release by tagging (`git tag -a v1.2.0 && git push origin v1.2.0`). After any update that changes code, restart the workers so they load it:
+
+```bash
+sudo -u librenms php artisan migrate --force
+sudo -u librenms php artisan optimize:clear && sudo systemctl reload php8.4-fpm
+sudo systemctl restart 'iapm-worker@*'        # or `php artisan queue:restart` for scheduler-managed workers
+```
+
+Back up the database before upgrades; migrations are additive. To uninstall: disable the plugin, back up, then remove the Composer package — uninstall migrations deliberately delete IAPM data.
+
+### Development install (path repo)
+
+For local development against a checkout instead of Packagist:
+
+```bash
+cd /opt/librenms
+composer config repositories.iapm '{"type":"path","url":"../interface-alert-policy-manager","options":{"symlink":true}}'
+sudo -u librenms env FORCE=1 composer require drakelid/interface-alert-policy-manager:@dev
+php artisan migrate && ./lnms plugin:enable interface-alert-policy-manager && php artisan iapm:install-check
+```
 
 ## Configuration and security
 
