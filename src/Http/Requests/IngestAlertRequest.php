@@ -5,11 +5,15 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Support\Facades\Log;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\StateNormalizer;
 
 class IngestAlertRequest extends FormRequest
 {
-    public function authorize(): bool { return true; }
+    public function authorize(): bool
+    {
+        return true;
+    }
 
     /**
      * LibreNMS alert templates may emit identifiers as JSON strings or numbers
@@ -85,7 +89,7 @@ class IngestAlertRequest extends FormRequest
 
     protected function failedValidation(Validator $validator): void
     {
-        \Illuminate\Support\Facades\Log::channel('iapm')->warning('Ingestion payload validation failed.', ['ip' => $this->ip(), 'fields' => array_keys($validator->errors()->toArray())]);
+        Log::channel('iapm')->warning('Ingestion payload validation failed.', ['ip' => $this->ip(), 'fields' => array_keys($validator->errors()->toArray())]);
         throw new HttpResponseException(response()->json(['error' => ['code' => 'validation_failed', 'message' => 'The alert payload is invalid.', 'fields' => $validator->errors()]], 422));
     }
 }

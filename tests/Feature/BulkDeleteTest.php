@@ -3,17 +3,20 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class BulkDeleteTest extends IntegrationTestCase
 {
     private function assignment(Policy $policy, array $attributes = []): Assignment
     {
-        return $policy->assignments()->create(array_merge(['assignment_type' => 'device', 'assignment_reference' => (string) fake()->unique()->numberBetween(1, 99999), 'match_mode' => 'any', 'priority' => 0, 'enabled' => true], $attributes));
+        return $policy->assignments()->create(array_merge(['assignment_type' => 'device', 'assignment_reference' => (string) $this->faker->unique()->numberBetween(1, 99999), 'match_mode' => 'any', 'priority' => 0, 'enabled' => true], $attributes));
     }
 
     public function test_assignments_are_bulk_deleted(): void
@@ -37,7 +40,7 @@ class BulkDeleteTest extends IntegrationTestCase
         $policy = $this->policy();
         $a = $this->assignment($policy);
 
-        $this->actingAs(User::factory()->create())
+        $this->actingAs(User::factory()->create(['enabled' => true]))
             ->delete('/plugin/interface-alert-policy-manager/assignments-bulk', ['ids' => [$a->id]])
             ->assertForbidden();
 
@@ -104,13 +107,13 @@ class BulkDeleteTest extends IntegrationTestCase
         $policy = $this->defaultPolicy();
         $port = $this->downPort($this->device());
         // Warm the cache by resolving the port.
-        app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver::class)
-            ->resolve(app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService::class)->forPort($port));
-        self::assertSame(1, \Illuminate\Support\Facades\DB::table('iapm_interface_policy_cache')->count());
+        app(PolicyResolver::class)
+            ->resolve(app(InterfaceContextService::class)->forPort($port));
+        self::assertSame(1, DB::table('iapm_interface_policy_cache')->count());
 
         $this->actingAs($this->admin())
             ->delete('/plugin/interface-alert-policy-manager/assignments-bulk', ['ids' => $policy->assignments()->pluck('id')->all()]);
 
-        self::assertSame(0, \Illuminate\Support\Facades\DB::table('iapm_interface_policy_cache')->count(), 'Model delete events fired, clearing the cache.');
+        self::assertSame(0, DB::table('iapm_interface_policy_cache')->count(), 'Model delete events fired, clearing the cache.');
     }
 }

@@ -24,6 +24,12 @@ return [
         // For very high burst volume, move delivery onto a queue with workers.
         'max_seconds' => 50,
     ],
+    'resolver' => [
+        // Regex assignments cannot be indexed by value; cap the two matcher lists
+        // so an accidental import cannot turn every interface resolution into an
+        // unbounded regex workload.
+        'max_regex_assignments' => 5000,
+    ],
     'http' => [
         'connect_timeout' => 5,
         'timeout' => 15,

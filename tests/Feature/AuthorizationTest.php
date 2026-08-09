@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class AuthorizationTest extends IntegrationTestCase
 {
@@ -16,7 +17,7 @@ class AuthorizationTest extends IntegrationTestCase
 
     public function test_a_user_without_abilities_cannot_view_the_plugin(): void
     {
-        $this->actingAs(User::factory()->create())
+        $this->actingAs(User::factory()->create(['enabled' => true]))
             ->get('/plugin/interface-alert-policy-manager')
             ->assertForbidden();
     }
@@ -32,7 +33,7 @@ class AuthorizationTest extends IntegrationTestCase
     {
         $incident = $this->incident($this->policy(), $this->downPort($this->device()));
 
-        $this->actingAs(User::factory()->create())
+        $this->actingAs(User::factory()->create(['enabled' => true]))
             ->post("/plugin/interface-alert-policy-manager/incidents/{$incident->id}/acknowledge")
             ->assertForbidden();
 
@@ -44,7 +45,7 @@ class AuthorizationTest extends IntegrationTestCase
         Http::fake();
         $destination = $this->smsDestination();
 
-        $this->actingAs(User::factory()->create())
+        $this->actingAs(User::factory()->create(['enabled' => true]))
             ->post("/plugin/interface-alert-policy-manager/destinations/{$destination->id}/test", ['receiver' => 'noc'])
             ->assertForbidden();
 
@@ -78,6 +79,28 @@ class AuthorizationTest extends IntegrationTestCase
         $this->actingAs($this->admin())
             ->post("/plugin/interface-alert-policy-manager/incidents/{$incident->id}/acknowledge")
             ->assertStatus(409);
+    }
+
+    #[DataProvider('nonAcknowledgedStates')]
+    public function test_unacknowledge_rejects_every_non_acknowledged_state(IncidentState $state): void
+    {
+        $incident = $this->incident($this->policy(), $this->downPort($this->device()), ['state' => $state, 'recovered_at' => $state === IncidentState::Recovered ? now() : null]);
+        $this->actingAs($this->admin())->post("/plugin/interface-alert-policy-manager/incidents/{$incident->id}/unacknowledge")->assertStatus(409);
+        self::assertSame($state, $incident->fresh()->state);
+    }
+
+    public function test_unacknowledge_restores_the_pre_acknowledgement_state(): void
+    {
+        $incident = $this->incident($this->policy(), $this->downPort($this->device()), ['state' => IncidentState::Suppressed, 'suppression_reason' => 'maintenance']);
+        $admin = $this->admin();
+        $this->actingAs($admin)->post("/plugin/interface-alert-policy-manager/incidents/{$incident->id}/acknowledge");
+        $this->actingAs($admin)->post("/plugin/interface-alert-policy-manager/incidents/{$incident->id}/unacknowledge")->assertRedirect();
+        self::assertSame(IncidentState::Suppressed, $incident->fresh()->state);
+    }
+
+    public static function nonAcknowledgedStates(): array
+    {
+        return array_map(fn (IncidentState $state) => [$state], [IncidentState::Active, IncidentState::Pending, IncidentState::Suppressed, IncidentState::Recovered]);
     }
 
     public function test_an_administrator_can_mute_and_unmute_an_incident(): void

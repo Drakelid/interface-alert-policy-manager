@@ -2,9 +2,12 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
 
 /**
  * Shared installation/configuration readiness checks, used both by the
@@ -22,7 +25,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
  */
 class ReadinessService
 {
-    private const TABLES = ['iapm_policies', 'iapm_assignments', 'iapm_destinations', 'iapm_policy_actions', 'iapm_incidents', 'iapm_incident_events', 'iapm_delivery_logs', 'iapm_settings', 'iapm_interface_policy_cache', 'iapm_audit_logs'];
+    private const TABLES = ['iapm_policies', 'iapm_assignments', 'iapm_destinations', 'iapm_policy_actions', 'iapm_incidents', 'iapm_incident_events', 'iapm_delivery_logs', 'iapm_notification_outbox', 'iapm_notification_outbox_incidents', 'iapm_outages', 'iapm_settings', 'iapm_interface_policy_cache', 'iapm_audit_logs'];
 
     public function __construct(private readonly SettingStore $settings) {}
 
@@ -37,10 +40,10 @@ class ReadinessService
             $this->check('writable_storage', 'Log path writable', is_writable(storage_path('logs')), 'system', 'storage/logs must be writable by the web and cron users.'),
             $this->check('ingestion_token', 'Ingestion token generated', $migrated && filled($this->settings->get('ingestion_token')), 'setup', 'Generate the bearer token LibreNMS uses to post alerts.', 'iapm.settings.edit', 'Generate token'),
             $this->check('policy_exists', 'At least one enabled policy', $migrated && Policy::where('enabled', true)->exists(), 'setup', 'Create a policy describing trigger, repeat, and recovery behaviour.', 'iapm.policies.create', 'Create policy'),
-            $this->check('policy_action', 'A policy has an enabled notification action', $migrated && Policy::where('enabled', true)->whereHas('actions', fn ($q) => $q->where('enabled', true))->exists(), 'setup', 'Add an enabled action to a policy — without one, matched interfaces trigger incidents but never notify.', 'iapm.policies.index', 'Open policies'),
+            $this->check('policy_action', 'A policy has a usable notification action', $migrated && Policy::where('enabled', true)->whereHas('actions', fn ($q) => $q->where('enabled', true)->whereHas('destination', fn ($destination) => $destination->where('enabled', true)))->exists(), 'setup', 'Add an enabled action connected to an enabled destination.', 'iapm.policies.index', 'Open policies'),
             $this->check('default_policy', 'Coverage for unmatched interfaces decided', $migrated && $this->hasDefaultPolicy(), 'setup', 'Add a default assignment/policy so interfaces without a specific match are covered — or turn off "Record alerts for interfaces with no policy" (Settings) to intentionally ignore them.', 'iapm.assignments.create', 'Create assignment'),
             $this->check('enabled_destination', 'An enabled delivery destination', $migrated && Destination::where('enabled', true)->exists(), 'setup', 'Create the SMS gateway (or webhook) destination that will deliver notifications.', 'iapm.destinations.create', 'Create destination'),
-            $this->check('sms_receiver', 'A resolvable default receiver', $migrated && $this->hasReceiver(), 'setup', 'Set a global SMS receiver or a per-destination default receiver.', 'iapm.settings.edit', 'Set receiver'),
+            $this->check('sms_receiver', 'SMS actions have a resolvable receiver', $migrated && $this->hasReceiver(), 'setup', 'Set an action, assignment, policy, destination, or global SMS receiver.', 'iapm.settings.edit', 'Set receiver'),
             $this->check('alert_source', 'LibreNMS is posting alerts', $migrated && $this->hasReceivedAlerts(), 'info', 'Configure the LibreNMS alert rule, template and API transport to post here.', 'iapm.setup-helper', 'Open setup helper'),
         ];
     }
@@ -63,22 +66,35 @@ class ReadinessService
             return true;
         }
 
-        return \Illuminate\Support\Facades\DB::table('iapm_assignments')->where('assignment_type', 'default')->where('enabled', true)->exists()
+        return DB::table('iapm_assignments')->where('assignment_type', 'default')->where('enabled', true)->exists()
             || filled($this->settings->get('default_policy_id'));
     }
 
     private function hasReceiver(): bool
     {
-        if (filled($this->settings->get('sms_default_receiver', config('iapm.sms.default_receiver')))) {
-            return true;
+        $actions = PolicyAction::query()->where('enabled', true)->whereHas('policy', fn ($query) => $query->where('enabled', true))->whereHas('destination', fn ($query) => $query->where('enabled', true))->with(['policy.assignments' => fn ($query) => $query->where('enabled', true), 'destination'])->get();
+        if ($actions->isEmpty()) {
+            return false;
         }
+        $global = $this->settings->get('sms_default_receiver', config('iapm.sms.default_receiver'));
 
-        return Destination::where('type', 'sms_gateway')->get()->contains(fn ($d) => filled($d->configuration_encrypted['default_receiver'] ?? null));
+        return $actions->every(function (PolicyAction $action) use ($global): bool {
+            if ($action->destination->type !== 'sms_gateway') {
+                return true;
+            }
+            $configuration = (array) $action->destination->configuration_encrypted;
+
+            return collect([$action->receivers_json, $action->policy->assignments->pluck('metadata_json')->pluck('receivers')->flatten()->all(), [$action->policy->default_receiver], $configuration['receivers'] ?? [], [$configuration['default_receiver'] ?? null], [$global]])->flatten()->contains(fn ($receiver) => filled($receiver));
+        });
     }
 
     private function hasReceivedAlerts(): bool
     {
-        return \LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident::query()->exists();
+        if (! (bool) $this->settings->get('record_unpoliced', true)) {
+            return filled($this->settings->get('last_ingestion_at'));
+        }
+
+        return Incident::query()->exists() || filled($this->settings->get('last_ingestion_at'));
     }
 
     private function check(string $key, string $label, bool $ok, string $group, string $hint, ?string $route = null, ?string $action = null): array

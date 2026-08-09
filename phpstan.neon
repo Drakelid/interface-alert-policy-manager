@@ -1,0 +1,17 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+    treatPhpDocTypesAsCertain: false
+    paths:
+        - src
+    tmpDir: .phpstan-cache
+    scanFiles:
+        - phpstan-stubs/librenms.stub
+    # Eloquent and LibreNMS expose database-backed attributes dynamically. Keep
+    # method/relation/type analysis enabled while treating those attribute bags
+    # as object-crate properties in this standalone package analysis.
+    universalObjectCratesClasses:
+        - Illuminate\Database\Eloquent\Model

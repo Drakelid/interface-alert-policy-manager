@@ -5,8 +5,14 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests;
 use App\Models\Device;
 use App\Models\Port;
 use App\Models\User;
+use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\WithFaker;
+use Illuminate\Routing\RouteCollection;
+use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Testing\TestResponse;
 use LibreNMS\Interfaces\Plugins\PluginManagerInterface;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\IapmServiceProvider;
@@ -25,19 +31,48 @@ use Spatie\Permission\Models\Role;
 abstract class IntegrationTestCase extends TestCase
 {
     use RefreshDatabase;
+    use WithFaker;
 
     protected SettingStore $settings;
+
+    public function createApplication(): Application
+    {
+        $application = parent::createApplication();
+        $application->register(IapmServiceProvider::class);
+
+        return $application;
+    }
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        Facade::setFacadeApplication($this->app);
+        $router = $this->app->make('router');
+        $coreRoutes = iterator_to_array($router->getRoutes());
+        $router->setRoutes(new RouteCollection);
+        Route::swap($router);
+        require dirname(__DIR__).'/routes/web.php';
+        foreach ($coreRoutes as $route) {
+            if (! str_starts_with($route->uri(), 'plugin/interface-alert-policy-manager')) {
+                $router->getRoutes()->add($route);
+            }
+        }
+        $router->getRoutes()->refreshNameLookups();
+        $router->getRoutes()->refreshActionLookups();
+        $this->app->make('url')->setRoutes($router->getRoutes());
 
         // A stray request would mean a test could reach the production gateway.
         Http::preventStrayRequests();
 
         // The plugins table did not exist when the provider booted, so materialize
         // the plugin row the way `lnms plugin:add` does.
-        app(PluginManagerInterface::class)->pluginEnabled(IapmServiceProvider::PLUGIN_NAME);
+        if (! app(PluginManagerInterface::class)->pluginEnabled(IapmServiceProvider::PLUGIN_NAME)) {
+            throw new \RuntimeException('IAPM plugin fixture was not enabled.');
+        }
+        if (getenv('IAPM_DEBUG_EXCEPTIONS')) {
+            $this->withoutExceptionHandling();
+        }
 
         $this->settings = app(SettingStore::class);
         $this->settings->put('dry_run', false);
@@ -45,6 +80,7 @@ abstract class IntegrationTestCase extends TestCase
         // Default delivery to synchronous in tests (production default is queued);
         // QueueDispatchTest opts back into 'queue' explicitly.
         $this->settings->put('dispatch_mode', 'sync');
+
     }
 
     protected function device(array $attributes = []): Device
@@ -56,7 +92,7 @@ abstract class IntegrationTestCase extends TestCase
     {
         return Port::factory()->create(array_merge([
             'device_id' => $device->device_id,
-            'ifName' => 'xe-0/0/'.fake()->unique()->numberBetween(1, 9999),
+            'ifName' => 'xe-0/0/'.$this->faker->unique()->numberBetween(1, 9999),
             'ifAlias' => 'CUST: Example customer',
             'ifType' => 'ethernetCsmacd',
             'ifAdminStatus' => 'up',
@@ -70,7 +106,7 @@ abstract class IntegrationTestCase extends TestCase
     protected function policy(array $attributes = []): Policy
     {
         return Policy::create(array_merge([
-            'name' => 'Policy '.fake()->unique()->numberBetween(1, 99999),
+            'name' => 'Policy '.$this->faker->unique()->numberBetween(1, 99999),
             'enabled' => true,
             'priority' => 0,
             'severity' => 'critical',
@@ -100,7 +136,7 @@ abstract class IntegrationTestCase extends TestCase
     protected function smsDestination(array $configuration = []): Destination
     {
         return Destination::create([
-            'name' => 'Gateway '.fake()->unique()->numberBetween(1, 99999),
+            'name' => 'Gateway '.$this->faker->unique()->numberBetween(1, 99999),
             'type' => 'sms_gateway',
             'enabled' => true,
             // An IP literal keeps UrlGuard from performing DNS lookups in tests,
@@ -157,7 +193,7 @@ abstract class IntegrationTestCase extends TestCase
     protected function admin(): User
     {
         Role::findOrCreate('admin', 'web');
-        $user = User::factory()->create();
+        $user = User::factory()->create(['enabled' => true]);
         $user->assignRole('admin');
 
         return $user;
@@ -180,7 +216,7 @@ abstract class IntegrationTestCase extends TestCase
         ], $overrides);
     }
 
-    protected function ingest(array $payload, ?string $token = 'test-ingestion-token'): \Illuminate\Testing\TestResponse
+    protected function ingest(array $payload, ?string $token = 'test-ingestion-token'): TestResponse
     {
         return $this->postJson('/plugin/interface-alert-policy-manager/api/v1/alerts', $payload, array_filter([
             'Authorization' => $token ? "Bearer $token" : null,

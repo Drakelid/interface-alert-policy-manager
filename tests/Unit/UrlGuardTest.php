@@ -4,6 +4,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Unit;
 
 use InvalidArgumentException;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\UrlGuard;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class UrlGuardTest extends TestCase
@@ -32,7 +33,7 @@ class UrlGuardTest extends TestCase
         (new UrlGuard)->assertAllowed('http://127.0.0.1/hook');
     }
 
-    /** @dataProvider blockedIpv6Literals */
+    #[DataProvider('blockedIpv6Literals')]
     public function test_private_and_reserved_ipv6_literals_are_blocked(string $url): void
     {
         $this->expectException(InvalidArgumentException::class);

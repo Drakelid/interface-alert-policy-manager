@@ -7,10 +7,12 @@ use Illuminate\Console\Scheduling\Schedule;
 use LibreNMS\Interfaces\Plugins\PluginManagerInterface;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\IapmServiceProvider;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReadinessService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 
 class InstallCheckCommand extends Command
 {
     protected $signature = 'iapm:install-check {--gateway : Perform a network request using the first enabled SMS destination}';
+
     protected $description = 'Check IAPM installation and required configuration';
 
     public function handle(ReadinessService $readiness, PluginManagerInterface $plugins, Schedule $schedule): int
@@ -44,9 +46,12 @@ class InstallCheckCommand extends Command
         $this->report('scheduler_registration', $scheduled);
         $ok = $ok && $scheduled;
 
-        $dispatchMode = app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class)->get('dispatch_mode', 'queue');
+        $dispatchMode = app(SettingStore::class)->get('dispatch_mode', 'queue');
+        $queueConnection = config('iapm.queue.connection') ?: $this->laravel['config']->get('queue.default', 'sync');
+        $managedWorkers = max(0, (int) config('iapm.queue.workers', 3));
+        $workerMode = $managedWorkers > 0 ? "scheduler-managed workers={$managedWorkers}" : 'externally supervised workers required';
         $this->line('[INFO] delivery='.$dispatchMode.($dispatchMode === 'queue'
-            ? ' (queue connection='.$this->laravel['config']->get('queue.default', 'sync').'; requires running workers — `queue:work --queue=iapm` or systemd)'
+            ? ' (IAPM queue connection='.$queueConnection.'; '.$workerMode.'; queue='.config('iapm.queue.name', 'iapm').')'
             : ' (synchronous, sent inside the scheduled run)'));
         $this->line('[INFO] dry_run='.($readiness->dryRun() ? 'enabled (no external delivery)' : 'disabled (live delivery)'));
 

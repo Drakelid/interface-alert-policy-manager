@@ -2,8 +2,11 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
+use Illuminate\Support\Facades\DB;
+use LibreNMS\Enum\AlertState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Outage;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class IngestionTest extends IntegrationTestCase
@@ -214,7 +217,7 @@ class IngestionTest extends IntegrationTestCase
 
         // LibreNMS re-sends the full fault set with an acknowledged state; this must
         // acknowledge the incident, not re-observe it as a fresh active alert.
-        $this->ingest($this->alertPayload($device, [$this->fault($port)], \LibreNMS\Enum\AlertState::ACKNOWLEDGED, ['timestamp' => now()->addMinute()->toIso8601String()]))
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], AlertState::ACKNOWLEDGED, ['timestamp' => now()->addMinute()->toIso8601String()]))
             ->assertOk()
             ->assertJsonPath('counts.processed', 1);
 
@@ -224,7 +227,7 @@ class IngestionTest extends IntegrationTestCase
         self::assertTrue($incident->events()->where('event_type', 'acknowledged')->exists());
 
         // A repeated acknowledgement is a no-op — it does not re-acknowledge or notify.
-        $this->ingest($this->alertPayload($device, [$this->fault($port)], \LibreNMS\Enum\AlertState::ACKNOWLEDGED, ['timestamp' => now()->addMinutes(2)->toIso8601String()]))
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], AlertState::ACKNOWLEDGED, ['timestamp' => now()->addMinutes(2)->toIso8601String()]))
             ->assertOk()
             ->assertJsonPath('counts.ignored', 1);
 
@@ -244,7 +247,7 @@ class IngestionTest extends IntegrationTestCase
         self::assertNotNull(Incident::first()->policy_id);
         // ...but the materialised policy cache is not written per-fault during ingestion;
         // the per-minute reconcile maintains it, keeping the storm hot path write-light.
-        self::assertSame(0, \Illuminate\Support\Facades\DB::table('iapm_interface_policy_cache')->count());
+        self::assertSame(0, DB::table('iapm_interface_policy_cache')->count());
     }
 
     public function test_a_continued_active_observation_does_not_spam_events(): void
@@ -309,5 +312,55 @@ class IngestionTest extends IntegrationTestCase
         self::assertSame(IncidentState::Suppressed, $incident->state);
         self::assertSame('no_policy', $incident->suppression_reason);
         self::assertNull($incident->policy_id);
+    }
+
+    public function test_repeated_unpoliced_observations_preserve_ack_and_do_not_spam_events(): void
+    {
+        $device = $this->device();
+        $port = $this->downPort($device);
+        $this->ingest($this->alertPayload($device, [$this->fault($port)]));
+        $incident = Incident::firstOrFail();
+        $incident->update(['state' => IncidentState::Acknowledged, 'acknowledged_at' => now()]);
+        $events = $incident->events()->count();
+
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], 1, ['timestamp' => now()->addMinute()->toIso8601String()]));
+
+        self::assertSame(IncidentState::Acknowledged, $incident->fresh()->state);
+        self::assertSame(2, (int) $incident->fresh()->context_json['observation_count']);
+        self::assertSame($events, $incident->events()->count());
+    }
+
+    public function test_reopening_starts_a_distinct_clean_episode_and_clears_expired_mute(): void
+    {
+        $policy = $this->defaultPolicy();
+        $device = $this->device();
+        $port = $this->downPort($device);
+        $this->ingest($this->alertPayload($device, [$this->fault($port)]));
+        $this->ingest($this->alertPayload($device, [], 0, ['timestamp' => now()->addMinute()->toIso8601String()]));
+        $incident = Incident::firstOrFail();
+        $oldEpisode = $incident->episode_uuid;
+        $incident->update(['muted_until' => now()->subMinute(), 'notification_count' => 7, 'last_notification_at' => now(), 'context_json' => array_merge($incident->context_json, ['flap_notified' => 'yes', 'trigger_notified_via_digest' => 'yes'])]);
+
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], 1, ['timestamp' => now()->addMinutes(2)->toIso8601String()]));
+        $fresh = $incident->fresh();
+        self::assertNotSame($oldEpisode, $fresh->episode_uuid);
+        self::assertSame(0, (int) $fresh->notification_count);
+        self::assertNull($fresh->last_notification_at);
+        self::assertNull($fresh->muted_until);
+        self::assertArrayNotHasKey('flap_notified', $fresh->context_json);
+        self::assertArrayNotHasKey('trigger_notified_via_digest', $fresh->context_json);
+        self::assertSame($policy->id, $fresh->policy_id);
+    }
+
+    public function test_repeated_recovery_for_one_episode_records_one_outage(): void
+    {
+        $this->defaultPolicy();
+        $device = $this->device();
+        $port = $this->downPort($device);
+        $this->ingest($this->alertPayload($device, [$this->fault($port)]));
+        $recovery = $this->alertPayload($device, [], 0, ['timestamp' => now()->addMinute()->toIso8601String()]);
+        $this->ingest($recovery);
+        $this->ingest($recovery);
+        self::assertSame(1, Outage::count());
     }
 }

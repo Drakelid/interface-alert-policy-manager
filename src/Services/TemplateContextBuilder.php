@@ -16,6 +16,7 @@ class TemplateContextBuilder
 {
     /** @var array<int, string> */
     private array $userNames = [];
+
     private ?string $urlBase = null;
 
     public function __construct(private readonly SettingStore $settings) {}

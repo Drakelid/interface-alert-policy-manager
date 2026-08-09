@@ -2,8 +2,9 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\TemplateContextBuilder;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
@@ -91,7 +92,7 @@ class TemplateRenderingTest extends IntegrationTestCase
     public function test_preview_values_cover_the_same_placeholders_as_delivery(): void
     {
         $port = $this->downPort($this->device());
-        $context = app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService::class)->forPort($port);
+        $context = app(InterfaceContextService::class)->forPort($port);
 
         $preview = app(TemplateContextBuilder::class)->forPreview($context);
         $incident = app(TemplateContextBuilder::class)->forIncident($this->incident($this->policy(), $port));

@@ -65,7 +65,7 @@ class PolicyAndDestinationAdminTest extends IntegrationTestCase
                 'name' => 'Ops webhook',
                 'type' => 'generic_webhook',
                 'enabled' => '1',
-                'url' => 'https://hooks.example.com/notify',
+                'url' => 'https://example.com/notify',
                 'bearer_token' => 'a-token',
                 'mode' => 'json',
                 'connect_timeout' => 5,
@@ -79,6 +79,18 @@ class PolicyAndDestinationAdminTest extends IntegrationTestCase
         $destination = Destination::sole();
         self::assertSame('generic_webhook', $destination->type);
         self::assertSame('a-token', $destination->configuration_encrypted['bearer_token']);
+    }
+
+    public function test_destination_creation_uses_saved_global_timeout_and_retry_defaults(): void
+    {
+        $this->settings->put('notification_timeout', 37);
+        $this->settings->put('notification_retry_count', 4);
+
+        $this->actingAs($this->admin())
+            ->get('/plugin/interface-alert-policy-manager/destinations/create')
+            ->assertOk()
+            ->assertSee('name="timeout" value="37"', false)
+            ->assertSee('name="retry_count" value="4"', false);
     }
 
     public function test_an_sms_gateway_destination_still_requires_a_password_on_create(): void

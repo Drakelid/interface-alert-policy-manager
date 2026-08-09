@@ -3,7 +3,13 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Command;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\SendNotificationJob;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 /**
@@ -135,7 +141,7 @@ class DeviceDigestTest extends IntegrationTestCase
         $this->triggerAction($policy, $this->smsDestination());
         $device = $this->device();
         collect(range(1, 4))->each(fn () => $this->incident($policy, $this->downPort($device), [
-            'state' => \LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState::Pending,
+            'state' => IncidentState::Pending,
             'triggered_at' => null,
             'first_seen_at' => now()->subMinutes(10),
         ]));
@@ -144,5 +150,162 @@ class DeviceDigestTest extends IntegrationTestCase
 
         self::assertSame(1, DeliveryLog::where('phase', 'digest')->count());
         self::assertSame(0, DeliveryLog::where('phase', 'trigger')->count());
+    }
+
+    public function test_failed_digest_never_sets_a_permanent_flag_or_last_notification_time(): void
+    {
+        Http::fake(['*' => Http::response('failed', 500)]);
+        $this->settings->put('aggregate_threshold', 2);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination(['retry_count' => 0]));
+        $device = $this->device();
+        $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        foreach ($incidents as $incident) {
+            self::assertArrayNotHasKey('trigger_notified_via_digest', $incident->fresh()->context_json);
+            self::assertNull($incident->fresh()->last_notification_at);
+        }
+    }
+
+    public function test_disabled_destination_leaves_incidents_eligible(): void
+    {
+        $this->settings->put('aggregate_threshold', 2);
+        $policy = $this->policy(['default_receiver' => null]);
+        $destination = $this->smsDestination(['default_receiver' => null, 'receivers' => []]);
+        $destination->update(['enabled' => false]);
+        $this->triggerAction($policy, $destination, ['receivers_json' => []]);
+        $device = $this->device();
+        $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+        foreach ($incidents as $incident) {
+            self::assertArrayNotHasKey('trigger_notified_via_digest', $incident->fresh()->context_json);
+        }
+    }
+
+    public function test_no_receiver_leaves_incidents_eligible_for_individual_retry(): void
+    {
+        $this->settings->put('aggregate_threshold', 2);
+        $this->settings->put('sms_default_receiver', null);
+        $policy = $this->policy(['default_receiver' => null]);
+        $destination = $this->smsDestination(['default_receiver' => null, 'receivers' => []]);
+        $this->triggerAction($policy, $destination, ['receivers_json' => []]);
+        $device = $this->device();
+        $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        self::assertSame(0, NotificationOutbox::count());
+        foreach ($incidents as $incident) {
+            self::assertArrayNotHasKey('trigger_notified_via_digest', $incident->fresh()->context_json);
+            self::assertNull($incident->fresh()->last_notification_at);
+        }
+    }
+
+    public function test_failed_digest_retries_same_logical_outbox_and_then_finalizes(): void
+    {
+        // First run: digest plus both eligible individual fallbacks fail. The
+        // next scheduler run retries the same digest outbox and succeeds.
+        Http::fakeSequence()->push('failed', 500)->push('failed', 500)->push('failed', 500)->push('ok', 200);
+        $this->settings->put('aggregate_threshold', 2);
+        $this->settings->put('aggregate_window_seconds', 3600);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination(['retry_count' => 0]));
+        $device = $this->device();
+        $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
+
+        $this->artisan('iapm:process-actions');
+        $this->artisan('iapm:process-actions');
+
+        self::assertSame(1, NotificationOutbox::where('phase', 'digest')->count());
+        self::assertSame('sent', NotificationOutbox::where('phase', 'digest')->sole()->status);
+        foreach ($incidents as $incident) {
+            self::assertNotEmpty($incident->fresh()->context_json['trigger_notified_via_digest'] ?? null);
+        }
+    }
+
+    public function test_dry_run_digest_is_intentionally_finalized_without_live_count(): void
+    {
+        Http::fake();
+        $this->settings->put('dry_run', true);
+        $this->settings->put('aggregate_threshold', 2);
+        $this->settings->put('aggregate_window_seconds', 3600);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $device = $this->device();
+        $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
+
+        $this->artisan('iapm:process-actions');
+
+        self::assertSame('dry_run', NotificationOutbox::where('phase', 'digest')->sole()->status);
+        Http::assertNothingSent();
+        foreach ($incidents as $incident) {
+            self::assertNotEmpty($incident->fresh()->context_json['trigger_notified_via_digest'] ?? null);
+            self::assertNotNull($incident->fresh()->last_notification_at);
+            self::assertSame(0, $incident->fresh()->notification_count);
+        }
+    }
+
+    public function test_queued_digest_is_only_confirmed_by_the_worker(): void
+    {
+        Queue::fake();
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $this->settings->put('dispatch_mode', 'queue');
+        $this->settings->put('aggregate_threshold', 2);
+        $this->settings->put('aggregate_window_seconds', 3600);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $device = $this->device();
+        $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
+
+        $this->artisan('iapm:process-actions');
+        foreach ($incidents as $incident) {
+            self::assertArrayNotHasKey('trigger_notified_via_digest', $incident->fresh()->context_json);
+        }
+        $outbox = NotificationOutbox::where('phase', 'digest')->firstOrFail();
+        (new SendNotificationJob($outbox->id))->handle(app(NotificationDispatcher::class), app(SettingStore::class));
+        foreach ($incidents as $incident) {
+            self::assertNotEmpty($incident->fresh()->context_json['trigger_notified_via_digest'] ?? null);
+        }
+    }
+
+    public function test_invalid_digest_template_falls_back_without_marking(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $this->settings->put('aggregate_threshold', 2);
+        $this->settings->put('aggregate_window_seconds', 3600);
+        $this->settings->put('template_digest', '{{ unknown_digest_value }}');
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $device = $this->device();
+        $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
+        $this->artisan('iapm:process-actions');
+        foreach ($incidents as $incident) {
+            self::assertArrayNotHasKey('trigger_notified_via_digest', $incident->fresh()->context_json);
+        }
+        self::assertSame(2, DeliveryLog::where('phase', 'trigger')->where('status', 'sent')->count());
+    }
+
+    public function test_shared_destination_keeps_receiver_overrides_from_all_policies(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $this->settings->put('aggregate_threshold', 2);
+        $this->settings->put('aggregate_window_seconds', 3600);
+        $destination = $this->smsDestination();
+        $firstPolicy = $this->policy();
+        $secondPolicy = $this->policy();
+        $this->triggerAction($firstPolicy, $destination, ['receivers_json' => ['receiver-a']]);
+        $this->triggerAction($secondPolicy, $destination, ['receivers_json' => ['receiver-b']]);
+        $device = $this->device();
+        $this->incident($firstPolicy, $this->downPort($device));
+        $this->incident($secondPolicy, $this->downPort($device));
+
+        $this->artisan('iapm:process-actions');
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($request) => in_array($request['receiver'], ['receiver-a', 'receiver-b'], true));
+        self::assertSame(2, NotificationOutbox::where('phase', 'digest')->where('status', 'sent')->count());
     }
 }

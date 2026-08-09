@@ -17,7 +17,9 @@ $total = 0;
 do {
     $deleted = DB::table('iapm_incidents')->where('incident_key', 'like', 'loadtest:%')->limit(5000)->delete();
     $total += $deleted;
-    if ($deleted) echo '  deleted '.number_format($total)."...\n";
+    if ($deleted) {
+        echo '  deleted '.number_format($total)."...\n";
+    }
 } while ($deleted >= 5000);
 
 $outages = 0;
@@ -27,3 +29,7 @@ do {
 } while ($deleted >= 5000);
 
 echo 'Removed '.number_format($total).' incidents and '.number_format($outages)." outage records.\n";
+
+$policies = DB::table('iapm_policies')->where('name', 'like', 'loadtest:policy:%')->delete();
+$destinations = DB::table('iapm_destinations')->where('name', 'loadtest:destination')->delete();
+echo 'Removed '.number_format($policies).' load-test policies and '.number_format($destinations)." destination records.\n";

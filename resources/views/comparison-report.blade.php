@@ -5,7 +5,7 @@
 <div class="row">@foreach($metrics as $name=>$value)<div class="col-sm-3"><div class="panel panel-default"><div class="panel-heading">{{ str_replace('_',' ',ucfirst($name)) }}</div><div class="panel-body"><strong>{{ $value }}</strong></div></div></div>@endforeach</div>
 
 <div class="panel panel-default"><div class="panel-heading">By policy</div>
-<div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Policy</th><th>Incidents</th><th>Would send (dry-run)</th><th>Sent (live)</th><th>Suppressed</th></tr></thead><tbody>
+<div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Policy</th><th>Outage episodes</th><th>Would send (dry-run)</th><th>Sent (live)</th><th>Suppressed</th></tr></thead><tbody>
 @forelse($byPolicy as $row)<tr><td>{{ $row['policy'] }}</td><td>{{ $row['incidents'] }}</td><td>{{ $row['would_send'] }}</td><td>{{ $row['sent'] }}</td><td>{{ $row['suppressed'] }}</td></tr>@empty<tr><td colspan="5" class="text-muted">No activity in this window.</td></tr>@endforelse
 </tbody></table></div></div>
 

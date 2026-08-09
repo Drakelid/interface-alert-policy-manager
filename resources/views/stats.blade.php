@@ -37,7 +37,7 @@ $fmt = function ($seconds) {
 
 @if($deliverySuccessRate !== null)
 <p><strong>Delivery success rate:</strong> {{ $deliverySuccessRate }}%
-    <span class="text-muted">(@foreach($delivery as $status => $count){{ $status }}: {{ $count }}@if(!$loop->last), @endif @endforeach)</span></p>
+    <span class="text-muted">(logical notifications: @foreach($delivery as $status => $count){{ $status }}: {{ $count }}@if(!$loop->last), @endif @endforeach; transport attempts: {{ $transportAttempts }})</span></p>
 @endif
 
 <div class="row">

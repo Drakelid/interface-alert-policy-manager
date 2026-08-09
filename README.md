@@ -19,7 +19,7 @@ Then open **Plugins → Interface Alert Policy Manager** and follow the Overview
 
 ## Compatibility discovered
 
-Development targets LibreNMS `master` commit `9be80715833d7b350e423301e8b005ac730d8abd` (2026-07-09), PHP `^8.2`, and Laravel `^12.10`. The current LibreNMS package system uses Laravel Composer discovery plus `librenms/plugin-interfaces`; `PluginManagerInterface::publishHook()` supplies menu/settings integration. IAPM references `App\Models\Device`, `Port`, `DeviceGroup`, `PortGroup`, `Location`, and related models directly without copying core models. LibreNMS alert states are `CLEAR/RECOVERED=0`, `ACTIVE=1`, `ACKNOWLEDGED=2`, `WORSE=3`, `BETTER=4`, and `CHANGED=5`.
+The documented and CI-tested baseline is LibreNMS `26.7.0`, PHP 8.2–8.4, and Laravel `^12.10`. The package uses Laravel Composer discovery plus `librenms/plugin-interfaces`; `PluginManagerInterface::publishHook()` supplies menu/settings integration. IAPM references `App\Models\Device`, `Port`, `DeviceGroup`, `PortGroup`, `Location`, and related models directly without copying core models. LibreNMS alert states are `CLEAR/RECOVERED=0`, `ACTIVE=1`, `ACKNOWLEDGED=2`, `WORSE=3`, `BETTER=4`, and `CHANGED=5`.
 
 ## Installation
 
@@ -214,7 +214,7 @@ IAPM starts in dry-run mode. Private/reserved destination addresses are blocked 
 
 SMS destination fields: URL, username, password, default receiver, JSON/form mode, connection/request timeouts, retries, retry delay, TLS verification, optional safe headers, and `allow_private_networks`. JSON mode is the default and sends `{"receiver":"...","message":"..."}`. Basic credentials are never written to delivery logs.
 
-Receiver precedence is policy-action override, interface assignment metadata, device-group metadata, policy default, destination default, then global default. No delivery occurs without a valid receiver. Templates support only explicit `{{ placeholder }}` substitutions; unknown placeholders fail validation and no PHP/Blade is executed.
+Receiver precedence is policy-action override, metadata on the single winning assignment, policy default, destination default/list, then global default. Losing assignments never contribute receivers. Device digests union the per-incident result of that same resolver, so policy and assignment overrides survive aggregation. No delivery occurs without a valid receiver. Templates support only explicit `{{ placeholder }}` substitutions; unknown placeholders fail validation and no PHP/Blade is executed.
 
 The available placeholders are `incident_id`, `severity`, `state`, `hostname`, `sysName`, `display_name`, `device_id`, `port_id`, `ifName`, `ifDescr`, `ifAlias`, `ifAdminStatus`, `ifOperStatus`, `interface_type`, `location`, `policy_name`, `assignment_source`, `first_seen_at`, `triggered_at`, `recovered_at`, `outage_duration`, `device_url`, `port_url`, `acknowledgement_user`, and `suppression_reason`. `device_url` and `port_url` are built from the `url_base` setting, which defaults to the application URL. Template preview and real delivery use the same placeholder map, so a template that previews cleanly renders identically when it is sent.
 
@@ -269,7 +269,7 @@ php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external m
 - **Flap dampening (per policy).** Set a flap threshold, window, and settle period. When an interface cycles down/up faster than the threshold, IAPM sends one `FLAPPING` notice and suppresses the routine churn until it settles.
 - **Device digest (storm control).** Set an *aggregate threshold* (and window) in Settings. When at least that many interfaces on the **same device** trigger within the window, IAPM sends one grouped "device down" message (device-level receivers) instead of an SMS per interface, so a linecard or downstream-switch failure produces one notification rather than a hundred. Wording is customisable on the Message Templates page. Set the threshold to `0` to always notify per interface. When an upstream LibreNMS acknowledgement arrives it acknowledges the incident rather than re-triggering it.
 - **Escalation chains.** Add multiple `escalation` actions with increasing delays and different destinations/receivers; acknowledging the incident stops further escalation.
-- **Queued dispatch (default, self-provisioning).** Notifications are handed to a Laravel queue so workers deliver them **in parallel**, draining large simultaneous events quickly instead of sending each SMS serially. It sets itself up: the queue tables are created by a migration on install, and the LibreNMS scheduler keeps `IAPM_QUEUE_WORKERS` (default 3) background workers running — no systemd required. Tune the worker count to your gateway's concurrency, point at Redis with `IAPM_QUEUE_CONNECTION=redis` for the highest throughput, or add dedicated systemd workers (they safely share the same queue). An in-flight "queued" delivery marker dedupes re-enqueues, `iapm:health` flags it if the queue ever stops draining, and if the queue backend is unreachable at enqueue time IAPM falls back to synchronous delivery rather than dropping the alert. Switch to **Synchronous** (Settings → *Delivery dispatch*) for a simpler, serial, worker-free setup on small installs.
+- **Queued dispatch (default, self-provisioning).** A durable encrypted outbox is committed before a queue job containing only the outbox ID is published. Its unique episode/action/phase/destination/receiver key prevents scheduler overlap and worker retry from creating another logical notification. Workers atomically claim rows; a crash leaves a reclaimable row, and `iapm:health` reports stale claims and overdue pending work. If publication fails, IAPM returns the row to pending and delivers synchronously. Tune `IAPM_QUEUE_WORKERS` (default 3) to gateway capacity, or use Redis via `IAPM_QUEUE_CONNECTION=redis`. Switch to **Synchronous** in Settings for a worker-free setup; both modes use the same outbox.
 - **Self-monitoring.** The Overview shows an IAPM health panel, and `iapm:health` exits non-zero when the scheduler has stalled, the gateway is failing, or notifications are stuck — point your own monitoring at it as a dead-man's switch.
 - **Statistics & SLA** (Monitor → Statistics): MTTA/MTTR, longest outage, notifications, flapping outages, noisiest interfaces, per-policy breakdown, and delivery success rate, computed from an append-only `iapm_outages` record.
 - **Simulate alert** (Tools): fire a synthetic alert for one interface through the real pipeline to validate policy/assignment/suppression behaviour without curl (respects dry-run).
@@ -291,6 +291,8 @@ Incidents, timelines, deliveries, and audit history live in `iapm_*` tables; inc
 ### Backup and restore
 
 Back up all `iapm_*` tables together with the LibreNMS application encryption key. Encrypted destination and setting values cannot be recovered with the database alone. Restore into the same LibreNMS/application-key environment, run migrations, clear/rebuild IAPM caches, and run `iapm:install-check` before enabling live delivery.
+
+The notification outbox also contains encrypted receiver/message payloads until retained rows are cleaned. Rotate `APP_KEY` only with Laravel's supported previous-key mechanism and keep the old key available until all destination settings and outstanding outbox rows have been read and re-encrypted or expired. Losing the old key makes queued payloads undecryptable; stop workers, restore the key, and retry rather than deleting live rows.
 
 ### Running at large scale (100k+ interfaces)
 
@@ -321,6 +323,8 @@ IAPM defines abilities for viewing the plugin, managing policies, assignments, d
 ## Upgrade and uninstall
 
 Back up the database and application key, update the Composer package, run `php artisan migrate`, rebuild the policy cache, and run `iapm:install-check`. Never edit or reorder a migration already deployed. To disable safely, enable dry-run, restore the prior LibreNMS transport if needed, then disable the plugin. Composer removal does not intentionally delete tables. Only run migration rollback when permanent data deletion is approved and backed up.
+
+This safety upgrade is additive: it backfills stable episode IDs, adds a unique outage-episode constraint, and creates the encrypted durable outbox. During rollout, stop the scheduler/workers, back up all `iapm_*` tables and `APP_KEY`, migrate, run the install check, then restart one worker and confirm health before restoring normal concurrency. See `docs/UPGRADING.md` for rollback and release-note details.
 
 ## Troubleshooting
 

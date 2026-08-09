@@ -1,0 +1,11 @@
+{
+    "preset": "laravel",
+    "notPath": [
+        "database/migrations/2026_07_10_000001_create_iapm_tables.php",
+        "database/migrations/2026_08_04_000001_add_advanced_features.php",
+        "database/migrations/2026_08_06_000001_add_iapm_incident_digest_index.php",
+        "database/migrations/2026_08_06_000002_add_iapm_incident_port_index.php",
+        "database/migrations/2026_08_06_000003_add_iapm_incident_scale_indexes.php",
+        "database/migrations/2026_08_07_000001_add_queue_tables.php"
+    ]
+}

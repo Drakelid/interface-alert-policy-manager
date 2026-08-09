@@ -63,16 +63,17 @@ class SmsGatewayTransportTest extends IntegrationTestCase
 
     public function test_a_2xx_response_is_success_unless_the_body_reports_an_error(): void
     {
-        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+        Http::fake(['*' => Http::sequence()
+            ->push(['ok' => true], 200)
+            ->push(['ok' => false], 200)
+            ->push(['error' => 'no such receiver'], 200)
+            ->push(['error' => null], 200)]);
         self::assertTrue(app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', 'message')->successful);
 
-        Http::fake(['*' => Http::response(['ok' => false], 200)]);
         self::assertFalse(app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', 'message')->successful);
 
-        Http::fake(['*' => Http::response(['error' => 'no such receiver'], 200)]);
         self::assertFalse(app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', 'message')->successful);
 
-        Http::fake(['*' => Http::response(['error' => null], 200)]);
         self::assertTrue(app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', 'message')->successful, 'A null error field is not a failure.');
     }
 

@@ -68,7 +68,7 @@ class ReconcileCommandTest extends IntegrationTestCase
         $incident->refresh();
         self::assertSame(IncidentState::Recovered, $incident->state);
         self::assertNotNull($incident->recovered_at);
-        self::assertTrue($incident->events()->where('event_type', 'reconciled')->exists());
+        self::assertTrue($incident->events()->where('event_type', 'recovered')->exists());
     }
 
     public function test_the_recovery_hold_down_delays_recovery(): void

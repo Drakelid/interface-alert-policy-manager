@@ -3,6 +3,10 @@
 .env
 .env.*
 !.env.example
+/vendor/
+/composer.lock
+/.phpunit.cache/
+/.phpstan-cache/
 
 # AI assistant files
 # Config, rules, memory, chat history and caches created by AI coding tools.

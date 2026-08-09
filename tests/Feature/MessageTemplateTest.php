@@ -54,7 +54,7 @@ class MessageTemplateTest extends IntegrationTestCase
 
     public function test_the_editor_requires_the_manage_settings_ability(): void
     {
-        $this->actingAs(User::factory()->create())
+        $this->actingAs(User::factory()->create(['enabled' => true]))
             ->put('/plugin/interface-alert-policy-manager/message-templates', ['templates' => ['trigger' => 'x {{ ifName }}']])
             ->assertForbidden();
     }

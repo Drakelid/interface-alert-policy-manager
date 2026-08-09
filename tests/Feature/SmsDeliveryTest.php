@@ -44,7 +44,7 @@ class SmsDeliveryTest extends IntegrationTestCase
         $serialized = json_encode($delivery->toArray());
         self::assertStringNotContainsString('gateway-password', $serialized);
         self::assertStringNotContainsString('gateway-user', $serialized);
-        self::assertStringContainsString('[MESSAGE REDACTED]', (string) $delivery->request_payload_redacted);
+        self::assertStringContainsString('"message":"[REDACTED]"', (string) $delivery->request_payload_redacted);
     }
 
     public function test_a_connection_timeout_is_recorded_as_a_failed_delivery(): void

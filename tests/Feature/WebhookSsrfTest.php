@@ -77,7 +77,7 @@ class WebhookSsrfTest extends IntegrationTestCase
     private function webhook(array $configuration): Destination
     {
         return Destination::create([
-            'name' => 'Webhook '.fake()->unique()->numberBetween(1, 99999),
+            'name' => 'Webhook '.$this->faker->unique()->numberBetween(1, 99999),
             'type' => 'generic_webhook',
             'enabled' => true,
             'configuration_encrypted' => array_merge(['verify_tls' => true, 'allow_private_networks' => false], $configuration),

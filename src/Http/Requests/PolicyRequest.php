@@ -1,4 +1,28 @@
 <?php
+
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests;
-use Illuminate\Foundation\Http\FormRequest; use Illuminate\Validation\Rule;
-class PolicyRequest extends FormRequest { public function authorize():bool{return $this->user()?->can('manage iapm policies')??false;} public function rules():array{$id=$this->route('policy')?->id;return ['name'=>['required','string','max:255',Rule::unique('iapm_policies')->ignore($id)],'description'=>['nullable','string','max:5000'],'enabled'=>['boolean'],'priority'=>['required','integer','between:-100000,100000'],'severity'=>['required',Rule::in(['info','warning','critical'])],'default_receiver'=>['nullable','string','max:128'],'notifications_enabled'=>['boolean'],'trigger_after_seconds'=>['required','integer','min:0','max:2592000'],'failed_poll_count'=>['required','integer','min:1','max:1000'],'recovery_after_seconds'=>['required','integer','min:0','max:2592000'],'repeat_seconds'=>['nullable','integer','min:60'],'maximum_repeats'=>['nullable','integer','min:0','max:10000'],'notify_recovery'=>['boolean'],'suppress_device_down'=>['boolean'],'suppress_admin_down'=>['boolean'],'suppress_ignored_port'=>['boolean'],'suppress_disabled_port'=>['boolean'],'suppress_deleted_port'=>['boolean'],'suppress_maintenance'=>['boolean'],'suppress_parent_down'=>['boolean'],'suppress_uplink_down'=>['boolean'],'flap_threshold'=>['nullable','integer','min:2','max:1000'],'flap_window_seconds'=>['nullable','integer','min:30','max:86400'],'flap_settle_seconds'=>['nullable','integer','min:0','max:86400'],'business_schedule_id'=>['nullable','exists:iapm_schedules,id']];} protected function prepareForValidation():void{foreach(['enabled','notifications_enabled','notify_recovery','suppress_device_down','suppress_admin_down','suppress_ignored_port','suppress_disabled_port','suppress_deleted_port','suppress_maintenance','suppress_parent_down','suppress_uplink_down'] as $key)$this->merge([$key=>$this->boolean($key)]);} }
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class PolicyRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this->user()?->can('manage iapm policies') ?? false;
+    }
+
+    public function rules(): array
+    {
+        $id = $this->route('policy')?->id;
+
+        return ['name' => ['required', 'string', 'max:255', Rule::unique('iapm_policies')->ignore($id)], 'description' => ['nullable', 'string', 'max:5000'], 'enabled' => ['boolean'], 'priority' => ['required', 'integer', 'between:-100000,100000'], 'severity' => ['required', Rule::in(['info', 'warning', 'critical'])], 'default_receiver' => ['nullable', 'string', 'max:128'], 'notifications_enabled' => ['boolean'], 'trigger_after_seconds' => ['required', 'integer', 'min:0', 'max:2592000'], 'failed_poll_count' => ['required', 'integer', 'min:1', 'max:1000'], 'recovery_after_seconds' => ['required', 'integer', 'min:0', 'max:2592000'], 'repeat_seconds' => ['nullable', 'integer', 'min:60'], 'maximum_repeats' => ['nullable', 'integer', 'min:0', 'max:10000'], 'notify_recovery' => ['boolean'], 'suppress_device_down' => ['boolean'], 'suppress_admin_down' => ['boolean'], 'suppress_ignored_port' => ['boolean'], 'suppress_disabled_port' => ['boolean'], 'suppress_deleted_port' => ['boolean'], 'suppress_maintenance' => ['boolean'], 'suppress_parent_down' => ['boolean'], 'suppress_uplink_down' => ['boolean'], 'flap_threshold' => ['nullable', 'integer', 'min:2', 'max:1000'], 'flap_window_seconds' => ['nullable', 'integer', 'min:30', 'max:86400'], 'flap_settle_seconds' => ['nullable', 'integer', 'min:0', 'max:86400'], 'business_schedule_id' => ['nullable', 'exists:iapm_schedules,id']];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        foreach (['enabled', 'notifications_enabled', 'notify_recovery', 'suppress_device_down', 'suppress_admin_down', 'suppress_ignored_port', 'suppress_disabled_port', 'suppress_deleted_port', 'suppress_maintenance', 'suppress_parent_down', 'suppress_uplink_down'] as $key) {
+            $this->merge([$key => $this->boolean($key)]);
+        }
+    }
+}

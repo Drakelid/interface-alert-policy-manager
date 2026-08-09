@@ -69,10 +69,12 @@ class PolicyResolutionTest extends IntegrationTestCase
         $port = $this->downPort($device);
 
         $older = $this->policy(['name' => 'Older', 'priority' => 5]);
-        $older->assignments()->create(['assignment_type' => 'device', 'assignment_reference' => $device->device_id, 'priority' => 10, 'match_mode' => 'any', 'updated_at' => now()->subDay()]);
+        $olderAssignment = $older->assignments()->create(['assignment_type' => 'device', 'assignment_reference' => $device->device_id, 'priority' => 10, 'match_mode' => 'any']);
+        $olderAssignment->forceFill(['updated_at' => now()->subDay()])->saveQuietly();
 
         $newer = $this->policy(['name' => 'Newer', 'priority' => 5]);
-        $newer->assignments()->create(['assignment_type' => 'device', 'assignment_reference' => $device->device_id, 'priority' => 10, 'match_mode' => 'any', 'updated_at' => now()]);
+        $newerAssignment = $newer->assignments()->create(['assignment_type' => 'device', 'assignment_reference' => $device->device_id, 'priority' => 10, 'match_mode' => 'any']);
+        $newerAssignment->forceFill(['updated_at' => now()])->saveQuietly();
 
         self::assertSame('Newer', $this->resolve($port)->policy->name);
     }

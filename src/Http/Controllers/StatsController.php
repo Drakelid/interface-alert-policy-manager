@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Outage;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 
@@ -40,9 +41,10 @@ class StatsController extends Controller
             $spark[$day] = (int) ($perDay[$day] ?? 0);
         }
 
-        $delivery = DeliveryLog::where('created_at', '>=', $since)->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status');
-        $deliveryTotal = $delivery->sum();
-        $deliverySuccessRate = $deliveryTotal > 0 ? round(100 * (($delivery['sent'] ?? 0) + ($delivery['dry_run'] ?? 0)) / $deliveryTotal, 1) : null;
+        $delivery = NotificationOutbox::where('created_at', '>=', $since)->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status');
+        $attempts = DeliveryLog::whereNotNull('notification_outbox_id')->where('created_at', '>=', $since)->whereIn('status', ['sent', 'failed'])->count();
+        $liveCompleted = (int) ($delivery['sent'] ?? 0) + (int) ($delivery['failed'] ?? 0);
+        $deliverySuccessRate = $liveCompleted > 0 ? round(100 * (int) ($delivery['sent'] ?? 0) / $liveCompleted, 1) : null;
 
         return view('iapm::stats', [
             'days' => $days,
@@ -51,6 +53,7 @@ class StatsController extends Controller
             'byPolicy' => $byPolicy,
             'policyNames' => Policy::pluck('name', 'id'),
             'delivery' => $delivery,
+            'transportAttempts' => $attempts,
             'deliverySuccessRate' => $deliverySuccessRate,
             'spark' => $spark,
         ]);

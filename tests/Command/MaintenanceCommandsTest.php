@@ -12,8 +12,8 @@ class MaintenanceCommandsTest extends IntegrationTestCase
 {
     public function test_install_check_passes_on_a_fully_configured_installation(): void
     {
-        $this->defaultPolicy();
-        $this->smsDestination();
+        $policy = $this->defaultPolicy();
+        $this->triggerAction($policy, $this->smsDestination());
 
         $this->artisan('iapm:install-check')
             ->expectsOutputToContain('[OK] migrations')

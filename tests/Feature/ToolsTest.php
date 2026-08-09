@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 use App\Models\User;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class ToolsTest extends IntegrationTestCase
@@ -28,7 +29,7 @@ class ToolsTest extends IntegrationTestCase
     {
         $port = $this->downPort($this->device());
 
-        $this->actingAs(User::factory()->create())
+        $this->actingAs(User::factory()->create(['enabled' => true]))
             ->post('/plugin/interface-alert-policy-manager/tools/simulate', ['port_id' => $port->port_id, 'state' => 'down'])
             ->assertForbidden();
     }
@@ -63,7 +64,7 @@ class ToolsTest extends IntegrationTestCase
     {
         $admin = $this->admin();
         $this->policy(['name' => 'Keep me']);
-        $document = json_encode(['version' => 1, 'schedules' => [], 'policies' => [['name' => 'Keep me', 'severity' => 'critical', 'enabled' => true]]]);
+        $document = $this->actingAs($admin)->get('/plugin/interface-alert-policy-manager/export')->assertOk()->streamedContent();
 
         $this->actingAs($admin)
             ->post('/plugin/interface-alert-policy-manager/import', ['document' => $document])
@@ -71,5 +72,28 @@ class ToolsTest extends IntegrationTestCase
             ->assertSee('already exists');
 
         self::assertSame(1, Policy::where('name', 'Keep me')->count());
+    }
+
+    public function test_import_rejects_malformed_json(): void
+    {
+        $this->actingAs($this->admin())->post('/plugin/interface-alert-policy-manager/import', ['document' => '{broken'])->assertSessionHasErrors();
+    }
+
+    public function test_import_validates_regex_and_destination_before_writing_anything(): void
+    {
+        $admin = $this->admin();
+        $destination = $this->smsDestination(['name' => 'Existing destination']);
+        $policy = $this->policy(['name' => 'Source policy']);
+        $this->triggerAction($policy, $destination);
+        $policy->assignments()->create(['assignment_type' => 'ifname_regex', 'match_expression' => '/^xe-/', 'match_mode' => 'any', 'priority' => 0, 'enabled' => true]);
+        $document = json_decode($this->actingAs($admin)->get('/plugin/interface-alert-policy-manager/export')->streamedContent(), true);
+        $document['schedules'][] = ['name' => 'Must roll back', 'timezone' => 'UTC', 'enabled' => true, 'schedule_json' => ['mode' => 'always', 'days' => []]];
+        $document['policies'][0]['name'] = 'New invalid policy';
+        $document['policies'][0]['actions'][0]['destination'] = 'Missing destination';
+        $document['policies'][0]['assignments'][0]['match_expression'] = '/[broken/';
+
+        $this->actingAs($admin)->post('/plugin/interface-alert-policy-manager/import', ['document' => json_encode($document)])->assertSessionHasErrors();
+        self::assertFalse(Schedule::where('name', 'Must roll back')->exists());
+        self::assertFalse(Policy::where('name', 'New invalid policy')->exists());
     }
 }

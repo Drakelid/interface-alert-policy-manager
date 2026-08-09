@@ -4,6 +4,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use App\Models\DeviceGroup;
 use App\Models\Location;
+use App\Models\User;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AssignmentMatchCounter;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
@@ -115,7 +116,7 @@ class AssignmentPreviewTest extends IntegrationTestCase
     {
         $policy = $this->policy();
 
-        $this->actingAs(\App\Models\User::factory()->create())
+        $this->actingAs(User::factory()->create(['enabled' => true]))
             ->post('/plugin/interface-alert-policy-manager/assignments/preview', ['policy_id' => $policy->id, 'assignment_type' => 'default', 'match_mode' => 'any', 'priority' => 0])
             ->assertForbidden();
     }
@@ -153,7 +154,7 @@ class AssignmentPreviewTest extends IntegrationTestCase
             ->assertOk()
             ->assertExactJson([]);
 
-        $this->actingAs(\App\Models\User::factory()->create())
+        $this->actingAs(User::factory()->create(['enabled' => true]))
             ->getJson(route('iapm.devices.search', ['q' => 'core']))
             ->assertForbidden();
     }

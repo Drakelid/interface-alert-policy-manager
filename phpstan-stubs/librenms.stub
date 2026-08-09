@@ -1,0 +1,48 @@
+<?php
+
+namespace App\Models {
+    class Device extends \Illuminate\Database\Eloquent\Model
+    {
+        public function getMaintenanceStatus(): \LibreNMS\Enum\MaintenanceStatus {}
+        public function displayName(): string {}
+        /** @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Location, $this> */
+        public function location(): \Illuminate\Database\Eloquent\Relations\BelongsTo {}
+        /** @return \Illuminate\Database\Eloquent\Relations\BelongsToMany<DeviceGroup, $this> */
+        public function groups(): \Illuminate\Database\Eloquent\Relations\BelongsToMany {}
+        /** @return \Illuminate\Database\Eloquent\Relations\BelongsToMany<Device, $this> */
+        public function parents(): \Illuminate\Database\Eloquent\Relations\BelongsToMany {}
+    }
+    class DeviceGroup extends \Illuminate\Database\Eloquent\Model {}
+    class Location extends \Illuminate\Database\Eloquent\Model {}
+    class Port extends \Illuminate\Database\Eloquent\Model
+    {
+        /** @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Device, $this> */
+        public function device(): \Illuminate\Database\Eloquent\Relations\BelongsTo {}
+        /** @return \Illuminate\Database\Eloquent\Relations\BelongsToMany<PortGroup, $this> */
+        public function groups(): \Illuminate\Database\Eloquent\Relations\BelongsToMany {}
+    }
+    class PortGroup extends \Illuminate\Database\Eloquent\Model {}
+    class User extends \Illuminate\Database\Eloquent\Model
+    {
+        public function hasRole(string $role): bool {}
+        public function hasPermissionTo(string $permission): bool {}
+    }
+}
+
+namespace LibreNMS\Enum {
+    final class AlertState
+    {
+        public const ACTIVE = 1;
+        public const ACKNOWLEDGED = 2;
+        public const RECOVERED = 0;
+        public const BETTER = 3;
+        public const WORSE = 4;
+        public const CHANGED = 5;
+    }
+
+    enum MaintenanceStatus
+    {
+        case SkipAlerts;
+        case MuteAlerts;
+    }
+}

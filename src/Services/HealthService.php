@@ -3,7 +3,9 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Log;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
 
 /**
  * Self-monitoring / dead-man's switch. Silence from a paging system is only
@@ -15,7 +17,9 @@ class HealthService
 {
     /** Scheduler runs every minute; allow generous slack before flagging it stalled. */
     public const STALE_AFTER_SECONDS = 600;
+
     public const GATEWAY_FAILURE_WINDOW = 900;
+
     public const BACKLOG_OVERDUE_SECONDS = 600;
 
     public function __construct(private readonly SettingStore $settings) {}
@@ -42,10 +46,12 @@ class HealthService
     private function queueWorkerCheck(): array
     {
         $last = $this->timestamp('last_queue_worker_at');
-        $pending = 0;
         try {
-            $pending = \LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog::where('status', 'queued')->where('created_at', '<', now()->subSeconds(self::STALE_AFTER_SECONDS))->count();
-        } catch (\Throwable) {
+            $pending = $this->staleOutboxQuery(self::STALE_AFTER_SECONDS)->count();
+        } catch (\Throwable $exception) {
+            Log::channel('iapm')->error('Queue health query failed.', ['error' => $exception->getMessage()]);
+
+            return ['key' => 'queue_worker', 'label' => 'Queue worker delivering', 'ok' => false, 'detail' => 'Queue health query failed: '.$exception->getMessage()];
         }
         $ok = $pending === 0 && ($last === null || $last->addSeconds(self::STALE_AFTER_SECONDS)->isFuture());
 
@@ -102,17 +108,27 @@ class HealthService
                 ->whereNotNull('triggered_at')
                 ->where('triggered_at', '<', now()->subSeconds(self::BACKLOG_OVERDUE_SECONDS))
                 ->whereHas('policy', fn ($q) => $q->where('notifications_enabled', true))
-                ->whereDoesntHave('deliveries', fn ($q) => $q->whereIn('status', ['sent', 'dry_run']))
+                ->whereDoesntHave('deliveries', fn ($query) => $query->whereIn('phase', ['trigger', 'digest'])->whereIn('status', ['sent', 'dry_run'])->whereColumn('iapm_delivery_logs.episode_uuid', 'iapm_incidents.episode_uuid'))
+                ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('iapm_notification_outbox_incidents as noi')->join('iapm_notification_outbox as no', 'no.id', '=', 'noi.notification_outbox_id')->whereColumn('noi.incident_id', 'iapm_incidents.id')->whereColumn('noi.episode_uuid', 'iapm_incidents.episode_uuid')->whereIn('no.phase', ['trigger', 'digest'])->whereIn('no.status', ['sent', 'dry_run', 'pending', 'queued', 'processing']))
                 ->count();
-        } catch (\Throwable) {
-            $overdue = 0;
+            $counts = NotificationOutbox::query()->selectRaw('status, count(*) as aggregate')->groupBy('status')->pluck('aggregate', 'status');
+            $stale = $this->staleOutboxQuery(self::BACKLOG_OVERDUE_SECONDS)->count();
+        } catch (\Throwable $exception) {
+            Log::channel('iapm')->error('Notification backlog health query failed.', ['error' => $exception->getMessage()]);
+
+            return ['key' => 'action_backlog', 'label' => 'No stuck notifications', 'ok' => false, 'detail' => 'Backlog query failed: '.$exception->getMessage()];
         }
+
+        $pending = (int) ($counts['pending'] ?? 0);
+        $inFlight = (int) ($counts['queued'] ?? 0) + (int) ($counts['processing'] ?? 0);
+        $failed = (int) ($counts['failed'] ?? 0);
+        $ok = $overdue === 0 && $stale === 0;
 
         return [
             'key' => 'action_backlog',
             'label' => 'No stuck notifications',
-            'ok' => $overdue === 0,
-            'detail' => $overdue === 0 ? 'All triggered incidents have been actioned.' : "{$overdue} active incident(s) triggered >10m ago with no delivery.",
+            'ok' => $ok,
+            'detail' => "pending={$pending}, in-flight={$inFlight}, failed={$failed}, stale={$stale}, overdue incidents={$overdue}".($ok ? '.' : ' — current-episode notification processing is unhealthy.'),
         ];
     }
 
@@ -128,5 +144,15 @@ class HealthService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function staleOutboxQuery(int $seconds)
+    {
+        $cutoff = now()->subSeconds($seconds);
+
+        return NotificationOutbox::query()->where(function ($query) use ($cutoff): void {
+            $query->where(fn ($pending) => $pending->whereIn('status', ['pending', 'queued'])->where('created_at', '<', $cutoff))
+                ->orWhere(fn ($processing) => $processing->where('status', 'processing')->where(fn ($claimed) => $claimed->whereNull('claimed_at')->orWhere('claimed_at', '<', $cutoff)));
+        });
     }
 }

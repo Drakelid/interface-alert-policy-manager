@@ -33,7 +33,7 @@ composer install
 vendor/bin/phpunit --testsuite unit
 ```
 
-The `integration` suite boots the LibreNMS application, migrates an in-memory database with `RefreshDatabase`, and exercises ingestion, policy resolution, delivery, authorization, and every Artisan command. It requires the package to be installed into a LibreNMS checkout. `tests/bootstrap.php` locates that checkout via `LIBRENMS_ROOT`, then a sibling `../librenms` directory, then the vendor install path:
+The `integration` suite boots the LibreNMS application, runs one `migrate:fresh` against the isolated `DB_TEST_*` MariaDB database, then wraps each test in a rollback transaction. It exercises ingestion, policy resolution, delivery, authorization, migration round-trips, and every Artisan command. It requires the package to be installed into a LibreNMS checkout. `tests/bootstrap.php` locates that checkout via `LIBRENMS_ROOT`, then a sibling `../librenms` directory, then the vendor install path:
 
 ```sh
 LIBRENMS_ROOT=/opt/librenms vendor/bin/phpunit --testsuite integration
@@ -53,6 +53,10 @@ vendor/bin/phpunit --testsuite unit
 LIBRENMS_ROOT=/opt/librenms vendor/bin/phpunit --testsuite integration
 php artisan iapm:install-check
 ```
+
+CI runs the quality set on PHP 8.2, 8.3, and 8.4. Its integration job installs the package into the supported LibreNMS 26.7.0 baseline on PHP 8.3 and runs the migration round-trip with the feature/command suite. The level-5 `phpstan-baseline.neon` contains only line-specific Larastan limitations from analyzing this package outside a booted LibreNMS application: dynamically registered `iapm::` Blade view names and nullable Eloquent relation/cast properties that Larastan models as non-null. It does not use identifier-wide or regex-wide ignores. New errors fail CI, and baseline entries must be removed when upstream typing improves rather than added to hide regressions.
+
+For scale work, run `tools/loadtest/seed.php` and `loadtest.php` on a staging clone and record the scale, SQL timings/plans, query count, peak memory, resolver batch, and optional reconcile/action timings. A benchmark without representative LibreNMS port inventory must label resolver/matrix results as skipped.
 
 ## Upgrade and migration rules
 

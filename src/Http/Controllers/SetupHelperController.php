@@ -1,6 +1,19 @@
 <?php
+
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
-class SetupHelperController { public function __invoke(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore $settings){return view('iapm::setup-helper',['rule'=>"macros.device_up = 1 AND ports.ifAdminStatus = 'up' AND ports.ifOperStatus != 'up' AND ports.ignore = 0 AND ports.disabled = 0 AND ports.deleted = 0",'template'=>$this->template(),'endpoint'=>url('/plugin/interface-alert-policy-manager/api/v1/alerts'),'hasToken'=>filled($settings->get('ingestion_token')),'lastAlertAt'=>$settings->get('last_ingestion_at')]);} private function template():string{return <<<'BLADE'
+
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
+
+class SetupHelperController
+{
+    public function __invoke(SettingStore $settings)
+    {
+        return view('iapm::setup-helper', ['rule' => "macros.device_up = 1 AND ports.ifAdminStatus = 'up' AND ports.ifOperStatus != 'up' AND ports.ignore = 0 AND ports.disabled = 0 AND ports.deleted = 0", 'template' => $this->template(), 'endpoint' => url('/plugin/interface-alert-policy-manager/api/v1/alerts'), 'hasToken' => filled($settings->get('ingestion_token')), 'lastAlertAt' => $settings->get('last_ingestion_at')]);
+    }
+
+    private function template(): string
+    {
+        return <<<'BLADE'
 @php
 $faults = [];
 if ((int) $alert->state !== 0) {
@@ -29,4 +42,6 @@ $payload = [
 ];
 @endphp
 @json($payload)
-BLADE; } }
+BLADE;
+    }
+}

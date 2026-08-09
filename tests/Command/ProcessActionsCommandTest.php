@@ -175,7 +175,8 @@ class ProcessActionsCommandTest extends IntegrationTestCase
 
         $this->artisan('iapm:process-actions');
 
-        self::assertSame(['action-receiver-a', 'action-receiver-b'], DeliveryLog::orderBy('id')->get()->map(fn ($log) => json_decode((string) $log->request_payload_redacted, true)['receiver'])->all());
+        self::assertSame(['[REDACTED]', '[REDACTED]'], DeliveryLog::orderBy('id')->get()->map(fn ($log) => json_decode((string) $log->request_payload_redacted, true)['receiver'])->all());
+        Http::assertSent(fn ($request) => in_array($request['receiver'], ['action-receiver-a', 'action-receiver-b'], true));
         Http::assertSentCount(2);
     }
 }

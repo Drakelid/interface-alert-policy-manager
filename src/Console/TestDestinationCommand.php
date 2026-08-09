@@ -9,6 +9,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher
 class TestDestinationCommand extends Command
 {
     protected $signature = 'iapm:test-destination {--destination=} {--receiver=} {--force}';
+
     protected $description = 'Send a controlled destination test';
 
     public function handle(NotificationDispatcher $dispatcher): int

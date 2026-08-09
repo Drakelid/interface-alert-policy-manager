@@ -8,8 +8,10 @@ use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ConfigurationImportValidator;
 
 /**
  * Export/import of the alerting configuration (schedules, policies, actions,
@@ -35,20 +37,23 @@ class ImportExportController extends Controller
             $row['actions'] = $p->actions->map(function ($a) {
                 $action = $this->strip($a->toArray());
                 $action['destination'] = $a->destination?->name;
+
                 return $action;
             })->values();
             $row['assignments'] = $p->assignments->map(function (Assignment $a) {
                 $assignment = $this->strip($a->toArray());
                 $assignment['device_group_ids'] = $a->deviceGroups->pluck('device_group_id')->all();
+
                 return $assignment;
             })->values();
+
             return $row;
         })->values();
 
         $document = ['version' => 1, 'exported_at' => now()->toIso8601String(), 'schedules' => $schedules, 'policies' => $policies];
 
         return response()->streamDownload(
-            fn () => print(json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            fn () => print (json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
             'iapm-config-'.now()->format('Ymd-His').'.json',
             ['Content-Type' => 'application/json']
         );
@@ -59,7 +64,7 @@ class ImportExportController extends Controller
         return view('iapm::import', ['report' => null]);
     }
 
-    public function import(Request $request, AuditService $audit)
+    public function import(Request $request, AuditService $audit, ConfigurationImportValidator $documents)
     {
         abort_unless($request->user()->can('manage iapm policies'), 403);
         $data = $request->validate(['document' => ['required', 'string', 'max:5000000']]);
@@ -72,13 +77,16 @@ class ImportExportController extends Controller
         if (! is_array($doc) || ($doc['version'] ?? null) !== 1) {
             return back()->withErrors('Unrecognised export format (expected version 1).');
         }
+        $doc = $documents->validate($doc);
 
         $report = ['schedules' => 0, 'policies' => 0, 'actions' => 0, 'assignments' => 0, 'skipped' => []];
         $destinations = Destination::pluck('id', 'name');
 
         DB::transaction(function () use ($doc, &$report, $destinations, $request): void {
             foreach ((array) ($doc['schedules'] ?? []) as $s) {
-                if (empty($s['name']) || Schedule::where('name', $s['name'])->exists()) { continue; }
+                if (empty($s['name']) || Schedule::where('name', $s['name'])->exists()) {
+                    continue;
+                }
                 Schedule::create($this->only($s, (new Schedule)->getFillable()));
                 $report['schedules']++;
             }
@@ -86,6 +94,7 @@ class ImportExportController extends Controller
             foreach ((array) ($doc['policies'] ?? []) as $p) {
                 if (empty($p['name']) || Policy::where('name', $p['name'])->exists()) {
                     $report['skipped'][] = 'policy "'.($p['name'] ?? '?').'" (already exists)';
+
                     continue;
                 }
                 $policy = Policy::create($this->only($p, (new Policy)->getFillable()) + [
@@ -97,8 +106,10 @@ class ImportExportController extends Controller
 
                 foreach ((array) ($p['actions'] ?? []) as $a) {
                     $destId = $destinations[$a['destination'] ?? ''] ?? null;
-                    if (! $destId) { $report['skipped'][] = 'action for "'.$p['name'].'" (destination "'.($a['destination'] ?? '?').'" not found)'; continue; }
-                    $policy->actions()->create($this->only($a, (new \LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction)->getFillable()) + ['destination_id' => $destId]);
+                    if (! $destId) {
+                        throw new \LogicException('Validated destination disappeared during import.');
+                    }
+                    $policy->actions()->create($this->only($a, (new PolicyAction)->getFillable()) + ['destination_id' => $destId]);
                     $report['actions']++;
                 }
 

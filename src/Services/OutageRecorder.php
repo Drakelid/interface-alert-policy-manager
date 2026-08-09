@@ -2,6 +2,8 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Log;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Outage;
 
@@ -12,13 +14,14 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Outage;
  */
 class OutageRecorder
 {
-    public function record(Incident $incident): void
+    public function record(Incident $incident, ?string $suppressionReason = null): Outage
     {
         $recoveredAt = $incident->recovered_at ?? now();
         $firstSeen = $incident->first_seen_at ?? $recoveredAt;
 
+        $episode = (string) ($incident->episode_uuid ?: throw new \LogicException('Cannot record an outage without an episode UUID.'));
         try {
-            Outage::create([
+            return Outage::firstOrCreate(['incident_id' => $incident->id, 'episode_uuid' => $episode], [
                 'incident_id' => $incident->id,
                 'device_id' => $incident->device_id,
                 'port_id' => $incident->port_id,
@@ -31,11 +34,13 @@ class OutageRecorder
                 'duration_seconds' => max(0, $firstSeen->diffInSeconds($recoveredAt)),
                 'notification_count' => (int) $incident->notification_count,
                 'was_flapping' => $incident->events()->where('event_type', 'flapping')->where('created_at', '>=', $firstSeen)->exists(),
-                'suppression_reason' => $incident->suppression_reason,
+                'suppression_reason' => $suppressionReason ?? $incident->suppression_reason,
             ]);
-        } catch (\Throwable $e) {
-            // Never let SLA bookkeeping break a recovery.
-            \Illuminate\Support\Facades\Log::channel('iapm')->warning('Failed to record outage.', ['incident_id' => $incident->id, 'error' => $e->getMessage()]);
+        } catch (UniqueConstraintViolationException) {
+            return Outage::where('incident_id', $incident->id)->where('episode_uuid', $episode)->firstOrFail();
+        } catch (\Throwable $exception) {
+            Log::channel('iapm')->error('Failed to record outage.', ['incident_id' => $incident->id, 'episode_uuid' => $episode, 'error' => $exception->getMessage()]);
+            throw $exception;
         }
     }
 }

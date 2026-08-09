@@ -3,6 +3,7 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class UiTest extends IntegrationTestCase
@@ -16,7 +17,7 @@ class UiTest extends IntegrationTestCase
         $this->incident($policy, $this->downPort($this->device(), ['ifName' => 'zzz-active']), ['state' => IncidentState::Active, 'severity' => 'critical']);
 
         $this->actingAs($this->admin())
-            ->get('/plugin/interface-alert-policy-manager/incidents')
+            ->get('/plugin/interface-alert-policy-manager/incidents?state=all')
             ->assertOk()
             ->assertSeeInOrder(['zzz-active', 'aaa-recovered']);
     }
@@ -28,7 +29,7 @@ class UiTest extends IntegrationTestCase
         $this->actingAs($this->admin())
             ->get('/plugin/interface-alert-policy-manager/incidents')
             ->assertOk()
-            ->assertSee('incidents/'.\LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident::first()->id.'/acknowledge')
+            ->assertSee('incidents/'.Incident::first()->id.'/acknowledge')
             ->assertSee('Auto-refresh');
     }
 

@@ -2,6 +2,11 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Outage;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\HealthService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
@@ -62,5 +67,62 @@ class MonitoringAndStatsTest extends IntegrationTestCase
             ->get('/plugin/interface-alert-policy-manager/comparison-report/export')
             ->assertOk()
             ->assertHeader('content-type', 'text/csv; charset=UTF-8');
+    }
+
+    public function test_two_episodes_on_one_incident_are_counted_twice(): void
+    {
+        $this->defaultPolicy();
+        $device = $this->device();
+        $port = $this->downPort($device);
+        $this->ingest($this->alertPayload($device, [$this->fault($port)]));
+        $this->ingest($this->alertPayload($device, [], 0, ['timestamp' => now()->addMinute()->toIso8601String()]));
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], 1, ['timestamp' => now()->addMinutes(2)->toIso8601String()]));
+        $this->ingest($this->alertPayload($device, [], 0, ['timestamp' => now()->addMinutes(3)->toIso8601String()]));
+
+        self::assertSame(1, Incident::count());
+        self::assertSame(2, Outage::count());
+        $this->actingAs($this->admin())->get('/plugin/interface-alert-policy-manager/stats')->assertOk()->assertSee('>2<', false);
+    }
+
+    public function test_previous_episode_delivery_does_not_make_current_episode_healthy(): void
+    {
+        $this->settings->put('last_reconcile_at', now()->toIso8601String());
+        $this->settings->put('last_process_actions_at', now()->toIso8601String());
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination());
+        $incident = $this->incident($policy, $this->downPort($this->device()), ['first_seen_at' => now()->subMinutes(20), 'triggered_at' => now()->subMinutes(20)]);
+        DeliveryLog::create(['incident_id' => $incident->id, 'episode_uuid' => '00000000-0000-0000-0000-000000000000', 'destination_id' => $action->destination_id, 'policy_action_id' => $action->id, 'phase' => 'trigger', 'status' => 'sent']);
+        self::assertFalse(app(HealthService::class)->healthy());
+
+        DeliveryLog::create(['incident_id' => $incident->id, 'episode_uuid' => $incident->episode_uuid, 'destination_id' => $action->destination_id, 'policy_action_id' => $action->id, 'phase' => 'trigger', 'status' => 'sent']);
+        self::assertTrue(app(HealthService::class)->healthy());
+    }
+
+    public function test_stale_in_flight_outbox_is_unhealthy(): void
+    {
+        $this->settings->put('last_reconcile_at', now()->toIso8601String());
+        $this->settings->put('last_process_actions_at', now()->toIso8601String());
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination());
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+        NotificationOutbox::create(['idempotency_key' => hash('sha256', 'stale'), 'episode_uuid' => $incident->episode_uuid, 'incident_id' => $incident->id, 'destination_id' => $action->destination_id, 'policy_action_id' => $action->id, 'phase' => 'trigger', 'receiver_hash' => hash('sha256', 'noc'), 'receiver_encrypted' => 'noc', 'message_encrypted' => 'down', 'incident_ids_encrypted' => [$incident->id], 'status' => 'queued', 'created_at' => now()->subHour()]);
+        self::assertFalse(app(HealthService::class)->healthy());
+    }
+
+    public function test_backlog_query_failure_fails_health_closed(): void
+    {
+        Schema::rename('iapm_notification_outbox', 'iapm_notification_outbox_unavailable');
+        try {
+            $check = collect(app(HealthService::class)->checks())->firstWhere('key', 'action_backlog');
+            self::assertFalse($check['ok']);
+            self::assertStringContainsString('query failed', strtolower($check['detail']));
+        } finally {
+            Schema::rename('iapm_notification_outbox_unavailable', 'iapm_notification_outbox');
+            if (! DB::connection()->getPdo()->inTransaction()) {
+                $connection = DB::connection();
+                $connection->setPdo($connection->getPdo());
+                $connection->beginTransaction();
+            }
+        }
     }
 }

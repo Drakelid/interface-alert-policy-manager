@@ -23,7 +23,7 @@ class AssignmentMatchCounter
      */
     public function count(array $assignment): array
     {
-        $type = $assignment['assignment_type'] ?? '';
+        $type = $assignment['assignment_type'];
 
         try {
             if ($type === 'ifalias_regex' || $type === 'ifname_regex') {

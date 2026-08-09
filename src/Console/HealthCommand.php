@@ -13,6 +13,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\HealthService;
 class HealthCommand extends Command
 {
     protected $signature = 'iapm:health';
+
     protected $description = 'Report IAPM self-monitoring health (non-zero exit when unhealthy)';
 
     public function handle(HealthService $health): int

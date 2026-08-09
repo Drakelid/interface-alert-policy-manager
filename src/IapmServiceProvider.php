@@ -2,8 +2,10 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager;
 
+use App\Models\User;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use LibreNMS\Interfaces\Plugins\Hooks\MenuEntryHook;
 use LibreNMS\Interfaces\Plugins\Hooks\SettingsHook;
@@ -19,6 +21,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestDestinationCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestPolicyCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Hooks\MenuEntry;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Hooks\Settings;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 
 class IapmServiceProvider extends ServiceProvider
 {
@@ -29,13 +32,23 @@ class IapmServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/iapm.php', 'iapm');
-        if (config('logging.channels.iapm') === null) config(['logging.channels.iapm' => ['driver' => 'single', 'path' => storage_path('logs/iapm.log'), 'level' => 'info', 'replace_placeholders' => true]]);
+        if (config('logging.channels.iapm') === null) {
+            config(['logging.channels.iapm' => ['driver' => 'single', 'path' => storage_path('logs/iapm.log'), 'level' => 'info', 'replace_placeholders' => true]]);
+        }
     }
 
     public function boot(PluginManagerInterface $plugins): void
     {
         foreach (self::ABILITIES as $ability) {
-            Gate::define($ability, function (\App\Models\User $user) use ($ability): bool { if ($user->hasRole('admin')) return true; try { return $user->hasPermissionTo($ability); } catch (\Throwable) { return false; } });
+            Gate::define($ability, function (User $user) use ($ability): bool {
+                if ($user->hasRole('admin')) {
+                    return true;
+                } try {
+                    return $user->hasPermissionTo($ability);
+                } catch (\Throwable) {
+                    return false;
+                }
+            });
         }
         $plugins->publishHook(self::PLUGIN_NAME, MenuEntryHook::class, MenuEntry::class);
         $plugins->publishHook(self::PLUGIN_NAME, SettingsHook::class, Settings::class);
@@ -68,12 +81,22 @@ class IapmServiceProvider extends ServiceProvider
             // picks up new code). --name makes each command distinct so N run in parallel.
             // For heavier throughput add dedicated systemd workers (they safely share the
             // same queue); set IAPM_QUEUE_WORKERS=0 to let the scheduler manage none.
-            try { $queued = app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class)->get('dispatch_mode', 'queue') === 'queue'; } catch (\Throwable) { $queued = true; }
+            try {
+                $queued = app(SettingStore::class)->get('dispatch_mode', 'queue') === 'queue';
+            } catch (\Throwable) {
+                $queued = true;
+            }
             $workers = max(0, (int) config('iapm.queue.workers', 3));
             $conn = config('iapm.queue.connection');
             // Don't spawn database workers before the jobs table exists (fresh install
             // pre-migration) — they'd just crash-loop. Redis needs no such table.
-            $backendReady = $conn === 'redis' || (function () { try { return \Illuminate\Support\Facades\Schema::hasTable('jobs'); } catch (\Throwable) { return false; } })();
+            $backendReady = $conn === 'redis' || (function () {
+                try {
+                    return Schema::hasTable('jobs');
+                } catch (\Throwable) {
+                    return false;
+                }
+            })();
             if ($queued && $workers > 0 && $backendReady) {
                 for ($i = 1; $i <= $workers; $i++) {
                     $args = $conn ? [$conn] : [];
