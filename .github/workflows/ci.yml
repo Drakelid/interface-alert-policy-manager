@@ -54,8 +54,11 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
       - name: Install supported LibreNMS baseline
         run: |
+          librenms_user="$(id -un)"
+          echo "LIBRENMS_USER=$librenms_user" >> "$GITHUB_ENV"
+          export LIBRENMS_USER="$librenms_user"
           git clone --depth 1 --branch 26.7.0 https://github.com/librenms/librenms.git "$RUNNER_TEMP/librenms"
-          composer install --working-dir="$RUNNER_TEMP/librenms" --no-interaction --prefer-dist --no-scripts
+          composer install --working-dir="$RUNNER_TEMP/librenms" --no-interaction --prefer-dist
       - name: Integration and migration round-trip tests
         env:
           LIBRENMS_ROOT: ${{ runner.temp }}/librenms
