@@ -29,7 +29,7 @@ jobs:
       - run: vendor/bin/phpunit --testsuite unit
 
   librenms-integration:
-    name: LibreNMS 26.7.0 integration (PHP 8.3)
+    name: LibreNMS 26.7.0 integration
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -52,18 +52,24 @@ jobs:
           extensions: curl, gd, gmp, mbstring, mysqli, pdo_mysql, snmp, xml, zip
           tools: composer:v2
       - run: composer install --no-interaction --prefer-dist
-      - name: Install supported LibreNMS baseline
+      - name: Prepare supported LibreNMS baseline
         run: |
-          librenms_user="$(id -un)"
-          echo "LIBRENMS_USER=$librenms_user" >> "$GITHUB_ENV"
-          export LIBRENMS_USER="$librenms_user"
-          git clone --depth 1 --branch 26.7.0 https://github.com/librenms/librenms.git "$RUNNER_TEMP/librenms"
-          composer install --working-dir="$RUNNER_TEMP/librenms" --no-interaction --prefer-dist
+          git clone --depth 1 --branch 26.7.0 https://github.com/librenms/librenms.git "$RUNNER_TEMP/librenms-source"
+          docker pull librenms/librenms:26.7.0
       - name: Integration and migration round-trip tests
-        env:
-          LIBRENMS_ROOT: ${{ runner.temp }}/librenms
-          DB_TEST_HOST: 127.0.0.1
-          DB_TEST_DATABASE: librenms_test
-          DB_TEST_USERNAME: librenms
-          DB_TEST_PASSWORD: librenms
-        run: 'php "$GITHUB_WORKSPACE/tools/phpunit-librenms.php" -c "$GITHUB_WORKSPACE/phpunit.xml" --testsuite integration'
+        run: |
+          docker run --rm --network host \
+            --volume "$GITHUB_WORKSPACE:/package" \
+            --volume "$RUNNER_TEMP/librenms-source/tests:/opt/librenms/tests:ro" \
+            --env LIBRENMS_ROOT=/opt/librenms \
+            --env DB_TEST_HOST=127.0.0.1 \
+            --env DB_TEST_DATABASE=librenms_test \
+            --env DB_TEST_USERNAME=librenms \
+            --env DB_TEST_PASSWORD=librenms \
+            --workdir /package \
+            --entrypoint php \
+            librenms/librenms:26.7.0 \
+            -d memory_limit=1G \
+            /package/tools/phpunit-librenms.php \
+            -c /package/phpunit.xml \
+            --testsuite integration
