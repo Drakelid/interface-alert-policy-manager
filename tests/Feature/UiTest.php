@@ -4,10 +4,19 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PluginVersion;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class UiTest extends IntegrationTestCase
 {
+    public function test_the_installed_plugin_version_is_visible_in_the_shared_navigation(): void
+    {
+        $this->actingAs($this->admin())
+            ->get('/plugin/interface-alert-policy-manager')
+            ->assertOk()
+            ->assertSeeText('IAPM '.app(PluginVersion::class)->display());
+    }
+
     public function test_incidents_are_ordered_urgent_first(): void
     {
         $policy = $this->policy();

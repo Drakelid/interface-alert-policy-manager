@@ -1,4 +1,5 @@
 @inject('iapmSettings', 'LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore')
+@inject('iapmVersion', 'LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PluginVersion')
 @php($iapmDryRun = (bool) $iapmSettings->get('dry_run', true))
 @php($iapmRoute = \Illuminate\Support\Facades\Route::currentRouteName())
 @php($iapmActive = fn(...$names) => in_array($iapmRoute, $names, true) ? 'active' : '')
@@ -57,6 +58,7 @@
         <form class="form-inline iapm-hide-sm" method="get" action="{{ route('iapm.matrix') }}" style="display:inline-block;margin-right:8px;" title="Find an interface or description">
             <input class="form-control input-sm iapm-quickfind" name="search" placeholder="Find interface…" value="{{ $iapmRoute==='iapm.matrix' ? request('search') : '' }}">
         </form>
+        <span class="label label-default" style="margin-right:4px;" title="Installed Interface Alert Policy Manager package version">IAPM {{ $iapmVersion->display() }}</span>
         @if($iapmDryRun)
             <a href="{{ route('iapm.settings.edit') }}" class="label label-warning" title="No external delivery. Click to change."><i class="fa fa-flask"></i> DRY-RUN</a>
         @else
