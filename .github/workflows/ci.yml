@@ -55,9 +55,9 @@ jobs:
       - name: Install supported LibreNMS baseline
         run: |
           git clone --depth 1 --branch 26.7.0 https://github.com/librenms/librenms.git "$RUNNER_TEMP/librenms"
-          composer install --working-dir="$RUNNER_TEMP/librenms" --no-interaction --prefer-dist
+          composer install --working-dir="$RUNNER_TEMP/librenms" --no-interaction --prefer-dist --no-scripts
           composer config --working-dir="$RUNNER_TEMP/librenms" repositories.iapm '{"type":"path","url":"'"$GITHUB_WORKSPACE"'","options":{"symlink":true}}'
-          composer require --working-dir="$RUNNER_TEMP/librenms" --no-interaction --with-all-dependencies drakelid/interface-alert-policy-manager:@dev
+          composer require --working-dir="$RUNNER_TEMP/librenms" --no-interaction --with-all-dependencies --no-scripts drakelid/interface-alert-policy-manager:@dev
       - name: Integration and migration round-trip tests
         env:
           LIBRENMS_ROOT: ${{ runner.temp }}/librenms
