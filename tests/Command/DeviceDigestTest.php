@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Command;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
@@ -18,6 +19,27 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
  */
 class DeviceDigestTest extends IntegrationTestCase
 {
+    public function test_a_hundred_interface_device_storm_queues_one_durable_digest(): void
+    {
+        Queue::fake();
+        $this->settings->put('dispatch_mode', 'queue');
+        $this->settings->put('aggregate_threshold', 20);
+        $this->settings->put('aggregate_window_seconds', 3600);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $device = $this->device();
+        collect(range(1, 100))->each(fn () => $this->incident($policy, $this->downPort($device)));
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        $outbox = NotificationOutbox::sole();
+        self::assertSame('digest', $outbox->phase);
+        self::assertSame('queued', $outbox->status);
+        self::assertCount(100, $outbox->incident_ids_encrypted);
+        self::assertSame(100, DB::table('iapm_notification_outbox_incidents')->where('notification_outbox_id', $outbox->id)->count());
+        Queue::assertPushed(SendNotificationJob::class, 1);
+    }
+
     public function test_many_interfaces_on_one_device_send_a_single_digest(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);

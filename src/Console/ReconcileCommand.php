@@ -24,17 +24,30 @@ class ReconcileCommand extends Command
 
     protected $description = 'Reconcile open IAPM incidents with current LibreNMS port state';
 
-    public function handle(InterfaceContextService $contexts, PolicyResolver $resolver, SuppressionService $suppression, SettingStore $settings, DependencyResolver $dependencies, ReceiverResolver $receivers): int
+    public function handle(InterfaceContextService $contexts, PolicyResolver $resolver, SuppressionService $suppression, SettingStore $settings, DependencyResolver $dependencies, ReceiverResolver $receivers, IncidentLifecycleService $lifecycle): int
     {
         if ($this->pluginDisabled()) {
             return self::SUCCESS;
         }
 
         $query = Incident::with('policy')->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Suppressed])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->when($this->option('device'), fn ($q, $id) => $q->where('device_id', $id));
+        $deletedPortBehavior = $settings->get('deleted_port_behavior', 'recover');
         $changed = 0;
         $failed = 0;
-        $query->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$changed, &$failed, $contexts, $resolver, $suppression, $settings, $dependencies, $receivers): void {
+        $query->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$changed, &$failed, $contexts, $resolver, $suppression, $deletedPortBehavior, $dependencies, $receivers, $lifecycle): void {
             $ports = Port::with(['device.location', 'device.groups', 'device.parents', 'groups'])->whereIn('port_id', $items->pluck('port_id'))->get()->keyBy('port_id');
+            $missing = $items->filter(fn (Incident $incident): bool => ! $ports->has($incident->port_id));
+            $missingRecoveredInBatch = false;
+            if ($missing->isNotEmpty() && $deletedPortBehavior !== 'retain' && ! $this->option('dry-run')) {
+                try {
+                    $changed += $lifecycle->recoverMany($missing, 'Port no longer exists in LibreNMS.');
+                    $missingRecoveredInBatch = true;
+                } catch (\Throwable $exception) {
+                    // Fall back to isolated recovery below. One malformed legacy
+                    // row must not prevent every other incident from reconciling.
+                    $this->warn('Batch recovery failed; retrying deleted ports individually: '.$exception->getMessage());
+                }
+            }
             foreach ($items as $incident) {
                 try {
                     if ($incident->muted_until?->isPast()) {
@@ -45,7 +58,7 @@ class ReconcileCommand extends Command
                     }
                     $port = $ports->get($incident->port_id);
                     if (! $port) {
-                        if ($settings->get('deleted_port_behavior', 'recover') === 'retain') {
+                        if ($deletedPortBehavior === 'retain' || $missingRecoveredInBatch) {
                             continue;
                         }
                         $this->transition($incident, IncidentState::Recovered, 'Port no longer exists in LibreNMS.', ['recovered_at' => now()]);

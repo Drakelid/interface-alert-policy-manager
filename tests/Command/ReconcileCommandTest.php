@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Command;
 
+use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
@@ -189,6 +190,30 @@ class ReconcileCommandTest extends IntegrationTestCase
         $this->settings->put('deleted_port_behavior', 'recover');
         $this->artisan('iapm:reconcile')->assertExitCode(0);
         self::assertSame(IncidentState::Recovered, $incident->fresh()->state);
+    }
+
+    public function test_deleted_port_storm_recovery_is_atomic_and_query_bounded(): void
+    {
+        $policy = $this->defaultPolicy();
+        $device = $this->device();
+        $incidents = collect(range(1, 100))->map(function () use ($policy, $device) {
+            $port = $this->downPort($device);
+            $incident = $this->incident($policy, $port);
+            $port->delete();
+
+            return $incident;
+        });
+        $queries = 0;
+        DB::listen(static function () use (&$queries): void {
+            $queries++;
+        });
+
+        $this->artisan('iapm:reconcile')->assertExitCode(0);
+
+        self::assertSame(100, DB::table('iapm_incidents')->whereIn('id', $incidents->pluck('id'))->where('state', IncidentState::Recovered->value)->count());
+        self::assertSame(100, DB::table('iapm_incident_events')->whereIn('incident_id', $incidents->pluck('id'))->where('event_type', 'recovered')->count());
+        self::assertSame(100, DB::table('iapm_outages')->whereIn('incident_id', $incidents->pluck('id'))->count());
+        self::assertLessThanOrEqual(30, $queries, "Deleted-port storm recovery issued {$queries} queries.");
     }
 
     public function test_an_expired_mute_is_lifted(): void

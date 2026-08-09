@@ -2,11 +2,16 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
+use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\SendNotificationJob;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
@@ -98,5 +103,83 @@ class OutboxSafetyTest extends IntegrationTestCase
 
         self::assertSame('failed', $outbox->fresh()->status);
         self::assertStringNotContainsString('secret receiver and message', (string) $outbox->fresh()->last_error_redacted);
+    }
+
+    public function test_a_delayed_job_from_an_old_episode_cannot_suppress_the_new_episode(): void
+    {
+        Queue::fake();
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $this->settings->put('dispatch_mode', 'queue');
+        $policy = $this->defaultPolicy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $device = $this->device();
+        $port = $this->downPort($device);
+
+        $this->ingest($this->alertPayload($device, [$this->fault($port)]));
+        $this->artisan('iapm:process-actions');
+        $oldOutbox = NotificationOutbox::sole();
+        $oldEpisode = $oldOutbox->episode_uuid;
+
+        $this->ingest($this->alertPayload($device, [], 0, ['timestamp' => now()->addMinute()->toIso8601String()]));
+        $this->ingest($this->alertPayload($device, [$this->fault($port)], 1, ['timestamp' => now()->addMinutes(2)->toIso8601String()]));
+        $incident = $oldOutbox->incident()->firstOrFail();
+        self::assertSame(IncidentState::Active, $incident->state);
+        self::assertNotSame($oldEpisode, $incident->episode_uuid);
+
+        (new SendNotificationJob($oldOutbox->id))->handle(app(NotificationDispatcher::class), app(SettingStore::class));
+
+        $delivery = DeliveryLog::sole();
+        self::assertSame($oldEpisode, $delivery->episode_uuid);
+        self::assertSame(0, (int) $incident->fresh()->notification_count);
+        self::assertNull($incident->fresh()->last_notification_at);
+
+        // The old success must not satisfy the new episode's trigger. A new logical
+        // outbox is queued when action processing sees the current active episode.
+        $this->artisan('iapm:process-actions');
+        self::assertSame(2, NotificationOutbox::count());
+        self::assertTrue(NotificationOutbox::where('episode_uuid', $incident->episode_uuid)->where('status', 'queued')->exists());
+    }
+
+    public function test_a_stale_processing_claim_is_reclaimed_but_a_live_claim_is_not(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination());
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+        $dispatcher = app(NotificationDispatcher::class);
+
+        $stale = $this->processingOutbox($incident, $action, 'stale', now()->subMinutes(10));
+        self::assertTrue($dispatcher->deliverOutbox($stale->id)->successful);
+        self::assertSame('sent', $stale->fresh()->status);
+
+        $live = $this->processingOutbox($incident, $action, 'live', now());
+        self::assertTrue($dispatcher->deliverOutbox($live->id)->successful);
+        self::assertSame('processing', $live->fresh()->status);
+        Http::assertSentCount(1);
+    }
+
+    private function processingOutbox(Incident $incident, PolicyAction $action, string $suffix, CarbonInterface $claimedAt): NotificationOutbox
+    {
+        $outbox = NotificationOutbox::create([
+            'idempotency_key' => hash('sha256', 'processing-'.$suffix),
+            'episode_uuid' => $incident->episode_uuid,
+            'incident_id' => $incident->id,
+            'destination_id' => $action->destination_id,
+            'policy_action_id' => $action->id,
+            'phase' => 'trigger',
+            'receiver_hash' => hash('sha256', 'noc-'.$suffix),
+            'receiver_encrypted' => 'noc-'.$suffix,
+            'message_encrypted' => 'down-'.$suffix,
+            'incident_ids_encrypted' => [$incident->id],
+            'status' => 'processing',
+            'claimed_at' => $claimedAt,
+        ]);
+        DB::table('iapm_notification_outbox_incidents')->insert([
+            'notification_outbox_id' => $outbox->id,
+            'incident_id' => $incident->id,
+            'episode_uuid' => $incident->episode_uuid,
+        ]);
+
+        return $outbox;
     }
 }

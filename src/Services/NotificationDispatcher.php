@@ -221,7 +221,11 @@ class NotificationDispatcher
         return DeliveryLog::create([
             'notification_outbox_id' => $outbox?->id,
             'incident_id' => $incident?->id,
-            'episode_uuid' => $incident?->episode_uuid,
+            // The incident row is reused across outage episodes. A delayed queue
+            // job can therefore load an Incident whose current episode differs
+            // from the durable outbox being delivered. Keep the delivery attached
+            // to the logical episode captured when the outbox row was created.
+            'episode_uuid' => $outbox instanceof NotificationOutbox ? $outbox->episode_uuid : $incident?->episode_uuid,
             'destination_id' => $destination->id,
             'policy_action_id' => $action?->id,
             'phase' => $phase,
