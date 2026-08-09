@@ -65,4 +65,4 @@ jobs:
           DB_TEST_DATABASE: librenms_test
           DB_TEST_USERNAME: librenms
           DB_TEST_PASSWORD: librenms
-        run: "$RUNNER_TEMP/librenms/vendor/bin/phpunit" -c "$GITHUB_WORKSPACE/phpunit.xml" --testsuite integration
+        run: '"$RUNNER_TEMP/librenms/vendor/bin/phpunit" -c "$GITHUB_WORKSPACE/phpunit.xml" --testsuite integration'
