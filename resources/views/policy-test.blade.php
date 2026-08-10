@@ -12,7 +12,11 @@
         <tbody>@foreach($delivery as $d)<tr>
             <td>{{ $d['phase'] }}</td>
             <td>{{ $d['destination'] ?? '—' }}</td>
-            <td>@if(count($d['receivers']))@foreach($d['receivers'] as $rcv)<span class="label label-info">{{ $rcv }}</span> @endforeach@else<span class="label label-danger" title="No receiver resolves — this action would fail configuration">no receiver</span>@endif</td>
+            {{-- Keep the else branch on its own line. Blade matches a directive only when
+                 its '@' is not preceded by a word character, so closing a loop and opening
+                 the else branch with no separator makes the else render as literal text. --}}
+            <td>@if(count($d['receivers']))@foreach($d['receivers'] as $rcv)<span class="label label-info">{{ $rcv }}</span> @endforeach
+            @else<span class="label label-danger" title="No receiver resolves — this action would fail configuration">no receiver</span>@endif</td>
         </tr>@endforeach</tbody></table>
         @else
         <p class="text-warning" style="margin-bottom:12px;"><i class="fa fa-bell-slash"></i> This policy has no enabled notification action — matched interfaces would trigger silently.</p>

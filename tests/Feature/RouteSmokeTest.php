@@ -7,9 +7,104 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class RouteSmokeTest extends IntegrationTestCase
 {
+    /**
+     * Control-flow directives that must never survive into a response body.
+     * Kept in sync with BladeDirectiveSyntaxTest, which guards the source.
+     */
+    private const LEAKED_DIRECTIVES = [
+        'if', 'else', 'elseif', 'endif', 'unless', 'endunless',
+        'foreach', 'endforeach', 'forelse', 'empty', 'endforelse',
+        'for', 'endfor', 'while', 'endwhile',
+        'switch', 'case', 'endswitch', 'isset', 'endisset',
+        'php', 'endphp', 'section', 'endsection', 'yield', 'extends',
+        'include', 'csrf', 'method', 'error', 'enderror', 'inject',
+    ];
+
     public function test_every_user_facing_page_renders_for_an_administrator(): void
     {
         $admin = $this->admin();
+
+        foreach ($this->paths() as $path) {
+            $this->actingAs($admin)->get($path)->assertOk();
+        }
+    }
+
+    /**
+     * P0-1: a malformed Blade conditional emitted the literal text `@else` into
+     * the Policy Test page and rendered both branches at once. Assert on the
+     * rendered body of every route, not just its status code.
+     */
+    public function test_no_route_emits_an_unescaped_blade_directive(): void
+    {
+        $admin = $this->admin();
+        $pattern = '/@('.implode('|', self::LEAKED_DIRECTIVES).')\b/i';
+
+        foreach ($this->paths() as $path) {
+            $body = $this->actingAs($admin)->get($path)->assertOk()->getContent();
+            self::assertDoesNotMatchRegularExpression($pattern, $this->withoutLiteralBladeBlocks($body), "Route $path leaked an uncompiled Blade directive into its response body.");
+        }
+    }
+
+    /**
+     * The Setup Helper deliberately shows the LibreNMS alert template — Blade
+     * source the operator copies elsewhere. Those elements opt out with
+     * `data-literal-blade`; everything else must be fully compiled.
+     */
+    private function withoutLiteralBladeBlocks(string $html): string
+    {
+        $stripped = preg_replace('#<(textarea|pre|code)\b[^>]*\bdata-literal-blade\b[^>]*>.*?</\1>#si', '', $html);
+        self::assertIsString($stripped, 'Failed to strip opt-out blocks.');
+
+        return $stripped;
+    }
+
+    /**
+     * The exact regression: a resolvable receiver must render the receiver
+     * branch alone — no literal `@else`, and no contradictory "no receiver"
+     * badge sitting next to a successfully resolved address.
+     */
+    public function test_policy_test_renders_exactly_one_receiver_branch(): void
+    {
+        $admin = $this->admin();
+        $policy = $this->defaultPolicy();
+        $destination = $this->smsDestination(['default_receiver' => 'noc@example.test']);
+        $this->triggerAction($policy, $destination);
+        $port = $this->downPort($this->device());
+
+        $body = $this->actingAs($admin)
+            ->get('/plugin/interface-alert-policy-manager/policy-test?port_id='.$port->port_id)
+            ->assertOk()
+            ->getContent();
+
+        self::assertStringContainsString('noc@example.test', $body, 'The resolved receiver should be shown.');
+        self::assertStringNotContainsString('@else', $body, 'The literal Blade directive leaked into the page.');
+        self::assertStringNotContainsString('no receiver', $body, 'The negative branch rendered alongside a resolved receiver.');
+    }
+
+    /**
+     * The negative branch in isolation: an action whose receiver cannot be
+     * resolved shows the badge and nothing else.
+     */
+    public function test_policy_test_renders_the_no_receiver_branch_alone(): void
+    {
+        $admin = $this->admin();
+        $policy = $this->defaultPolicy();
+        $destination = $this->smsDestination(['default_receiver' => '']);
+        $this->triggerAction($policy, $destination);
+        $port = $this->downPort($this->device());
+
+        $body = $this->actingAs($admin)
+            ->get('/plugin/interface-alert-policy-manager/policy-test?port_id='.$port->port_id)
+            ->assertOk()
+            ->getContent();
+
+        self::assertStringContainsString('no receiver', $body);
+        self::assertStringNotContainsString('@else', $body);
+    }
+
+    /** Every GET route in the plugin, with fixtures materialised on demand. */
+    private function paths(): array
+    {
         $policy = $this->defaultPolicy();
         $assignment = $policy->assignments()->firstOrFail();
         $destination = $this->smsDestination();
@@ -20,42 +115,41 @@ class RouteSmokeTest extends IntegrationTestCase
             'enabled' => true,
             'schedule_json' => ['mode' => 'always', 'periods' => []],
         ]);
-        $incident = $this->incident($policy, $this->downPort($this->device()));
+        $port = $this->downPort($this->device());
+        $incident = $this->incident($policy, $port);
+        $base = '/plugin/interface-alert-policy-manager';
 
-        $paths = [
-            '/plugin/interface-alert-policy-manager',
-            '/plugin/interface-alert-policy-manager/policies',
-            '/plugin/interface-alert-policy-manager/policies/create',
-            "/plugin/interface-alert-policy-manager/policies/{$policy->id}/edit",
-            "/plugin/interface-alert-policy-manager/policies/{$policy->id}/actions/create",
-            "/plugin/interface-alert-policy-manager/actions/{$action->id}/edit",
-            '/plugin/interface-alert-policy-manager/assignments',
-            '/plugin/interface-alert-policy-manager/assignments/create',
-            "/plugin/interface-alert-policy-manager/assignments/{$assignment->id}/edit",
-            '/plugin/interface-alert-policy-manager/interface-matrix',
-            '/plugin/interface-alert-policy-manager/policy-test',
-            '/plugin/interface-alert-policy-manager/stats',
-            '/plugin/interface-alert-policy-manager/tools/simulate',
-            '/plugin/interface-alert-policy-manager/import',
-            '/plugin/interface-alert-policy-manager/comparison-report',
-            '/plugin/interface-alert-policy-manager/setup-helper',
-            '/plugin/interface-alert-policy-manager/template-preview',
-            '/plugin/interface-alert-policy-manager/message-templates',
-            '/plugin/interface-alert-policy-manager/schedules',
-            '/plugin/interface-alert-policy-manager/schedules/create',
-            "/plugin/interface-alert-policy-manager/schedules/{$schedule->id}/edit",
-            '/plugin/interface-alert-policy-manager/destinations',
-            '/plugin/interface-alert-policy-manager/destinations/create',
-            "/plugin/interface-alert-policy-manager/destinations/{$destination->id}/edit",
-            '/plugin/interface-alert-policy-manager/incidents',
-            "/plugin/interface-alert-policy-manager/incidents/{$incident->id}",
-            '/plugin/interface-alert-policy-manager/settings',
-            '/plugin/interface-alert-policy-manager/delivery-log',
-            '/plugin/interface-alert-policy-manager/audit-log',
+        return [
+            $base,
+            "$base/policies",
+            "$base/policies/create",
+            "$base/policies/{$policy->id}/edit",
+            "$base/policies/{$policy->id}/actions/create",
+            "$base/actions/{$action->id}/edit",
+            "$base/assignments",
+            "$base/assignments/create",
+            "$base/assignments/{$assignment->id}/edit",
+            "$base/interface-matrix",
+            "$base/policy-test",
+            "$base/policy-test?port_id={$port->port_id}",
+            "$base/stats",
+            "$base/tools/simulate",
+            "$base/import",
+            "$base/comparison-report",
+            "$base/setup-helper",
+            "$base/template-preview",
+            "$base/message-templates",
+            "$base/schedules",
+            "$base/schedules/create",
+            "$base/schedules/{$schedule->id}/edit",
+            "$base/destinations",
+            "$base/destinations/create",
+            "$base/destinations/{$destination->id}/edit",
+            "$base/incidents",
+            "$base/incidents/{$incident->id}",
+            "$base/settings",
+            "$base/delivery-log",
+            "$base/audit-log",
         ];
-
-        foreach ($paths as $path) {
-            $this->actingAs($admin)->get($path)->assertOk();
-        }
     }
 }

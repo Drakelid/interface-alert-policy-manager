@@ -17,7 +17,10 @@
 <div class="panel panel-default">
     <div class="panel-heading"><strong>Step 2 — Alert template</strong> <button type="button" class="btn btn-default btn-xs pull-right" data-copy="#iapm-template"><i class="fa fa-copy"></i> Copy</button></div>
     <div class="panel-body">
-        <textarea id="iapm-template" class="form-control" rows="20" readonly>{{ $template }}</textarea>
+        {{-- data-literal-blade marks copy-paste content that is Blade source by design:
+             this is the template the operator pastes into LibreNMS, not markup we compile.
+             RouteSmokeTest strips these blocks before asserting no directive leaked. --}}
+        <textarea id="iapm-template" class="form-control" rows="20" readonly data-literal-blade="1">{{ $template }}</textarea>
         <p class="help-block">Paste as the rule's alert template. It builds an array and applies Blade's <code>@@json</code> encoder (no manual quoting); recovery state 0 emits an empty fault array.</p>
     </div>
 </div>
