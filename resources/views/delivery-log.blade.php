@@ -3,10 +3,12 @@
 <form class="form-inline" style="margin-bottom:10px;">
     <input class="form-control input-sm" name="incident_id" value="{{ request('incident_id') }}" placeholder="Incident ID">
     <input class="form-control input-sm" name="destination_id" value="{{ request('destination_id') }}" placeholder="Destination ID">
-    <select class="form-control input-sm" name="status"><option value="">Any status</option>@foreach(['sent','failed','failed_configuration','dry_run'] as $v)<option @selected(request('status')===$v)>{{ $v }}</option>@endforeach</select>
+    <select class="form-control input-sm" name="status"><option value="">Any status</option><option value="failed_any" @selected(request('status')==='failed_any')>failed (any reason)</option>@foreach(['sent','failed','failed_configuration','dry_run'] as $v)<option @selected(request('status')===$v)>{{ $v }}</option>@endforeach</select>
+    <select class="form-control input-sm" name="within"><option value="">Any time</option>@foreach([1=>'Last hour',24=>'Last 24 hours',168=>'Last 7 days'] as $hours=>$label)<option value="{{ $hours }}" @selected((string) request('within')===(string) $hours)>{{ $label }}</option>@endforeach</select>
     <select class="form-control input-sm" name="phase"><option value="">Any phase</option>@foreach(['trigger','escalation','reminder','recovery','acknowledged','flapping','digest','test'] as $v)<option @selected(request('phase')===$v)>{{ $v }}</option>@endforeach</select>
     <button class="btn btn-default btn-sm">Filter</button>
 </form>
+@include('iapm::partials.result-count',['paginator'=>$deliveries,'noun'=>'delivery'])
 <div class="iapm-table-wrap"><table class="table table-condensed table-hover">
 <thead><tr><th>Time</th><th>Incident</th><th class="iapm-num">Dest</th><th>Phase</th><th>Status</th><th class="iapm-num">HTTP</th><th>Error</th></tr></thead>
 <tbody>@forelse($deliveries as $d)<tr>

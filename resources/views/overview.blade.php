@@ -4,7 +4,9 @@
 @php
 $tile = function ($label, $value, $href, $accent = '', $hot = false) {
     $cls = 'iapm-tile '.$accent.($hot && $value > 0 ? ' hot' : '');
-    return '<a href="'.e($href).'" style="text-decoration:none;"><div class="panel panel-default '.$cls.'"><div class="panel-heading">'.e($label).'</div><div class="panel-body"><strong style="font-size:20px;">'.e($value).'</strong></div></div></a>';
+    // data-iapm-tile/-value let KpiTileParityTest pair each tile with its link
+    // and assert the number matches the rows on the page it opens.
+    return '<a href="'.e($href).'" style="text-decoration:none;" data-iapm-tile="'.e($label).'" data-iapm-value="'.e($value).'"><div class="panel panel-default '.$cls.'"><div class="panel-heading">'.e($label).'</div><div class="panel-body"><strong style="font-size:20px;">'.e($value).'</strong></div></div></a>';
 };
 @endphp
 <div class="container-fluid">
@@ -27,18 +29,25 @@ $tile = function ($label, $value, $href, $accent = '', $hot = false) {
     </div>
     @endif
 
+    {{-- P0-3: each tile links to exactly the population it counted. Changing a
+         metric here means changing the matching filter on the destination page;
+         KpiTileParityTest asserts tile value == total rows behind the link. --}}
     <div class="row">
-        <div class="col-sm-2">{!! $tile('Active critical', $metrics['active_critical'], route('iapm.incidents.index',['state'=>'active']), 'crit', true) !!}</div>
-        <div class="col-sm-2">{!! $tile('Active warning', $metrics['active_warning'], route('iapm.incidents.index',['state'=>'active']), 'warn', true) !!}</div>
+        <div class="col-sm-2">{!! $tile('Active critical', $metrics['active_critical'], route('iapm.incidents.index',['state'=>'active','severity'=>'critical']), 'crit', true) !!}</div>
+        <div class="col-sm-2">{!! $tile('Active warning', $metrics['active_warning'], route('iapm.incidents.index',['state'=>'active','severity'=>'warning']), 'warn', true) !!}</div>
         <div class="col-sm-2">{!! $tile('Pending', $counts['pending'] ?? 0, route('iapm.incidents.index',['state'=>'pending']), 'warn') !!}</div>
         <div class="col-sm-2">{!! $tile('Acknowledged', $counts['acknowledged'] ?? 0, route('iapm.incidents.index',['state'=>'acknowledged']), 'info') !!}</div>
         <div class="col-sm-2">{!! $tile('Suppressed', $counts['suppressed'] ?? 0, route('iapm.incidents.index',['state'=>'suppressed'])) !!}</div>
     </div>
     <div class="row">
-        <div class="col-sm-3">{!! $tile('Recovered (24h)', $metrics['recovered_24h'], route('iapm.incidents.index',['state'=>'recovered']), 'ok') !!}</div>
-        <div class="col-sm-3">{!! $tile('Failed deliveries (24h)', $metrics['failed_deliveries'], route('iapm.delivery-log',['status'=>'failed']), 'crit', true) !!}</div>
-        <div class="col-sm-3">{!! $tile('Interfaces without policy', $metrics['missing_policies'], route('iapm.matrix',['no_policy'=>1]), 'warn', true) !!}</div>
-        <div class="col-sm-3">{!! $tile('Awaiting escalation', $metrics['awaiting_escalation'], route('iapm.incidents.index',['state'=>'active']), 'warn') !!}</div>
+        <div class="col-sm-3">{!! $tile('Recovered (24h)', $metrics['recovered_24h'], route('iapm.incidents.index',['state'=>'recovered','recovered_within'=>24]), 'ok') !!}</div>
+        <div class="col-sm-3">{!! $tile('Failed deliveries (24h)', $metrics['failed_deliveries'], route('iapm.delivery-log',['status'=>'failed_any','within'=>24]), 'crit', true) !!}</div>
+        {{-- Counts incidents that alerted with no policy covering them. The label
+             used to say "Interfaces without policy" and link to the matrix's
+             no_policy filter, which counts every port with no materialized policy
+             — a different, far larger population that never matched this number. --}}
+        <div class="col-sm-3">{!! $tile('Alerting, no policy', $metrics['missing_policies'], route('iapm.incidents.index',['state'=>'suppressed','suppression_reason'=>'no_policy']), 'warn', true) !!}</div>
+        <div class="col-sm-3">{!! $tile('Awaiting escalation', $metrics['awaiting_escalation'], route('iapm.incidents.index',['state'=>'active','escalation'=>'pending']), 'warn') !!}</div>
     </div>
 
     <div class="panel panel-default">

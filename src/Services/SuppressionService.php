@@ -10,6 +10,15 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 
 class SuppressionService
 {
+    /**
+     * Every value that can land in iapm_incidents.suppression_reason, so the
+     * incident filter bar offers exactly the reasons the engine can produce.
+     * `no_policy` is set by ingestion/reconciliation rather than reason() below.
+     *
+     * @var list<string>
+     */
+    public const REASONS = ['no_policy', 'policy_disabled', 'device_down', 'admin_down', 'port_ignored', 'port_disabled', 'port_deleted', 'scheduled_maintenance', 'parent_down', 'uplink_down', 'outside_schedule'];
+
     public function __construct(private readonly ScheduleEvaluator $schedules) {}
 
     public function reason(Policy $policy, InterfaceContext $context, bool $deviceDown = false, bool $maintenance = false, bool $parentDown = false, bool $uplinkDown = false): ?string

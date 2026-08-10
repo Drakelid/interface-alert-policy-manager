@@ -5,12 +5,20 @@
 <div class="iapm-toolbar">
     <form class="form-inline" method="get">
         <select name="state" class="form-control input-sm"><option value="">Open incidents</option><option value="all" @selected(request('state')==='all')>All states</option>@foreach(['active','pending','acknowledged','suppressed','recovered'] as $v)<option @selected(request('state')===$v)>{{ $v }}</option>@endforeach</select>
+        {{-- P0-3: every Overview KPI tile links here with a filter that reproduces
+             exactly what it counted, so each one needs a visible, adjustable control. --}}
+        <select name="severity" class="form-control input-sm"><option value="">Any severity</option>@foreach(['critical','warning','info'] as $v)<option @selected(request('severity')===$v)>{{ $v }}</option>@endforeach</select>
+        <select name="suppression_reason" class="form-control input-sm"><option value="">Any suppression reason</option>@foreach($suppressionReasons as $v)<option value="{{ $v }}" @selected(request('suppression_reason')===$v)>{{ str_replace('_',' ',$v) }}</option>@endforeach</select>
+        <select name="recovered_within" class="form-control input-sm"><option value="">Recovered: any time</option>@foreach([1=>'last hour',24=>'last 24 hours',168=>'last 7 days'] as $hours=>$label)<option value="{{ $hours }}" @selected((string) request('recovered_within')===(string) $hours)>Recovered: {{ $label }}</option>@endforeach</select>
         <input class="form-control input-sm" name="device_id" value="{{ request('device_id') }}" placeholder="Device ID">
+        <label class="checkbox-inline"><input type="checkbox" name="escalation" value="pending" @checked(request('escalation')==='pending')> Awaiting escalation</label>
         <button class="btn btn-default btn-sm">Filter</button>
     </form>
     <span class="spacer"></span>
     <span id="iapm-autorefresh" data-interval="30"><label class="text-muted" style="font-weight:normal;"><input type="checkbox"> Auto-refresh</label> <span class="text-muted small iapm-updated"></span></span>
 </div>
+
+@include('iapm::partials.result-count',['paginator'=>$incidents,'noun'=>'incident'])
 
 @if($incidents->count())
 {{-- Bulk form lives outside the table; checkboxes attach via the form= attribute so per-row action forms aren't nested. --}}

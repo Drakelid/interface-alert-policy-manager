@@ -9,6 +9,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IncidentLifecycleService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SuppressionService;
 
 class IncidentController extends Controller
 {
@@ -27,13 +28,30 @@ class IncidentController extends Controller
         if ($r->filled('device_id')) {
             $q->where('device_id', $r->integer('device_id'));
         }
+        // P0-3: the Overview KPI tiles must land on exactly the population they
+        // counted, so each tile's metric has a matching filter here.
+        if ($r->filled('severity')) {
+            $q->where('severity', $r->string('severity'));
+        }
+        if ($r->filled('suppression_reason')) {
+            $q->where('suppression_reason', $r->string('suppression_reason'));
+        }
+        if ($r->query('escalation') === 'pending') {
+            $q->whereHas('policy.actions', fn ($a) => $a->where('phase', 'escalation')->where('enabled', true));
+        }
+        if ($r->filled('recovered_within')) {
+            $q->where('recovered_at', '>=', now()->subHours($r->integer('recovered_within')));
+        }
         // Urgent-first: active before pending/ack/suppressed/recovered, critical
         // before warning, then oldest first — so a triage screen surfaces what matters.
         $q->orderByRaw("CASE state WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'acknowledged' THEN 2 WHEN 'suppressed' THEN 3 ELSE 4 END")
             ->orderByRaw("CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END")
             ->orderBy('first_seen_at');
 
-        return view('iapm::incidents.index', ['incidents' => $q->paginate(50)->withQueryString()]);
+        return view('iapm::incidents.index', [
+            'incidents' => $q->paginate(50)->withQueryString(),
+            'suppressionReasons' => SuppressionService::REASONS,
+        ]);
     }
 
     public function show(Incident $incident)

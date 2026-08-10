@@ -42,13 +42,28 @@ class UiTest extends IntegrationTestCase
             ->assertSee('Auto-refresh');
     }
 
-    public function test_the_overview_tiles_link_to_filtered_views(): void
+    /**
+     * P0-3's headline symptom was three different tiles sharing one URL. Counts
+     * versus rows are covered by KpiTileParityTest; this just pins the weaker
+     * property that no two tiles lead to the same place.
+     */
+    public function test_no_two_overview_tiles_share_a_link(): void
     {
-        $this->actingAs($this->admin())
+        $html = $this->actingAs($this->admin())
             ->get('/plugin/interface-alert-policy-manager')
             ->assertOk()
-            ->assertSee('state=active')
-            ->assertSee('no_policy=1');
+            ->getContent();
+
+        preg_match_all('/<a href="([^"]+)"[^>]*data-iapm-tile="([^"]+)"/', (string) $html, $matches, PREG_SET_ORDER);
+        $byHref = [];
+        foreach ($matches as [, $href, $label]) {
+            $byHref[html_entity_decode($href)][] = $label;
+        }
+
+        self::assertCount(9, $matches, 'Expected the nine Overview KPI tiles.');
+        foreach ($byHref as $href => $labels) {
+            self::assertCount(1, $labels, sprintf('Tiles %s all link to %s.', implode(', ', $labels), $href));
+        }
     }
 
     public function test_the_stats_page_renders_a_sparkline(): void

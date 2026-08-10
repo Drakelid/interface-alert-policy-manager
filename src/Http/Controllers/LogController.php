@@ -9,9 +9,23 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
 
 class LogController extends Controller
 {
+    /**
+     * The Overview's "Failed deliveries (24h)" tile counts both failure statuses
+     * over a 24-hour window, so the log needs a matching grouped status and a
+     * time window for the tile's link to land on the same rows (P0-3).
+     */
+    public const FAILED_STATUSES = ['failed', 'failed_configuration'];
+
     public function deliveries(Request $r)
     {
-        $q = DeliveryLog::latest()->when($r->filled('status'), fn ($q) => $q->where('status', $r->string('status')))->when($r->filled('phase'), fn ($q) => $q->where('phase', $r->string('phase')))->when($r->filled('incident_id'), fn ($q) => $q->where('incident_id', $r->integer('incident_id')))->when($r->filled('destination_id'), fn ($q) => $q->where('destination_id', $r->integer('destination_id')));
+        $status = (string) $r->query('status', '');
+        $q = DeliveryLog::latest()
+            ->when($status === 'failed_any', fn ($q) => $q->whereIn('status', self::FAILED_STATUSES))
+            ->when($status !== '' && $status !== 'failed_any', fn ($q) => $q->where('status', $status))
+            ->when($r->filled('within'), fn ($q) => $q->where('created_at', '>=', now()->subHours($r->integer('within'))))
+            ->when($r->filled('phase'), fn ($q) => $q->where('phase', $r->string('phase')))
+            ->when($r->filled('incident_id'), fn ($q) => $q->where('incident_id', $r->integer('incident_id')))
+            ->when($r->filled('destination_id'), fn ($q) => $q->where('destination_id', $r->integer('destination_id')));
 
         return view('iapm::delivery-log', ['deliveries' => $q->paginate(100)->withQueryString()]);
     }
