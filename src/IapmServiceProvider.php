@@ -63,9 +63,13 @@ class IapmServiceProvider extends ServiceProvider
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'iapm');
         $this->publishes([__DIR__.'/../config/iapm.php' => config_path('iapm.php')], 'iapm-config');
 
-        if ($this->app->runningInConsole()) {
-            $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, DrainIngestionCommand::class, DrainOutboxCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
-        }
+        // Registered for web requests too, not just the console. The incident
+        // screen's "reconcile now" and "resend" buttons call Artisan::call(), and
+        // a console-only registration made those actions fail with
+        // CommandNotFoundException in the browser. Registration is lazy — the
+        // command classes are only resolved when one is actually run — so there
+        // is no cost to an ordinary web request.
+        $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, DrainIngestionCommand::class, DrainOutboxCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
 
         // The scheduler is resolved during app boot, when the plugins table may
         // not exist yet on a fresh install. So entries are always registered and

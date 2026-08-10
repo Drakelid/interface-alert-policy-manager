@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
@@ -18,6 +19,33 @@ class MonitoringAndStatsTest extends IntegrationTestCase
         $this->artisan('iapm:health')
             ->expectsOutputToContain('[FAIL] Reconciliation running')
             ->assertExitCode(1);
+    }
+
+    public function test_the_incident_screen_can_reconcile_and_resend_over_http(): void
+    {
+        // Both actions shell out through Artisan::call() from a web request.
+        // Registering the console commands behind runningInConsole() made them
+        // fail with CommandNotFoundException in the browser. PHPUnit itself runs
+        // in console, so this guards the routing, authorization and wiring; the
+        // console/web distinction was verified against a live install.
+        //
+        // A default assignment keeps the policy attached: reconcile runs first and
+        // would otherwise correctly detach an unassigned policy as "no_policy",
+        // making the resend a 422 for an unrelated reason.
+        $policy = $this->defaultPolicy();
+        $action = $this->triggerAction($policy, $this->smsDestination());
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+
+        $this->actingAs($this->admin())
+            ->post("/plugin/interface-alert-policy-manager/incidents/{$incident->id}/reconcile")
+            ->assertRedirect();
+
+        $this->actingAs($this->admin())
+            ->post("/plugin/interface-alert-policy-manager/incidents/{$incident->id}/resend", ['action_id' => $action->id])
+            ->assertRedirect();
+
+        self::assertArrayHasKey('iapm:reconcile', Artisan::all());
+        self::assertArrayHasKey('iapm:process-actions', Artisan::all());
     }
 
     public function test_health_passes_once_the_scheduled_commands_have_run(): void
