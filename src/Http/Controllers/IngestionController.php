@@ -42,7 +42,7 @@ class IngestionController extends Controller
         $asyncThreshold = (int) config('iapm.ingestion.async_threshold', 1000);
         $durableRecovery = $state === 'recovered' && (bool) config('iapm.ingestion.async_recovery', true);
         if (! $request->attributes->getBoolean('_iapm_durable_replay') && ($durableRecovery || ($asyncThreshold > 0 && count($data['faults']) >= $asyncThreshold))) {
-            $key = hash('sha256', json_encode($data, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            $key = $this->inboxIdempotencyKey($data);
             $inbox = IngestionInbox::where('idempotency_key', $key)->first();
             if ($inbox) {
                 return response()->json(['status' => 'accepted', 'processing' => 'durable_inbox', 'inbox_id' => $inbox->id], 202);
@@ -307,6 +307,27 @@ class IngestionController extends Controller
         }
 
         return response()->json(['status' => 'accepted', 'counts' => $counts]);
+    }
+
+    /**
+     * Suppress duplicate deliveries of one accepted request without collapsing
+     * genuinely repeated outages onto the first row.
+     *
+     * `timestamp` is optional, so an identical fault set posted for a later
+     * outage can hash to the same value as the original. Keying on the payload
+     * alone would make the second outage return 202 and do no work until the
+     * retained row was eventually cleaned up. Mixing a coarse time bucket into
+     * the key keeps source-side retries (which arrive within seconds) collapsed
+     * while letting a later recurrence claim its own row. A retry that straddles
+     * a bucket boundary replays instead, which the per-incident fingerprint and
+     * source-ordering guards already make idempotent.
+     */
+    private function inboxIdempotencyKey(array $data): string
+    {
+        $payload = hash('sha256', json_encode($data, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+        $window = max(1, (int) config('iapm.ingestion.inbox_dedup_seconds', 900));
+
+        return hash('sha256', $payload.'|'.intdiv(now()->getTimestamp(), $window));
     }
 
     /**

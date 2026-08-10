@@ -81,6 +81,50 @@ class PolicyAndDestinationAdminTest extends IntegrationTestCase
         self::assertSame('a-token', $destination->configuration_encrypted['bearer_token']);
     }
 
+    public function test_a_destination_whose_attempts_outlive_the_worker_timeout_is_rejected(): void
+    {
+        // Each field is individually valid, but 11 attempts x 300s cannot finish
+        // inside a 60s worker timeout: the job would be killed mid-delivery,
+        // stale-reclaimed, and resent.
+        $this->actingAs($this->admin())
+            ->post('/plugin/interface-alert-policy-manager/destinations', [
+                'name' => 'Slow gateway',
+                'type' => 'generic_webhook',
+                'enabled' => '1',
+                'url' => 'https://example.com/notify',
+                'mode' => 'json',
+                'connect_timeout' => 5,
+                'timeout' => 300,
+                'retry_count' => 10,
+                'retry_delay_ms' => 500,
+                'verify_tls' => '1',
+            ])
+            ->assertSessionHasErrors('timeout');
+
+        self::assertSame(0, Destination::count());
+    }
+
+    public function test_a_destination_within_the_worker_budget_is_accepted(): void
+    {
+        $this->actingAs($this->admin())
+            ->post('/plugin/interface-alert-policy-manager/destinations', [
+                'name' => 'Prompt gateway',
+                'type' => 'generic_webhook',
+                'enabled' => '1',
+                'url' => 'https://example.com/notify',
+                'mode' => 'json',
+                'connect_timeout' => 5,
+                'timeout' => 15,
+                'retry_count' => 2,
+                'retry_delay_ms' => 500,
+                'verify_tls' => '1',
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
+
+        self::assertSame(15, Destination::sole()->configuration_encrypted['timeout']);
+    }
+
     public function test_destination_creation_uses_saved_global_timeout_and_retry_defaults(): void
     {
         $this->settings->put('notification_timeout', 37);

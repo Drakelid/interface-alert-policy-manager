@@ -168,6 +168,13 @@ class NotificationDispatcher
         $configuration['_iapm_idempotency_key'] = $outbox->idempotency_key;
         $configuration['timeout'] ??= (int) $this->settings->get('notification_timeout', config('iapm.http.timeout', 15));
         $attempts = 1 + max(0, min(10, (int) ($configuration['retry_count'] ?? $this->settings->get('notification_retry_count', config('iapm.http.retries', 2)))));
+        // Destination validation bounds this for configurations entered through
+        // the UI, but the effective timeout/retry count can also come from global
+        // settings or a row written before that rule existed. Enforce the budget
+        // where it is actually spent: a job that outlives the worker timeout is
+        // killed mid-delivery, stale-reclaimed, and retried, which turns one
+        // logical notification into repeated gateway calls.
+        [$attempts, $configuration['timeout']] = $this->clampToWorkerBudget($attempts, (int) $configuration['timeout'], (int) ($configuration['retry_delay_ms'] ?? config('iapm.http.retry_delay_ms', 500)), $outbox->id);
         $result = new TransportResult(false, null, null, 'No delivery attempt was made.');
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             $result = $this->transports->for($outbox->destination->type)->send($configuration, (string) $outbox->receiver_encrypted, (string) $outbox->message_encrypted);
@@ -360,6 +367,32 @@ class NotificationDispatcher
         $sensitive = array_filter([(string) $outbox->receiver_encrypted, (string) $outbox->message_encrypted], fn (string $item) => $item !== '');
 
         return str_replace($sensitive, '[REDACTED]', $value);
+    }
+
+    /**
+     * Fit the worst-case attempt sequence inside the worker's delivery budget.
+     * Attempts are dropped first (the durable outbox retries later anyway with
+     * proper backoff); only when one attempt alone cannot fit is the per-request
+     * timeout reduced.
+     *
+     * @return array{int, int} clamped attempts and timeout
+     */
+    private function clampToWorkerBudget(int $attempts, int $timeout, int $retryDelayMs, int $outboxId): array
+    {
+        $budget = max(1, (int) floor(max(1, (int) config('iapm.queue.timeout', 60)) * (float) config('iapm.queue.delivery_budget_ratio', 0.8)));
+        $worstCase = fn (int $count): float => $count * $timeout + ($count - 1) * ($retryDelayMs / 1000);
+        if ($worstCase($attempts) <= $budget) {
+            return [$attempts, $timeout];
+        }
+
+        $allowed = $attempts;
+        while ($allowed > 1 && $worstCase($allowed) > $budget) {
+            $allowed--;
+        }
+        $clampedTimeout = $worstCase($allowed) > $budget ? max(1, $budget) : $timeout;
+        Log::channel('iapm')->warning('Delivery configuration exceeds the worker budget; clamped for this attempt.', ['outbox_id' => $outboxId, 'configured_attempts' => $attempts, 'allowed_attempts' => $allowed, 'configured_timeout' => $timeout, 'allowed_timeout' => $clampedTimeout, 'budget_seconds' => $budget]);
+
+        return [$allowed, $clampedTimeout];
     }
 
     private function retryDelay(NotificationOutbox $outbox, TransportResult $result): int

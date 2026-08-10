@@ -144,13 +144,16 @@ class HealthService
                     ->orWhere(fn ($processing) => $processing->where('status', 'processing')->where('claimed_at', '<', $cutoff));
             })->count();
             $pending = IngestionInbox::whereIn('status', ['pending', 'failed', 'processing'])->count();
+            // Abandoned payloads were accepted with 202 but never applied. That is
+            // silent alert loss unless an operator is told, so surface it here.
+            $dead = IngestionInbox::where('status', 'dead')->count();
         } catch (\Throwable $exception) {
             Log::channel('iapm')->error('Ingestion inbox health query failed.', ['error' => $exception->getMessage()]);
 
             return ['key' => 'ingestion_inbox', 'label' => 'Durable ingestion draining', 'ok' => false, 'detail' => 'Ingestion inbox query failed.'];
         }
 
-        return ['key' => 'ingestion_inbox', 'label' => 'Durable ingestion draining', 'ok' => $stuck === 0, 'detail' => "pending={$pending}, stale={$stuck}."];
+        return ['key' => 'ingestion_inbox', 'label' => 'Durable ingestion draining', 'ok' => $stuck === 0 && $dead === 0, 'detail' => "pending={$pending}, stale={$stuck}, abandoned={$dead}".($dead > 0 ? ' — accepted payloads were never applied; inspect last_error_redacted.' : '.')];
     }
 
     private function timestamp(string $key): ?CarbonImmutable

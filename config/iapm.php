@@ -20,6 +20,16 @@ return [
         'inbox_batch_per_worker' => (int) env('IAPM_INGEST_BATCH_PER_WORKER', 1),
         'inbox_claim_timeout_seconds' => (int) env('IAPM_INGEST_CLAIM_TIMEOUT', 900),
         'inbox_max_pending' => (int) env('IAPM_INGEST_MAX_PENDING', 10000),
+        // How long an accepted payload suppresses an identical one. LibreNMS may
+        // omit `timestamp`, so an unbounded key would make a genuine repeat outage
+        // with the same fault set collapse onto the first row for the whole
+        // retention period. Bound suppression to the window that actually covers
+        // source-side retries instead.
+        'inbox_dedup_seconds' => (int) env('IAPM_INGEST_DEDUP_SECONDS', 900),
+        // Replays that can never succeed (for example a device deleted after
+        // acceptance) are abandoned after this many attempts. Without a cap they
+        // retry forever and permanently occupy the backpressure budget.
+        'inbox_max_attempts' => (int) env('IAPM_INGEST_MAX_ATTEMPTS', 10),
         'success_log_sample_rate' => (float) env('IAPM_INGEST_LOG_SAMPLE_RATE', 0.01),
         'heartbeat_write_seconds' => (int) env('IAPM_HEARTBEAT_WRITE_SECONDS', 30),
     ],
@@ -69,6 +79,11 @@ return [
         'name' => env('IAPM_QUEUE_NAME', 'iapm'),
         'tries' => 3,
         'timeout' => 60,
+        // Share of the worker timeout a single destination's worst-case delivery
+        // (1 + retry_count attempts, plus retry delays) may occupy. Destination
+        // validation rejects configurations above this so a worker cannot kill a
+        // job mid-delivery and leave the row to be stale-reclaimed and resent.
+        'delivery_budget_ratio' => (float) env('IAPM_DELIVERY_BUDGET_RATIO', 0.8),
         // Failed gateway calls are retried by the durable outbox, not by holding a
         // worker in a tight loop. Delay doubles per failed claim and includes jitter.
         'retry_base_seconds' => (int) env('IAPM_RETRY_BASE_SECONDS', 15),

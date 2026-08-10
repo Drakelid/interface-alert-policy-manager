@@ -94,6 +94,29 @@ class OutboxSafetyTest extends IntegrationTestCase
         self::assertTrue($outbox->available_at->between(now()->addSeconds(115), now()->addSeconds(125)));
     }
 
+    public function test_attempts_are_clamped_so_one_job_cannot_outlive_the_worker_timeout(): void
+    {
+        // A row written before destination validation existed (or fed by global
+        // settings) can still ask for more attempts than the worker allows. The
+        // budget must be enforced where it is spent, not only at the form.
+        config(['iapm.queue.timeout' => 60, 'iapm.queue.delivery_budget_ratio' => 0.8]);
+        Http::fake(['*' => Http::response('failed', 500)]);
+        $policy = $this->policy();
+        // 11 attempts x 20s = 220s; the 48s budget permits only 2.
+        $action = $this->triggerAction($policy, $this->smsDestination(['retry_count' => 10, 'timeout' => 20, 'retry_delay_ms' => 0]));
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+
+        $result = app(NotificationDispatcher::class)->dispatch($incident, $action->destination, $action, 'trigger', 'noc', 'down');
+
+        self::assertFalse($result->successful);
+        Http::assertSentCount(2);
+        $outbox = NotificationOutbox::sole();
+        self::assertSame('failed', $outbox->status);
+        self::assertSame(2, $outbox->attempt_count);
+        // The work is retained and retried later rather than dropped.
+        self::assertNotNull($outbox->available_at);
+    }
+
     public function test_drain_command_requeues_due_failed_work(): void
     {
         Queue::fake();

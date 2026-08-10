@@ -32,7 +32,7 @@ class CleanupCommand extends Command
         $auditCount = DB::table('iapm_audit_logs')->where('created_at', '<', $cutoff)->count();
         $outageCount = DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff)->count();
         $outboxCount = DB::table('iapm_notification_outbox')->whereIn('incident_id', (clone $recovered)->select('id'))->count();
-        $inboxCount = DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'failed'])->where('created_at', '<', $cutoff)->count();
+        $inboxCount = DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'failed', 'dead'])->where('created_at', '<', $cutoff)->count();
         $this->table(['Record type', 'Eligible'], [['Recovered incidents', $incidentCount], ['Incident events', $eventCount], ['Delivery logs', $deliveryCount], ['Notification outbox', $outboxCount], ['Ingestion inbox', $inboxCount], ['Audit logs', $auditCount], ['Outage records', $outageCount]]);
         if (! $this->option('force')) {
             $this->info('Dry-run only. Re-run with --force to delete eligible records.');
@@ -45,7 +45,7 @@ class CleanupCommand extends Command
         $this->deadline = microtime(true) + max(10, (int) config('iapm.processing.cleanup_max_seconds', 300));
         $this->purge(fn () => DB::table('iapm_audit_logs')->where('created_at', '<', $cutoff));
         $this->purge(fn () => DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff));
-        $this->purge(fn () => DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'failed'])->where('created_at', '<', $cutoff));
+        $this->purge(fn () => DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'failed', 'dead'])->where('created_at', '<', $cutoff));
         // Deleting the incident cascades its events and delivery logs at the DB level.
         $this->purge(fn () => DB::table('iapm_incidents')->where('state', 'recovered')->where('recovered_at', '<', $cutoff));
         $this->info(microtime(true) >= $this->deadline ? 'Retention cleanup reached its time budget; the next run will resume.' : 'Retention cleanup completed.');

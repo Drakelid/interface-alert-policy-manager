@@ -8,6 +8,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\IngestionInbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Outage;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\HealthService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -268,6 +269,72 @@ class AlertCompatibilityAndStormTest extends IntegrationTestCase
             ->assertJsonPath('error.code', 'ingestion_backlog_full');
 
         self::assertSame(1, IngestionInbox::count());
+    }
+
+    public function test_an_identical_payload_in_a_later_window_is_accepted_as_a_new_outage(): void
+    {
+        // `timestamp` is optional, so a repeat outage with the same fault set can
+        // hash identically to the first. Suppression must be bounded to the retry
+        // window, otherwise the second outage is silently dropped until cleanup.
+        config(['iapm.ingestion.async_threshold' => 1, 'iapm.ingestion.inbox_dedup_seconds' => 900]);
+        $this->defaultPolicy();
+        $device = $this->device();
+        $port = $this->downPort($device, ['ifName' => 'repeat-1']);
+        $payload = $this->alertPayload($device, [$this->fault($port)]);
+        unset($payload['timestamp']);
+
+        $this->ingest($payload)->assertStatus(202);
+        $this->ingest($payload)->assertStatus(202); // source-side retry stays collapsed
+        self::assertSame(1, IngestionInbox::count());
+
+        $this->artisan('iapm:drain-ingestion')->assertExitCode(0);
+        self::assertSame('processed', IngestionInbox::sole()->status);
+
+        $this->travel(901)->seconds();
+        $this->ingest($payload)->assertStatus(202);
+        self::assertSame(2, IngestionInbox::count());
+        self::assertSame(1, IngestionInbox::where('status', 'pending')->count());
+    }
+
+    public function test_a_replay_that_can_never_succeed_is_abandoned_and_frees_backpressure(): void
+    {
+        // A payload accepted for a device that is then deleted can never apply.
+        // Without a terminal state it retries forever while still counting toward
+        // the backpressure budget, forcing 503s on healthy traffic.
+        config(['iapm.ingestion.async_threshold' => 1, 'iapm.ingestion.inbox_max_attempts' => 2, 'iapm.ingestion.inbox_max_pending' => 1]);
+        $device = $this->device();
+        $this->ingest($this->alertPayload($device, [['port_id' => 1]]))->assertStatus(202);
+        DB::table('devices')->where('device_id', $device->device_id)->delete();
+
+        $this->artisan('iapm:drain-ingestion')->assertExitCode(1);
+        self::assertSame('failed', IngestionInbox::sole()->status);
+
+        $this->travel(60)->seconds();
+        $this->artisan('iapm:drain-ingestion')->assertExitCode(1);
+        self::assertSame('dead', IngestionInbox::sole()->status);
+        self::assertNull(IngestionInbox::sole()->available_at);
+
+        // The abandoned row no longer holds the single-row backpressure budget.
+        $this->ingest($this->alertPayload($this->device(), [['port_id' => 2]]))->assertStatus(202);
+        self::assertSame(2, IngestionInbox::count());
+    }
+
+    public function test_abandoned_inbox_rows_are_reported_as_unhealthy_and_are_purgeable(): void
+    {
+        config(['iapm.ingestion.async_threshold' => 1, 'iapm.ingestion.inbox_max_attempts' => 1]);
+        $device = $this->device();
+        $this->ingest($this->alertPayload($device, [['port_id' => 1]]))->assertStatus(202);
+        DB::table('devices')->where('device_id', $device->device_id)->delete();
+        $this->artisan('iapm:drain-ingestion')->assertExitCode(1);
+        self::assertSame('dead', IngestionInbox::sole()->status);
+
+        $inbox = collect(app(HealthService::class)->checks())->firstWhere('key', 'ingestion_inbox');
+        self::assertFalse($inbox['ok']);
+        self::assertStringContainsString('abandoned=1', $inbox['detail']);
+
+        $this->travel(400)->days();
+        $this->artisan('iapm:cleanup --force')->assertExitCode(0);
+        self::assertSame(0, IngestionInbox::count());
     }
 
     public function test_oversized_json_is_rejected_before_authentication_or_validation(): void

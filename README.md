@@ -147,7 +147,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now iapm-worker@{1..6}
 ```
 
-<sub>Adjust the `ExecStart` php path to match `command -v php`. For Redis, insert `redis` right after `queue:work`. Set the queue connection's `retry_after` above the 60-second worker timeout (90 seconds or more). Transport failures remain in IAPM's durable outbox with backoff; Laravel process failures also appear in `failed_jobs`.</sub>
+<sub>Adjust the `ExecStart` php path to match `command -v php`. For Redis, insert `redis` right after `queue:work`. Set the queue connection's `retry_after` above the 60-second worker timeout (90 seconds or more). A destination's worst-case delivery (`1 + retry_count` attempts x request timeout, plus retry delays) must also fit inside the worker timeout — IAPM rejects destinations above ~80% of it (`IAPM_DELIVERY_BUDGET_RATIO`) and clamps attempts at delivery time, because a job killed mid-delivery is stale-reclaimed and resent. Transport failures remain in IAPM's durable outbox with backoff; Laravel process failures also appear in `failed_jobs`.</sub>
 
 ### Updating
 
