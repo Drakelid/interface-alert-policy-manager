@@ -34,7 +34,7 @@ class SendNotificationJob implements ShouldQueue
 
     public function handle(NotificationDispatcher $dispatcher, SettingStore $settings): void
     {
-        $settings->put('last_queue_worker_at', now()->toIso8601String());
+        $settings->putThrottled('last_queue_worker_at', now()->toIso8601String(), 30);
         $dispatcher->deliverOutbox($this->outboxId);
     }
 

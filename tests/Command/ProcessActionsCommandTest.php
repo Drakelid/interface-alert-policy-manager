@@ -153,6 +153,22 @@ class ProcessActionsCommandTest extends IntegrationTestCase
         Http::assertNothingSent();
     }
 
+    public function test_persistent_cursor_resumes_above_the_last_processed_incident(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination());
+        $first = $this->incident($policy, $this->downPort($this->device()));
+        $second = $this->incident($policy, $this->downPort($this->device()));
+        $this->settings->put('process_actions_cursor_id', $first->id);
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        self::assertSame(0, DeliveryLog::where('incident_id', $first->id)->count());
+        self::assertSame(1, DeliveryLog::where('incident_id', $second->id)->count());
+        self::assertSame(0, (int) $this->settings->get('process_actions_cursor_id'));
+    }
+
     public function test_force_resends_a_specific_action(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);

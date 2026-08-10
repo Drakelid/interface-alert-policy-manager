@@ -80,6 +80,9 @@ abstract class IntegrationTestCase extends TestCase
         // Default delivery to synchronous in tests (production default is queued);
         // QueueDispatchTest opts back into 'queue' explicitly.
         $this->settings->put('dispatch_mode', 'sync');
+        // Most lifecycle tests exercise the synchronous compatibility path. A
+        // dedicated storm test opts into the production durable-recovery default.
+        config(['iapm.ingestion.async_recovery' => false]);
 
     }
 

@@ -16,7 +16,7 @@ use App\Models\Port;
  */
 class DependencyResolver
 {
-    /** @var array<string, bool> */
+    /** @var array<int, list<int>> device id => down uplink port ids */
     private array $cache = [];
 
     public function __construct(private readonly SettingStore $settings) {}
@@ -28,14 +28,14 @@ class DependencyResolver
             return false;
         }
 
-        $key = $device->device_id.':'.$excludePortId;
-
-        return $this->cache[$key] ??= Port::query()
-            ->where('device_id', $device->device_id)
+        $deviceId = (int) $device->device_id;
+        $downUplinks = $this->cache[$deviceId] ??= Port::query()
+            ->where('device_id', $deviceId)
             ->where('deleted', 0)
-            ->when($excludePortId, fn ($q, $id) => $q->where('port_id', '!=', $id))
             ->where('ifOperStatus', '!=', 'up') // raw column comparison, bypassing the enum cast
             ->whereHas('groups', fn ($g) => $g->where('port_groups.id', $groupId))
-            ->exists();
+            ->pluck('port_id')->map(fn ($id) => (int) $id)->all();
+
+        return collect($downUplinks)->contains(fn (int $portId): bool => $portId !== $excludePortId);
     }
 }

@@ -17,6 +17,7 @@ class ReadinessTest extends IntegrationTestCase
     public function test_a_fresh_install_reports_the_setup_steps_as_incomplete(): void
     {
         DB::table('iapm_settings')->truncate();
+        $this->settings->forget('ingestion_token');
         $readiness = app(ReadinessService::class);
 
         self::assertFalse($readiness->ready());
@@ -84,6 +85,7 @@ class ReadinessTest extends IntegrationTestCase
     public function test_install_check_command_fails_when_a_setup_step_is_missing(): void
     {
         DB::table('iapm_settings')->truncate();
+        $this->settings->forget('ingestion_token');
         $this->smsDestination();
 
         $this->artisan('iapm:install-check')
@@ -120,6 +122,17 @@ class ReadinessTest extends IntegrationTestCase
         $this->triggerAction($policy, $destination, ['receivers_json' => []]);
         $this->settings->put('sms_default_receiver', null);
         self::assertTrue($this->keyed()['sms_receiver']);
+    }
+
+    public function test_readiness_rejects_assignment_receiver_that_live_resolution_rejects(): void
+    {
+        $policy = $this->defaultPolicy(['default_receiver' => null]);
+        $policy->assignments()->first()->update(['metadata_json' => ['receivers' => ['invalid/receiver']]]);
+        $destination = $this->smsDestination(['default_receiver' => null]);
+        $this->triggerAction($policy, $destination, ['receivers_json' => []]);
+        $this->settings->put('sms_default_receiver', null);
+
+        self::assertFalse($this->keyed()['sms_receiver']);
     }
 
     public function test_generic_webhook_does_not_require_an_sms_receiver(): void

@@ -16,19 +16,24 @@
  *     php artisan tinker --execute="require '/opt/iapm/interface-alert-policy-manager/tools/loadtest/seed.php';"
  */
 
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 
-$recoveredValue = getenv('RECOVERED');
-$openValue = getenv('OPEN');
-$recovered = max(0, $recoveredValue === false ? 2_000_000 : (int) $recoveredValue);
-$open = max(0, $openValue === false ? 5_000 : (int) $openValue);
-$batch = max(1, min(4_000, (int) (getenv('BATCH') ?: 2_000)));
-$devices = max(1, (int) (getenv('DEVICES') ?: 20_000));
-$policyCount = max(0, (int) (getenv('POLICIES') ?: 1_000));
-$assignmentCount = max(0, (int) (getenv('ASSIGNMENTS') ?: 5_000));
-$actionCount = max(0, (int) (getenv('ACTIONS') ?: 1_000));
+$envInt = static function (string $name, int $default): int {
+    $value = getenv($name);
+
+    return $value === false || $value === '' ? $default : (int) $value;
+};
+$recovered = max(0, $envInt('RECOVERED', 2_000_000));
+$open = max(0, $envInt('OPEN', 5_000));
+$batch = max(1, min(4_000, $envInt('BATCH', 2_000)));
+$devices = max(1, $envInt('DEVICES', 20_000));
+$policyCount = max(0, $envInt('POLICIES', 1_000));
+$assignmentCount = max(0, $envInt('ASSIGNMENTS', 5_000));
+$actionCount = max(0, $envInt('ACTIONS', 1_000));
+$outboxCount = max(0, $envInt('OUTBOX', 0));
 $base = 900_000_000; // synthetic id space — will not collide with real devices/ports
 
 DB::connection()->disableQueryLog();
@@ -37,7 +42,7 @@ echo "(synthetic id space >= {$base}; rows tagged incident_key=loadtest:*)\n";
 
 $start = microtime(true);
 $now = now();
-$seq = max(0, (int) (getenv('SEQUENCE_START') ?: 0));
+$seq = max(0, $envInt('SEQUENCE_START', 0));
 $flush = function (array &$rows): void {
     if ($rows) {
         DB::table('iapm_incidents')->insert($rows);
@@ -159,6 +164,59 @@ for ($i = 0; $i < $open; $i++) {
     }
 }
 $flush($rows);
+
+// Optional durable-delivery backlog. Payload fields use one reusable encrypted
+// fixture value; no real receiver, message, credential, or reachable URL exists.
+if ($outboxCount > 0) {
+    $incident = DB::table('iapm_incidents')->where('incident_key', 'like', 'loadtest:%')->orderBy('id')->first(['id', 'episode_uuid']);
+    if (! $incident) {
+        throw new RuntimeException('OUTBOX requires at least one seeded incident.');
+    }
+    $destination = Destination::firstOrCreate(['name' => 'loadtest:destination'], [
+        'type' => 'generic_webhook',
+        'enabled' => false,
+        'configuration_encrypted' => ['url' => 'http://127.0.0.1:9/loadtest', 'mode' => 'json'],
+    ]);
+    $destination->update([
+        'enabled' => false,
+        'configuration_encrypted' => ['url' => 'http://127.0.0.1:9/loadtest', 'mode' => 'json'],
+    ]);
+    $receiver = Crypt::encryptString('loadtest-receiver');
+    $message = Crypt::encryptString('loadtest-message');
+    $incidentIds = Crypt::encryptString(json_encode([], JSON_THROW_ON_ERROR));
+    echo "Seeding {$outboxCount} durable outbox rows...\n";
+    $rows = [];
+    for ($i = 1; $i <= $outboxCount; $i++) {
+        $status = $i % 10 === 0 ? 'failed' : ($i % 5 === 0 ? 'queued' : 'pending');
+        $rows[] = [
+            'idempotency_key' => hash('sha256', 'loadtest:outbox:'.$i),
+            'episode_uuid' => $incident->episode_uuid,
+            'incident_id' => $incident->id,
+            'destination_id' => $destination->id,
+            'policy_action_id' => null,
+            'phase' => 'loadtest',
+            'receiver_hash' => hash('sha256', 'loadtest-receiver'),
+            'receiver_encrypted' => $receiver,
+            'message_encrypted' => $message,
+            'incident_ids_encrypted' => $incidentIds,
+            'status' => $status,
+            'attempt_count' => $status === 'failed' ? 3 : 0,
+            'available_at' => $status === 'failed' ? $now->copy()->addHour() : $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+        if (count($rows) >= $batch) {
+            DB::table('iapm_notification_outbox')->insert($rows);
+            $rows = [];
+        }
+    }
+    if ($rows !== []) {
+        DB::table('iapm_notification_outbox')->insert($rows);
+    }
+    DB::table('iapm_notification_outbox')->where('phase', 'loadtest')->orderBy('id')->chunkById($batch, function ($outboxes) use ($incident): void {
+        DB::table('iapm_notification_outbox_incidents')->insert($outboxes->map(fn ($outbox) => ['notification_outbox_id' => $outbox->id, 'incident_id' => $incident->id, 'episode_uuid' => $incident->episode_uuid])->all());
+    });
+}
 
 $elapsed = round(microtime(true) - $start, 1);
 $total = DB::table('iapm_incidents')->where('incident_key', 'like', 'loadtest:%')->count();

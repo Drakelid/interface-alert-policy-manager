@@ -20,6 +20,7 @@ class QueueDispatchTest extends IntegrationTestCase
         Http::fake();
         // Remove the test harness's sync override so the production default applies.
         DB::table('iapm_settings')->where('setting_key', 'dispatch_mode')->delete();
+        $this->settings->forget('dispatch_mode');
         $policy = $this->policy();
         $this->triggerAction($policy, $this->smsDestination());
         $this->incident($policy, $this->downPort($this->device()));
@@ -85,7 +86,7 @@ class QueueDispatchTest extends IntegrationTestCase
         self::assertNotNull($this->settings->get('last_queue_worker_at'));
     }
 
-    public function test_a_broken_queue_backend_falls_back_to_synchronous_delivery(): void
+    public function test_a_broken_queue_backend_leaves_durable_work_pending_without_synchronous_fallback(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);
         // Point at a queue connection that isn't configured, so enqueue throws.
@@ -97,11 +98,12 @@ class QueueDispatchTest extends IntegrationTestCase
 
         $this->artisan('iapm:process-actions')->assertExitCode(0);
 
-        // The alert is delivered synchronously rather than dropped, and no stray
-        // in-flight marker is left behind.
-        Http::assertSentCount(1);
-        self::assertSame(1, DeliveryLog::where('status', 'sent')->count());
-        self::assertSame(0, NotificationOutbox::whereIn('status', ['queued', 'pending', 'processing'])->count());
+        Http::assertNothingSent();
+        self::assertSame(0, DeliveryLog::where('status', 'sent')->count());
+        $outbox = NotificationOutbox::sole();
+        self::assertSame('pending', $outbox->status);
+        self::assertTrue($outbox->available_at->isFuture());
+        self::assertSame('Queue dispatch unavailable; durable outbox remains pending.', $outbox->last_error_redacted);
     }
 
     public function test_a_deleted_incident_makes_the_job_a_safe_no_op(): void

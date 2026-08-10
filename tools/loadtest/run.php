@@ -33,10 +33,11 @@ $script = match ($operation) {
     'seed' => __DIR__.'/seed.php',
     'measure' => __DIR__.'/loadtest.php',
     'cleanup' => __DIR__.'/cleanup.php',
+    'migrate' => __DIR__.'/migrate.php',
     default => null,
 };
 if ($script === null) {
-    fwrite(STDERR, "Usage: php tools/loadtest/run.php seed|measure|cleanup\n");
+    fwrite(STDERR, "Usage: php tools/loadtest/run.php seed|measure|cleanup|migrate\n");
     exit(2);
 }
 

@@ -25,9 +25,9 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
  */
 class ReadinessService
 {
-    private const TABLES = ['iapm_policies', 'iapm_assignments', 'iapm_destinations', 'iapm_policy_actions', 'iapm_incidents', 'iapm_incident_events', 'iapm_delivery_logs', 'iapm_notification_outbox', 'iapm_notification_outbox_incidents', 'iapm_outages', 'iapm_settings', 'iapm_interface_policy_cache', 'iapm_audit_logs'];
+    private const TABLES = ['iapm_policies', 'iapm_assignments', 'iapm_destinations', 'iapm_policy_actions', 'iapm_incidents', 'iapm_incident_events', 'iapm_delivery_logs', 'iapm_ingestion_inbox', 'iapm_notification_outbox', 'iapm_notification_outbox_incidents', 'iapm_outages', 'iapm_settings', 'iapm_interface_policy_cache', 'iapm_audit_logs'];
 
-    public function __construct(private readonly SettingStore $settings) {}
+    public function __construct(private readonly SettingStore $settings, private readonly ReceiverResolver $receivers) {}
 
     /** @return list<array<string,mixed>> */
     public function checks(): array
@@ -76,15 +76,13 @@ class ReadinessService
         if ($actions->isEmpty()) {
             return false;
         }
-        $global = $this->settings->get('sms_default_receiver', config('iapm.sms.default_receiver'));
 
-        return $actions->every(function (PolicyAction $action) use ($global): bool {
+        return $actions->every(function (PolicyAction $action): bool {
             if ($action->destination->type !== 'sms_gateway') {
                 return true;
             }
-            $configuration = (array) $action->destination->configuration_encrypted;
 
-            return collect([$action->receivers_json, $action->policy->assignments->pluck('metadata_json')->pluck('receivers')->flatten()->all(), [$action->policy->default_receiver], $configuration['receivers'] ?? [], [$configuration['default_receiver'] ?? null], [$global]])->flatten()->contains(fn ($receiver) => filled($receiver));
+            return $this->receivers->forReadiness($action) !== [];
         });
     }
 

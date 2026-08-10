@@ -27,9 +27,22 @@ class GenericWebhookTransport implements NotificationTransport
             }
             $response = $client->post($url, ['receiver' => $receiver, 'message' => $message]);
 
-            return new TransportResult($response->successful(), $response->status(), $this->redactor->text($response->body()), $response->successful() ? null : 'Webhook returned a non-success response.');
+            return new TransportResult($response->successful(), $response->status(), $this->redactor->text($response->body()), $response->successful() ? null : 'Webhook returned a non-success response.', $this->retryAfter($response->header('Retry-After')));
         } catch (\Throwable $e) {
             return new TransportResult(false, null, null, $this->redactor->text($e->getMessage()));
         }
+    }
+
+    private function retryAfter(?string $value): ?int
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+        if (ctype_digit(trim($value))) {
+            return min(86400, (int) trim($value));
+        }
+        $timestamp = strtotime($value);
+
+        return $timestamp === false ? null : min(86400, max(0, $timestamp - time()));
     }
 }

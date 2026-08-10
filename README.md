@@ -134,7 +134,7 @@ User=librenms
 Group=librenms
 Restart=always
 RestartSec=5
-ExecStart=/usr/bin/php /opt/librenms/artisan queue:work --queue=iapm --name=iapm-%i --sleep=1 --tries=3 --backoff=10 --max-time=3600 --timeout=90
+ExecStart=/usr/bin/php /opt/librenms/artisan queue:work --queue=iapm --name=iapm-%i --sleep=1 --tries=3 --backoff=15 --max-time=3600 --timeout=60
 KillSignal=SIGTERM
 TimeoutStopSec=120
 MemoryMax=512M
@@ -147,11 +147,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now iapm-worker@{1..6}
 ```
 
-<sub>Adjust the `ExecStart` php path to match `command -v php`. For Redis, insert `redis` right after `queue:work`. Failed sends land in `failed_jobs` — inspect with `php artisan queue:failed`, retry with `queue:retry all`.</sub>
+<sub>Adjust the `ExecStart` php path to match `command -v php`. For Redis, insert `redis` right after `queue:work`. Set the queue connection's `retry_after` above the 60-second worker timeout (90 seconds or more). Transport failures remain in IAPM's durable outbox with backoff; Laravel process failures also appear in `failed_jobs`.</sub>
 
 ### Updating
 
-`daily.sh` reinstalls the package from `composer.plugins.json`, so updates are automatic within your version constraint. Publish a new release by tagging (`git tag -a v1.2.0 && git push origin v1.2.0`). After any update that changes code, restart the workers so they load it:
+`daily.sh` reinstalls the package from `composer.plugins.json`, so updates are automatic within your version constraint. After any update that changes code, restart the workers so they load it:
 
 ```bash
 sudo -u librenms php artisan migrate --force
@@ -200,7 +200,7 @@ sudo -u librenms php artisan tinker --execute="\$s=app(LibreNMS\Plugins\Interfac
 sudo -u librenms php artisan tinker --execute="app(LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class)->put('dispatch_mode','queue');"
 ```
 
-**`Table 'librenms.jobs' doesn't exist`.** Queued delivery needs the queue tables — run `php artisan migrate --force` (the plugin ships the migration). Until then, IAPM automatically falls back to synchronous delivery, so no alert is lost.
+**`Table 'librenms.jobs' doesn't exist`.** Queued delivery needs the queue tables — run `php artisan migrate --force` (the plugin ships the migration). IAPM deliberately does not turn a broken asynchronous backend into blocking gateway calls: the encrypted outbox stays pending and `iapm:drain-outbox` republishes it after the queue is restored.
 
 **`install-check` shows `[FAIL] default_policy`.** Decide coverage: add a **Default** assignment (or set a default policy) so unmatched interfaces are covered, **or** Settings → turn off *Record alerts for interfaces with no policy* to intentionally ignore them (recommended when you scope IAPM to specific interfaces).
 
@@ -269,7 +269,8 @@ php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external m
 - **Flap dampening (per policy).** Set a flap threshold, window, and settle period. When an interface cycles down/up faster than the threshold, IAPM sends one `FLAPPING` notice and suppresses the routine churn until it settles.
 - **Device digest (storm control).** Set an *aggregate threshold* (and window) in Settings. When at least that many interfaces on the **same device** trigger within the window, IAPM sends one grouped "device down" message (device-level receivers) instead of an SMS per interface, so a linecard or downstream-switch failure produces one notification rather than a hundred. Wording is customisable on the Message Templates page. Set the threshold to `0` to always notify per interface. When an upstream LibreNMS acknowledgement arrives it acknowledges the incident rather than re-triggering it.
 - **Escalation chains.** Add multiple `escalation` actions with increasing delays and different destinations/receivers; acknowledging the incident stops further escalation.
-- **Queued dispatch (default, self-provisioning).** A durable encrypted outbox is committed before a queue job containing only the outbox ID is published. Its unique episode/action/phase/destination/receiver key prevents scheduler overlap and worker retry from creating another logical notification. Workers atomically claim rows; a crash leaves a reclaimable row, and `iapm:health` reports stale claims and overdue pending work. If publication fails, IAPM returns the row to pending and delivers synchronously. Tune `IAPM_QUEUE_WORKERS` (default 3) to gateway capacity, or use Redis via `IAPM_QUEUE_CONNECTION=redis`. Switch to **Synchronous** in Settings for a worker-free setup; both modes use the same outbox.
+- **Queued dispatch (default, self-provisioning).** A durable encrypted outbox is committed before a queue job containing only the outbox ID is published. Its unique episode/action/phase/destination/receiver key prevents scheduler overlap and worker retry from creating another logical notification. Workers atomically claim rows; a crash leaves a reclaimable row, and `iapm:health` reports stale claims and overdue pending work. Publication failure leaves the row pending—never synchronous—and `iapm:drain-outbox` republishes due rows. HTTP 429 honors `Retry-After`; other failures use exponential backoff with jitter. Tune `IAPM_QUEUE_WORKERS` (default 3) to gateway capacity, or use Redis via `IAPM_QUEUE_CONNECTION=redis`. Switch to **Synchronous** in Settings only for small installations; both modes use the same outbox.
+- **Durable storm ingestion.** Webhooks with at least `IAPM_INGEST_ASYNC_THRESHOLD` faults (default 1,000), plus whole-device recovery webhooks, are encrypted into `iapm_ingestion_inbox` and receive HTTP 202 only after commit. Scheduler-managed inbox workers replay them idempotently. `IAPM_INGEST_MAX_PENDING` provides explicit HTTP 503/`Retry-After` backpressure instead of dropping accepted alerts. Tune worker count first; `IAPM_INGEST_BATCH_PER_WORKER` (default 1, maximum 100) is available only after staging proves that processing multiple payloads per pass leaves database headroom.
 - **Self-monitoring.** The Overview shows an IAPM health panel, and `iapm:health` exits non-zero when the scheduler has stalled, the gateway is failing, or notifications are stuck — point your own monitoring at it as a dead-man's switch.
 - **Statistics & SLA** (Monitor → Statistics): MTTA/MTTR, longest outage, notifications, flapping outages, noisiest interfaces, per-policy breakdown, and delivery success rate, computed from an append-only `iapm_outages` record.
 - **Simulate alert** (Tools): fire a synthetic alert for one interface through the real pipeline to validate policy/assignment/suppression behaviour without curl (respects dry-run).
@@ -299,7 +300,7 @@ The notification outbox also contains encrypted receiver/message payloads until 
 IAPM is built to scale to very large fleets, but a few things must be configured deliberately:
 
 - **Set a default assignment/policy _or_ turn off "Record alerts for interfaces with no policy"** (Settings). Otherwise every alerting interface without a matching policy is stored as a suppressed `no_policy` incident — at hundreds of thousands of interfaces that is a lot of rows. Scope IAPM to the interfaces you care about, then disable `record_unpoliced` so the rest are ignored.
-- **Tune the ingestion rate limit.** `iapm.ingestion.rate_limit` (env `IAPM_INGEST_RATE`, default `2000,1`) caps all of LibreNMS's alert POSTs together; a fleet-wide event can exceed it and rejected alerts are lost. Raise it for large fleets and firewall the endpoint to the LibreNMS host.
+- **Tune the ingestion rate limit.** `iapm.ingestion.rate_limit` (env `IAPM_INGEST_RATE`, default `20000,1`) caps all of LibreNMS's alert POSTs together. A 429 is explicitly retryable but LibreNMS must be configured to retry it; firewall the endpoint to the LibreNMS host and size the limit to the fleet's burst rate.
 - **Enable the device digest** (`aggregate_threshold`) so a device dropping many interfaces sends one message instead of hundreds, and consider **queued dispatch** for very wide simultaneous events.
 - **Schedule `iapm:cache-rebuild`** (e.g. hourly) if you rely on the Interface Matrix policy filters — the per-request/reconcile cache writes were removed to keep the hot paths write-light, so the matrix cache is refreshed on view and by the rebuild command.
 - Recovered incidents are retained (`retention_days`, default 365) and cleaned up in batches nightly; process-actions only re-scans recoveries from the last 48h, so old history doesn't slow the every-minute run.
@@ -307,7 +308,7 @@ IAPM is built to scale to very large fleets, but a few things must be configured
 ### Known limitations
 
 - Materialized policy filters are complete only after `iapm:cache-rebuild` has covered the relevant ports.
-- Delivery is synchronous by default (bounded per run by `iapm.processing.max_seconds`); very large storms are best served by the device digest plus the optional **queued dispatch** mode below.
+- Delivery is queued by default. Scheduled discovery is time-budgeted and cursor-resumable; large storms should use the device digest, durable outbox, and supervised Redis workers.
 - Parent suppression uses current LibreNMS device relationships and cannot infer dependencies not modeled in LibreNMS.
 - Private-network destinations must be explicitly allowed and should be limited to trusted internal gateway hosts.
 - The current administration forms accept numeric LibreNMS group/entity identifiers instead of providing every possible type-ahead selector.
@@ -324,7 +325,7 @@ IAPM defines abilities for viewing the plugin, managing policies, assignments, d
 
 Back up the database and application key, update the Composer package, run `php artisan migrate`, rebuild the policy cache, and run `iapm:install-check`. Never edit or reorder a migration already deployed. To disable safely, enable dry-run, restore the prior LibreNMS transport if needed, then disable the plugin. Composer removal does not intentionally delete tables. Only run migration rollback when permanent data deletion is approved and backed up.
 
-This safety upgrade is additive: it backfills stable episode IDs, adds a unique outage-episode constraint, and creates the encrypted durable outbox. During rollout, stop the scheduler/workers, back up all `iapm_*` tables and `APP_KEY`, migrate, run the install check, then restart one worker and confirm health before restoring normal concurrency. See `docs/UPGRADING.md` for rollback and release-note details.
+This safety upgrade is additive: it preflights stable episode IDs in restartable batches, creates the encrypted durable ingestion inbox, adds storm-path indexes, and makes successful outbox finalization repairable. During rollout, stop the scheduler/workers, back up all `iapm_*` tables and `APP_KEY`, migrate, run the install check, drain one inbox/outbox row, then restart one worker and confirm health before restoring normal concurrency. See `docs/UPGRADING.md` for rollback and release-note details.
 
 ## Troubleshooting
 
@@ -337,3 +338,8 @@ This safety upgrade is additive: it backfills stable episode IDs, adds a unique 
 - Duplicate notification: compare incident/action/receiver/attempt rows and confirm only one live LibreNMS-to-IAPM transport and one scheduler runner exist.
 
 Detailed outage, credential-rotation, rollback, and gateway runbooks are in `docs/OPERATIONS.md`; development and extension guidance is in `docs/DEVELOPMENT.md`.
+
+## License
+
+Interface Alert Policy Manager is licensed under
+[GNU GPL v3 or later](LICENSE) (`GPL-3.0-or-later`).

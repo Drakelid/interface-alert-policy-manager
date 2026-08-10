@@ -38,6 +38,30 @@ class ReceiverResolver
         return $this->normalizeMany((array) ($resolution->winner?->metadata_json['receivers'] ?? []));
     }
 
+    /**
+     * Readiness has no concrete interface/winning assignment yet. Evaluate the
+     * union of possible enabled-assignment receivers through the same precedence
+     * and validation rules used for live deliveries.
+     */
+    public function forReadiness(PolicyAction $action): array
+    {
+        $policy = $action->policy;
+        $configuration = (array) $action->destination->configuration_encrypted;
+        $assignmentReceivers = $policy->assignments
+            ->where('enabled', true)
+            ->flatMap(fn ($assignment) => (array) ($assignment->metadata_json['receivers'] ?? []))
+            ->all();
+
+        return $this->resolve(
+            (array) $action->receivers_json,
+            $assignmentReceivers,
+            [(string) ($policy->default_receiver ?? '')],
+            (array) ($configuration['receivers'] ?? []),
+            [(string) ($configuration['default_receiver'] ?? '')],
+            [(string) ($this->settings?->get('sms_default_receiver', config('iapm.sms.default_receiver')) ?? config('iapm.sms.default_receiver'))],
+        );
+    }
+
     public function resolve(array ...$levels): array
     {
         foreach ($levels as $receivers) {

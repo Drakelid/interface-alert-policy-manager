@@ -6,9 +6,15 @@ Keep incidents active, enable dry-run if failures are prolonged, inspect redacte
 
 ## Queue crash or stuck outbox
 
-Run `php artisan iapm:health` and inspect pending, in-flight, stale, failed, and overdue outbox counts. Restart the normal queue worker; stale `processing` rows become claimable after the configured worker timeout plus its safety margin, so do not manually duplicate or delete them. A failed row is retried through the same idempotency key on the next action pass. If payload decryption fails after an application-key rotation, stop workers and restore the previous key before retrying. Escalate only after preserving the outbox, delivery logs, worker exception, and current health output.
+Run `php artisan iapm:health` and inspect pending, in-flight, stale, failed, and overdue outbox counts. Restart the normal queue worker, then run `php artisan iapm:drain-outbox`; stale `processing` rows become claimable after the configured worker timeout plus its safety margin, so do not duplicate or delete them. Failed rows retain the same idempotency key and become due after `Retry-After` or exponential backoff. Queue publication failure never falls back to synchronous HTTP. If payload decryption fails after an application-key rotation, stop workers and restore the previous key before retrying.
 
 IAPM sends the logical key as `Idempotency-Key` on every retry. Configure gateways to honor that header: no local transaction can atomically cover an external HTTP delivery and the later database commit, so a worker or database crash in that narrow interval can otherwise repeat a transport call. The outbox still prevents concurrent local duplicates and preserves the same key for safe gateway-side deduplication.
+
+## Ingestion storm or inbox backlog
+
+Large active payloads and all whole-device recoveries return HTTP 202 only after their encrypted inbox row commits. Check `iapm:health`, then run `php artisan iapm:drain-ingestion --limit=1` under the LibreNMS user for controlled replay. Pending/failed/processing rows must not be deleted during an incident. HTTP 503 with `Retry-After: 60` means `IAPM_INGEST_MAX_PENDING` was reached: restore database capacity or inbox workers, confirm the backlog is shrinking, then let LibreNMS retry. Duplicate payload retries converge on one inbox idempotency key. `IAPM_INGEST_BATCH_PER_WORKER` raises the number claimed by each scheduled worker pass (maximum 100); increase it only after measuring database headroom because one row may contain 10,000 faults.
+
+Successful ingestion logs are sampled and heartbeat writes are throttled. Authentication and validation rejection logs are rate-limited per source IP; use web-server/firewall counters for volumetric abuse.
 
 ## Missed recovery or stuck pending
 

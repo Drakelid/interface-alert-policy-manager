@@ -176,6 +176,41 @@ class ReconcileCommandTest extends IntegrationTestCase
         self::assertSame(IncidentState::Active, $second->fresh()->state);
     }
 
+    public function test_reconciliation_cursor_resumes_and_wraps_without_starving_low_ids(): void
+    {
+        $policy = $this->defaultPolicy();
+        $firstPort = $this->downPort($this->device());
+        $secondPort = $this->downPort($this->device());
+        $first = $this->incident($policy, $firstPort);
+        $second = $this->incident($policy, $secondPort);
+        $firstPort->update(['ifOperStatus' => 'up']);
+        $secondPort->update(['ifOperStatus' => 'up']);
+        $this->settings->put('reconcile_cursor_id', $first->id);
+
+        $this->artisan('iapm:reconcile')->assertExitCode(0);
+        self::assertSame(IncidentState::Active, $first->fresh()->state);
+        self::assertSame(IncidentState::Recovered, $second->fresh()->state);
+        self::assertSame(0, (int) $this->settings->get('reconcile_cursor_id'));
+
+        $this->artisan('iapm:reconcile')->assertExitCode(0);
+        self::assertSame(IncidentState::Recovered, $first->fresh()->state);
+    }
+
+    public function test_unchanged_active_incident_is_not_rewritten_each_minute(): void
+    {
+        $policy = $this->defaultPolicy(['failed_poll_count' => 1]);
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+        $context = (array) $incident->context_json;
+        $context['assignment_receivers'] = [];
+        $incident->update(['context_json' => $context]);
+        $old = now()->subHour()->startOfSecond();
+        DB::table('iapm_incidents')->where('id', $incident->id)->update(['updated_at' => $old]);
+
+        $this->artisan('iapm:reconcile')->assertExitCode(0);
+
+        self::assertTrue($incident->fresh()->updated_at->equalTo($old));
+    }
+
     public function test_a_deleted_port_recovers_or_is_retained_according_to_the_setting(): void
     {
         $policy = $this->defaultPolicy();

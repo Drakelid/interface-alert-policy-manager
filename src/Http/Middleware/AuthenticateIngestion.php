@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -35,7 +36,11 @@ class AuthenticateIngestion
             }
         }
         if (! $valid) {
-            Log::channel('iapm')->warning('Ingestion authentication rejected.', ['ip' => $request->ip()]);
+            $logKey = 'iapm:invalid-token-log:'.hash('sha256', (string) $request->ip());
+            if (! RateLimiter::tooManyAttempts($logKey, 1)) {
+                RateLimiter::hit($logKey, 60);
+                Log::channel('iapm')->warning('Ingestion authentication rejected.', ['ip' => $request->ip()]);
+            }
 
             return response()->json(['error' => ['code' => 'unauthorized', 'message' => 'Invalid ingestion token.']], 401);
         }

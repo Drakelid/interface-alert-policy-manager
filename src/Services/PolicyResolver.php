@@ -16,6 +16,11 @@ class PolicyResolver
 
     private Policy|false|null $configuredDefault = null;
 
+    /** @var array<string, string|false> */
+    private array $safeRegex = [];
+
+    private ?int $regexSubjectBytes = null;
+
     public function __construct(private readonly SettingStore $settings) {}
 
     public function resolve(InterfaceContext $context, bool $writeCache = true): PolicyResolution
@@ -114,10 +119,12 @@ class PolicyResolver
             $type = $assignment->assignment_type;
             if ($type === AssignmentType::IfAliasRegex || $type === AssignmentType::IfNameRegex) {
                 $bucket = $type === AssignmentType::IfAliasRegex ? 'ifalias_regex' : 'ifname_regex';
-                if (count($index[$bucket]) < $regexLimit) {
-                    $index[$bucket][] = $assignment->id;
-                    $index['regex_patterns'][$assignment->id] = $assignment->match_expression;
+                if (count($index[$bucket]) >= $regexLimit) {
+                    throw new \RuntimeException("Enabled {$bucket} assignments exceed the configured safe limit of {$regexLimit}; none may be silently excluded.");
                 }
+                $index[$bucket][] = $assignment->id;
+                $index['regex_patterns'][$assignment->id] = $assignment->match_expression;
+                $this->prepareRegex($assignment->match_expression);
 
                 continue;
             }
@@ -181,11 +188,32 @@ class PolicyResolver
             return false;
         }
 
+        $this->regexSubjectBytes ??= max(1, (int) config('iapm.resolver.regex_subject_bytes', 2048));
+        if (strlen($subject) > $this->regexSubjectBytes) {
+            return false;
+        }
+        $limited = $this->prepareRegex($pattern);
+        if ($limited === false) {
+            return false;
+        }
+
         // Assignment forms/imports validate patterns up front. Suppression still
         // makes legacy or manually edited invalid rows fail closed, without the
         // very high cost of swapping PHP's global error handler for every regex
         // candidate on every interface.
-        return @preg_match($pattern, $subject) === 1;
+        return @preg_match($limited, $subject) === 1;
+    }
+
+    private function prepareRegex(?string $pattern): string|false
+    {
+        if (! is_string($pattern) || $pattern === '' || strlen($pattern) > 1000) {
+            return false;
+        }
+
+        return $this->safeRegex[$pattern] ??= $pattern[0]
+            .'(*LIMIT_MATCH='.max(1000, (int) config('iapm.resolver.regex_backtrack_limit', 100000)).')'
+            .'(*LIMIT_DEPTH='.max(100, (int) config('iapm.resolver.regex_depth_limit', 1000)).')'
+            .substr($pattern, 1);
     }
 
     private function groups(Assignment $a, array $actual): bool

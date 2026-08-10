@@ -26,11 +26,17 @@ LIBRENMS_ROOT=/opt/librenms RUN_COMMANDS=1 php tools/loadtest/run.php measure
 LIBRENMS_ROOT=/opt/librenms php tools/loadtest/run.php cleanup
 ```
 
+For an isolated schema clone already current through the released v1.2.1
+migrations, apply the pending audit migrations with
+`php tools/loadtest/run.php migrate`. Normal installations use
+`php artisan migrate --force`.
+
 - `RECOVERED` — retained recovered incidents (the history the hot paths must skip). 2M ≈ a busy year.
 - `OPEN` — active/pending/suppressed working set.
 - `DEVICES` — spreads rows across this many synthetic devices (for realistic per-device grouping).
 - `BATCH` — insert batch size (default 2,000; capped at 4,000 to remain below MariaDB's prepared-statement placeholder limit).
 - `POLICIES`, `ASSIGNMENTS`, `ACTIONS` — indexed resolver topology (defaults: 1,000 / 5,000 / 1,000).
+- `OUTBOX` — optional durable outbox backlog; use `100000` for the storm gate. Rows contain only encrypted synthetic fixtures and an unreachable loopback destination.
 - `SEQUENCE_START` — offsets synthetic incident keys when intentionally appending a second batch.
 
 ## 2. Measure
@@ -39,8 +45,8 @@ LIBRENMS_ROOT=/opt/librenms php tools/loadtest/run.php cleanup
 sudo -u librenms php artisan tinker --execute="require '/opt/iapm/interface-alert-policy-manager/tools/loadtest/loadtest.php';"
 ```
 
-Prints the seeded scale, policy/assignment/action counts, each hot-path query's best-of-3
-time and chosen index, a resolver/matrix batch timing, total SQL query count, and peak
+Prints the seeded scale, policy/assignment/action counts, each hot-path query's best,
+p50, p95, and p99 latency (20 samples by default) and chosen index, a resolver/matrix batch timing, total SQL query count, and peak
 memory. **Pass criteria:**
 
 - every timing is low-single- to low-double-digit **ms**, and
@@ -51,7 +57,7 @@ memory. **Pass criteria:**
 The harness fails non-zero when a hot query exceeds 50 ms, an indexed plan reports
 `NO-INDEX`, the 500-port resolver/matrix batch exceeds 2,000 ms or 25 queries, or peak
 memory exceeds 256 MiB. Override these hardware-sensitive gates with
-`HOT_QUERY_LIMIT_MS`, `RESOLVER_LIMIT_MS`, `RESOLVER_QUERY_LIMIT`, and
+`HOT_QUERY_LIMIT_MS`, `HOT_QUERY_P95_LIMIT_MS`, `RESOLVER_LIMIT_MS`, `RESOLVER_QUERY_LIMIT`, `QUERY_RUNS`, and
 `PEAK_MEMORY_LIMIT_MIB`, and retain both the defaults and overrides with benchmark
 results.
 

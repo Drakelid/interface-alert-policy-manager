@@ -6,6 +6,7 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\StateNormalizer;
 
 class IngestAlertRequest extends FormRequest
@@ -89,7 +90,11 @@ class IngestAlertRequest extends FormRequest
 
     protected function failedValidation(Validator $validator): void
     {
-        Log::channel('iapm')->warning('Ingestion payload validation failed.', ['ip' => $this->ip(), 'fields' => array_keys($validator->errors()->toArray())]);
+        $logKey = 'iapm:invalid-payload-log:'.hash('sha256', (string) $this->ip());
+        if (! RateLimiter::tooManyAttempts($logKey, 1)) {
+            RateLimiter::hit($logKey, 60);
+            Log::channel('iapm')->warning('Ingestion payload validation failed.', ['ip' => $this->ip(), 'fields' => array_keys($validator->errors()->toArray())]);
+        }
         throw new HttpResponseException(response()->json(['error' => ['code' => 'validation_failed', 'message' => 'The alert payload is invalid.', 'fields' => $validator->errors()]], 422));
     }
 }

@@ -77,12 +77,13 @@ class ImportExportController extends Controller
         if (! is_array($doc) || ($doc['version'] ?? null) !== 1) {
             return back()->withErrors('Unrecognised export format (expected version 1).');
         }
-        $doc = $documents->validate($doc);
-
         $report = ['schedules' => 0, 'policies' => 0, 'actions' => 0, 'assignments' => 0, 'skipped' => []];
-        $destinations = Destination::pluck('id', 'name');
-
-        DB::transaction(function () use ($doc, &$report, $destinations, $request): void {
+        DB::transaction(function () use ($doc, &$report, $request, $documents, $audit): void {
+            // Validate references and write from one database snapshot. If any
+            // validation or write fails, the entire document is rolled back.
+            $doc = $documents->validate($doc);
+            $destinationNames = collect($doc['policies'] ?? [])->flatMap(fn (array $policy) => collect($policy['actions'] ?? [])->pluck('destination'))->filter()->unique();
+            $destinations = Destination::whereIn('name', $destinationNames)->pluck('id', 'name');
             foreach ((array) ($doc['schedules'] ?? []) as $s) {
                 if (empty($s['name']) || Schedule::where('name', $s['name'])->exists()) {
                     continue;
@@ -121,9 +122,8 @@ class ImportExportController extends Controller
                     $report['assignments']++;
                 }
             }
+            $audit->record($request, 'imported', 'configuration', null, null, $report);
         });
-
-        $audit->record($request, 'imported', 'configuration', null, null, $report);
 
         return view('iapm::import', ['report' => $report]);
     }

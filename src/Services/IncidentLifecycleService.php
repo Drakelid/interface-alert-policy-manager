@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
@@ -64,15 +65,20 @@ class IncidentLifecycleService
         return $target;
     }
 
-    public function recover(Incident $incident, string $message): bool
+    public function recover(Incident $incident, string $message, array $attributes = []): bool
     {
-        return DB::transaction(function () use ($incident, $message): bool {
+        return DB::transaction(function () use ($incident, $message, $attributes): bool {
             $locked = Incident::whereKey($incident->id)->lockForUpdate()->firstOrFail();
             if ($locked->state === IncidentState::Recovered) {
                 return false;
             }
+            $incomingSourceAt = $attributes['context_json']['last_source_event_at'] ?? null;
+            $currentSourceAt = $locked->context_json['last_source_event_at'] ?? null;
+            if (is_string($incomingSourceAt) && is_string($currentSourceAt) && CarbonImmutable::parse($incomingSourceAt)->lessThan(CarbonImmutable::parse($currentSourceAt))) {
+                return false;
+            }
             $reason = $locked->suppression_reason;
-            $locked->update(['state' => IncidentState::Recovered, 'recovered_at' => now(), 'last_seen_at' => now(), 'suppression_reason' => null]);
+            $locked->update(array_merge($attributes, ['state' => IncidentState::Recovered, 'recovered_at' => now(), 'last_seen_at' => now(), 'suppression_reason' => null]));
             $locked->events()->create(['event_type' => 'recovered', 'event_message' => $message]);
             $this->outages->record($locked->fresh(), $reason);
             $incident->setRawAttributes($locked->fresh()->getAttributes(), true);
@@ -90,20 +96,28 @@ class IncidentLifecycleService
      * keeps the whole chunk atomic while retaining one event and one immutable
      * outage per episode.
      */
-    public function recoverMany(iterable $incidents, string $message): int
+    public function recoverMany(iterable $incidents, string $message, ?string $sourceEventAt = null): int
     {
         $ids = collect($incidents)->pluck('id')->filter()->unique()->values();
         if ($ids->isEmpty()) {
             return 0;
         }
 
-        return DB::transaction(function () use ($ids, $message): int {
+        return DB::transaction(function () use ($ids, $message, $sourceEventAt): int {
             $recoveredAt = now();
             $locked = Incident::query()
                 ->whereIn('id', $ids)
                 ->where('state', '!=', IncidentState::Recovered)
+                ->orderBy('id')
                 ->lockForUpdate()
                 ->get();
+            if ($sourceEventAt !== null) {
+                $locked = $locked->reject(function (Incident $incident) use ($sourceEventAt): bool {
+                    $current = $incident->context_json['last_source_event_at'] ?? null;
+
+                    return is_string($current) && CarbonImmutable::parse($sourceEventAt)->lessThan(CarbonImmutable::parse($current));
+                })->values();
+            }
             if ($locked->isEmpty()) {
                 return 0;
             }
@@ -150,13 +164,18 @@ class IncidentLifecycleService
                 ];
             }
 
-            Incident::query()->whereIn('id', $locked->pluck('id'))->update([
+            $incidentUpdate = [
                 'state' => IncidentState::Recovered,
                 'recovered_at' => $recoveredAt,
                 'last_seen_at' => $recoveredAt,
                 'suppression_reason' => null,
                 'updated_at' => $recoveredAt,
-            ]);
+            ];
+            if ($sourceEventAt !== null) {
+                $quoted = DB::connection()->getPdo()->quote($sourceEventAt) ?: "''";
+                $incidentUpdate['context_json'] = DB::raw("JSON_SET(context_json, '$.last_source_event_at', {$quoted})");
+            }
+            Incident::query()->whereIn('id', $locked->pluck('id'))->update($incidentUpdate);
             DB::table('iapm_incident_events')->insert($eventRows);
             DB::table('iapm_outages')->insertOrIgnore($outageRows);
 

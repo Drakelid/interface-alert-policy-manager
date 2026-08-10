@@ -13,6 +13,8 @@ use LibreNMS\Interfaces\Plugins\PluginManagerInterface;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CacheClearCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CacheRebuildCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\CleanupCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\DrainIngestionCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\DrainOutboxCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\HealthCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\InstallCheckCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ProcessActionsCommand;
@@ -32,6 +34,7 @@ class IapmServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/iapm.php', 'iapm');
+        $this->app->singleton(SettingStore::class);
         if (config('logging.channels.iapm') === null) {
             config(['logging.channels.iapm' => ['driver' => 'single', 'path' => storage_path('logs/iapm.log'), 'level' => 'info', 'replace_placeholders' => true]]);
         }
@@ -61,7 +64,7 @@ class IapmServiceProvider extends ServiceProvider
         $this->publishes([__DIR__.'/../config/iapm.php' => config_path('iapm.php')], 'iapm-config');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
+            $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, DrainIngestionCommand::class, DrainOutboxCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
         }
 
         // The scheduler is resolved during app boot, when the plugins table may
@@ -73,6 +76,12 @@ class IapmServiceProvider extends ServiceProvider
             // processing for a day. 10m lets a stuck run self-clear on the next tick.
             $schedule->command('iapm:reconcile')->everyMinute()->withoutOverlapping(10);
             $schedule->command('iapm:process-actions')->everyMinute()->withoutOverlapping(10);
+            $schedule->command('iapm:drain-outbox')->everyMinute()->withoutOverlapping(10);
+            $inboxWorkers = max(1, (int) config('iapm.ingestion.inbox_workers', 2));
+            $inboxBatch = max(1, min(100, (int) config('iapm.ingestion.inbox_batch_per_worker', 1)));
+            for ($i = 1; $i <= $inboxWorkers; $i++) {
+                $schedule->command("iapm:drain-ingestion --worker={$i} --limit={$inboxBatch}")->everyMinute()->withoutOverlapping(20)->runInBackground();
+            }
             $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping(10);
 
             // When queued dispatch is enabled (the default), keep queue workers running
@@ -100,7 +109,7 @@ class IapmServiceProvider extends ServiceProvider
             if ($queued && $workers > 0 && $backendReady) {
                 for ($i = 1; $i <= $workers; $i++) {
                     $args = $conn ? [$conn] : [];
-                    $args += ['--queue' => (string) config('iapm.queue.name', 'iapm'), '--name' => 'iapm-'.$i, '--sleep' => 1, '--tries' => (int) config('iapm.queue.tries', 3), '--max-time' => 3600];
+                    $args += ['--queue' => (string) config('iapm.queue.name', 'iapm'), '--name' => 'iapm-'.$i, '--sleep' => 1, '--tries' => (int) config('iapm.queue.tries', 3), '--timeout' => (int) config('iapm.queue.timeout', 60), '--backoff' => (int) config('iapm.queue.retry_base_seconds', 15), '--max-time' => 3600];
                     $schedule->command('queue:work', $args)->everyMinute()->withoutOverlapping(70)->runInBackground();
                 }
             }

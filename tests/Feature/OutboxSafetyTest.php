@@ -68,10 +68,45 @@ class OutboxSafetyTest extends IntegrationTestCase
         $dispatcher = app(NotificationDispatcher::class);
 
         self::assertFalse($dispatcher->dispatch($incident, $action->destination, $action, 'trigger', 'noc', 'down')->successful);
+        NotificationOutbox::sole()->update(['available_at' => now()->subSecond()]);
         self::assertTrue($dispatcher->dispatch($incident->fresh(), $action->destination, $action, 'trigger', 'noc', 'down')->successful);
         self::assertSame(1, NotificationOutbox::count());
         self::assertSame('sent', NotificationOutbox::first()->status);
         self::assertSame(2, $incident->deliveries()->count());
+    }
+
+    public function test_rate_limit_retry_after_is_persisted_without_blocking_worker_retries(): void
+    {
+        Http::fake(['*' => Http::response('slow down', 429, ['Retry-After' => '120'])]);
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination(['retry_count' => 5]));
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+
+        $result = app(NotificationDispatcher::class)->dispatch($incident, $action->destination, $action, 'trigger', 'noc', 'down');
+
+        self::assertFalse($result->successful);
+        self::assertSame(429, $result->status);
+        self::assertSame(120, $result->retryAfterSeconds);
+        Http::assertSentCount(1);
+        $outbox = NotificationOutbox::sole();
+        self::assertSame('failed', $outbox->status);
+        self::assertSame(1, $outbox->attempt_count);
+        self::assertTrue($outbox->available_at->between(now()->addSeconds(115), now()->addSeconds(125)));
+    }
+
+    public function test_drain_command_requeues_due_failed_work(): void
+    {
+        Queue::fake();
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination());
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+        $outbox = $this->processingOutbox($incident, $action, 'due-retry', now()->subMinutes(10));
+        $outbox->update(['status' => 'failed', 'available_at' => now()->subSecond()]);
+
+        $this->artisan('iapm:drain-outbox')->assertExitCode(0);
+
+        self::assertSame('queued', $outbox->fresh()->status);
+        Queue::assertPushed(SendNotificationJob::class, fn (SendNotificationJob $job): bool => $job->outboxId === $outbox->id);
     }
 
     public function test_gateway_echo_of_payload_is_removed_from_logs_and_errors(): void
@@ -90,6 +125,22 @@ class OutboxSafetyTest extends IntegrationTestCase
         self::assertStringNotContainsString($message, $stored);
         self::assertStringNotContainsString($receiver, (string) NotificationOutbox::sole()->last_error_redacted);
         self::assertStringNotContainsString($message, (string) NotificationOutbox::sole()->last_error_redacted);
+    }
+
+    public function test_destination_test_echo_is_removed_from_durable_logs(): void
+    {
+        $receiver = '+47 91112222';
+        $message = 'sensitive destination test';
+        Http::fake(['*' => Http::response("ok {$receiver} {$message}", 200)]);
+        $destination = $this->smsDestination();
+
+        $result = app(NotificationDispatcher::class)->test($destination, $receiver, $message);
+
+        self::assertTrue($result->successful);
+        self::assertStringContainsString($message, (string) $result->response);
+        $stored = json_encode(DeliveryLog::sole()->toArray());
+        self::assertStringNotContainsString($receiver, $stored);
+        self::assertStringNotContainsString($message, $stored);
     }
 
     public function test_terminal_queue_failure_returns_queued_row_to_retryable_failed_state(): void
@@ -156,6 +207,29 @@ class OutboxSafetyTest extends IntegrationTestCase
         self::assertTrue($dispatcher->deliverOutbox($live->id)->successful);
         self::assertSame('processing', $live->fresh()->status);
         Http::assertSentCount(1);
+    }
+
+    public function test_committed_transport_success_with_incomplete_finalization_is_repaired_without_resending(): void
+    {
+        Queue::fake();
+        Http::fake();
+        $this->settings->put('dispatch_mode', 'queue');
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination());
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+        app(NotificationDispatcher::class)->dispatch($incident, $action->destination, $action, 'trigger', 'noc', 'down');
+        $outbox = NotificationOutbox::sole();
+
+        // Simulate a worker crash after recording gateway success but before the
+        // represented incident bookkeeping transaction starts.
+        $outbox->update(['status' => 'sent', 'delivered_at' => now(), 'finalized_at' => null]);
+        (new SendNotificationJob($outbox->id))->handle(app(NotificationDispatcher::class), app(SettingStore::class));
+        (new SendNotificationJob($outbox->id))->handle(app(NotificationDispatcher::class), app(SettingStore::class));
+
+        Http::assertNothingSent();
+        self::assertNotNull($outbox->fresh()->finalized_at);
+        self::assertSame(1, (int) $incident->fresh()->notification_count);
+        self::assertSame(1, $incident->events()->where('event_type', 'notification_sent')->count());
     }
 
     private function processingOutbox(Incident $incident, PolicyAction $action, string $suffix, CarbonInterface $claimedAt): NotificationOutbox

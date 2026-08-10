@@ -6,7 +6,7 @@ Stop IAPM scheduler and queue workers, retain the prior direct-notification roll
 
 ## Apply and verify
 
-Install dependencies, run `php artisan migrate`, then run:
+Install dependencies, run `php artisan migrate --force`, then run:
 
 ```sh
 php artisan iapm:install-check
@@ -14,7 +14,7 @@ php artisan iapm:cache-rebuild
 php artisan iapm:health
 ```
 
-The production-safety migration is additive. It backfills an episode UUID on existing incidents and outage rows, makes each `(incident_id, episode_uuid)` outage unique, creates the encrypted durable notification outbox and its incident links, and adds delivery-log correlation fields. Start one worker, exercise one controlled dry-run trigger/recovery, then one controlled live delivery before restoring normal worker concurrency.
+The production-safety migrations are additive. A preflight migration adds episode columns and fills UUIDs in restartable 5,000-row set-based batches before the released v1.2.1 migration runs; already-upgraded installations treat it as a no-op. Later migrations add storm-path indexes and the encrypted durable ingestion inbox. On multi-million-row tables, verify free disk for a second index copy and test MariaDB's online-DDL behavior on a staging clone. Start one inbox worker and one queue worker, exercise a controlled dry-run trigger/recovery, then one controlled live delivery before restoring normal concurrency.
 
 ## Rollback
 
@@ -23,6 +23,7 @@ Prefer application rollback with the new tables left intact. Set dry-run, stop w
 ## Release notes
 
 - Durable encrypted outbox with deterministic logical-notification idempotency.
+- Encrypted durable ingestion inbox with 202-after-commit acceptance and explicit 503 backpressure.
 - Per-episode lifecycle resets, outage uniqueness, and acknowledgement restoration.
 - One receiver resolver shared by live actions, digests, readiness, and policy tests.
 - Lossless digest fallback and confirmation only after successful/dry-run completion.

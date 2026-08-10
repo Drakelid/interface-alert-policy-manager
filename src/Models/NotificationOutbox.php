@@ -20,6 +20,7 @@ class NotificationOutbox extends Model
             'available_at' => 'datetime',
             'claimed_at' => 'datetime',
             'delivered_at' => 'datetime',
+            'finalized_at' => 'datetime',
         ];
     }
 

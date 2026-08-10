@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\IngestionInbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
 
 /**
@@ -31,6 +32,7 @@ class HealthService
             $this->schedulerCheck('reconcile', 'Reconciliation running', 'last_reconcile_at'),
             $this->schedulerCheck('process_actions', 'Action processing running', 'last_process_actions_at'),
             $this->gatewayCheck(),
+            $this->ingestionInboxCheck(),
             $this->backlogCheck(),
         ];
 
@@ -111,8 +113,9 @@ class HealthService
                 ->whereDoesntHave('deliveries', fn ($query) => $query->whereIn('phase', ['trigger', 'digest'])->whereIn('status', ['sent', 'dry_run'])->whereColumn('iapm_delivery_logs.episode_uuid', 'iapm_incidents.episode_uuid'))
                 ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('iapm_notification_outbox_incidents as noi')->join('iapm_notification_outbox as no', 'no.id', '=', 'noi.notification_outbox_id')->whereColumn('noi.incident_id', 'iapm_incidents.id')->whereColumn('noi.episode_uuid', 'iapm_incidents.episode_uuid')->whereIn('no.phase', ['trigger', 'digest'])->whereIn('no.status', ['sent', 'dry_run', 'pending', 'queued', 'processing']))
                 ->count();
-            $counts = NotificationOutbox::query()->selectRaw('status, count(*) as aggregate')->groupBy('status')->pluck('aggregate', 'status');
+            $counts = NotificationOutbox::query()->whereIn('status', ['pending', 'queued', 'processing', 'failed'])->selectRaw('status, count(*) as aggregate')->groupBy('status')->pluck('aggregate', 'status');
             $stale = $this->staleOutboxQuery(self::BACKLOG_OVERDUE_SECONDS)->count();
+            $unfinalized = NotificationOutbox::whereIn('status', ['sent', 'dry_run'])->whereNull('finalized_at')->count();
         } catch (\Throwable $exception) {
             Log::channel('iapm')->error('Notification backlog health query failed.', ['error' => $exception->getMessage()]);
 
@@ -122,14 +125,32 @@ class HealthService
         $pending = (int) ($counts['pending'] ?? 0);
         $inFlight = (int) ($counts['queued'] ?? 0) + (int) ($counts['processing'] ?? 0);
         $failed = (int) ($counts['failed'] ?? 0);
-        $ok = $overdue === 0 && $stale === 0;
+        $ok = $overdue === 0 && $stale === 0 && $unfinalized === 0;
 
         return [
             'key' => 'action_backlog',
             'label' => 'No stuck notifications',
             'ok' => $ok,
-            'detail' => "pending={$pending}, in-flight={$inFlight}, failed={$failed}, stale={$stale}, overdue incidents={$overdue}".($ok ? '.' : ' — current-episode notification processing is unhealthy.'),
+            'detail' => "pending={$pending}, in-flight={$inFlight}, failed={$failed}, stale={$stale}, unfinalized={$unfinalized}, overdue incidents={$overdue}".($ok ? '.' : ' — current-episode notification processing is unhealthy.'),
         ];
+    }
+
+    private function ingestionInboxCheck(): array
+    {
+        try {
+            $cutoff = now()->subSeconds(self::BACKLOG_OVERDUE_SECONDS);
+            $stuck = IngestionInbox::query()->where(function ($query) use ($cutoff): void {
+                $query->where(fn ($pending) => $pending->whereIn('status', ['pending', 'failed'])->where('created_at', '<', $cutoff))
+                    ->orWhere(fn ($processing) => $processing->where('status', 'processing')->where('claimed_at', '<', $cutoff));
+            })->count();
+            $pending = IngestionInbox::whereIn('status', ['pending', 'failed', 'processing'])->count();
+        } catch (\Throwable $exception) {
+            Log::channel('iapm')->error('Ingestion inbox health query failed.', ['error' => $exception->getMessage()]);
+
+            return ['key' => 'ingestion_inbox', 'label' => 'Durable ingestion draining', 'ok' => false, 'detail' => 'Ingestion inbox query failed.'];
+        }
+
+        return ['key' => 'ingestion_inbox', 'label' => 'Durable ingestion draining', 'ok' => $stuck === 0, 'detail' => "pending={$pending}, stale={$stuck}."];
     }
 
     private function timestamp(string $key): ?CarbonImmutable
@@ -152,7 +173,8 @@ class HealthService
 
         return NotificationOutbox::query()->where(function ($query) use ($cutoff): void {
             $query->where(fn ($pending) => $pending->whereIn('status', ['pending', 'queued'])->where('created_at', '<', $cutoff))
-                ->orWhere(fn ($processing) => $processing->where('status', 'processing')->where(fn ($claimed) => $claimed->whereNull('claimed_at')->orWhere('claimed_at', '<', $cutoff)));
+                ->orWhere(fn ($processing) => $processing->where('status', 'processing')->where(fn ($claimed) => $claimed->whereNull('claimed_at')->orWhere('claimed_at', '<', $cutoff)))
+                ->orWhere(fn ($failed) => $failed->where('status', 'failed')->where('available_at', '<', $cutoff));
         });
     }
 }

@@ -78,14 +78,31 @@ class ConfigurationImportValidator
         $validator->after(function ($validator) use ($document): void {
             $records = count($document['schedules'] ?? []) + count($document['policies'] ?? []);
             $importedSchedules = collect($document['schedules'] ?? [])->pluck('name');
-            $knownSchedules = DB::table('iapm_schedules')->pluck('name')->merge($importedSchedules)->unique();
-            $destinations = DB::table('iapm_destinations')->pluck('name');
-            $knownGroups = DB::table('device_groups')->pluck('id')->map(fn ($id) => (int) $id);
+            $policies = collect($document['policies'] ?? []);
+            $assignments = $policies->flatMap(fn (array $policy) => $policy['assignments'] ?? []);
+            $existingPolicyNames = $this->existing('iapm_policies', 'name', $policies->pluck('name')->filter()->all());
+            $newAssignments = $policies->reject(fn (array $policy) => $existingPolicyNames->contains($policy['name'] ?? null))->flatMap(fn (array $policy) => $policy['assignments'] ?? []);
+            $regexLimit = max(1, (int) config('iapm.resolver.max_regex_assignments', 5000));
+            foreach (['ifalias_regex', 'ifname_regex'] as $regexType) {
+                $existingRegex = DB::table('iapm_assignments')->join('iapm_policies', 'iapm_policies.id', '=', 'iapm_assignments.policy_id')->where('iapm_assignments.assignment_type', $regexType)->where('iapm_assignments.enabled', true)->where('iapm_policies.enabled', true)->count();
+                if ($existingRegex + $newAssignments->where('assignment_type', $regexType)->where('enabled', true)->count() > $regexLimit) {
+                    $validator->errors()->add('policies', "The import exceeds the configured {$regexType} safety limit of {$regexLimit}.");
+                }
+            }
+            $scheduleNames = $policies->pluck('schedule')->filter()->unique()->values()->all();
+            $destinationNames = $policies->flatMap(fn (array $policy) => collect($policy['actions'] ?? [])->pluck('destination'))->filter()->unique()->values()->all();
+            $groupIds = $assignments->flatMap(fn (array $assignment) => $assignment['device_group_ids'] ?? [])->map(fn ($id) => (int) $id)->unique()->values()->all();
+            $knownSchedules = $this->existing('iapm_schedules', 'name', $scheduleNames)->merge($importedSchedules)->unique();
+            $destinations = $this->existing('iapm_destinations', 'name', $destinationNames);
+            $knownGroups = $this->existing('device_groups', 'id', $groupIds)->map(fn ($id) => (int) $id);
+            // Resolve only identifiers referenced by this bounded document. Loading
+            // every port id made import validation O(fleet size) and could exhaust
+            // memory on a 500k-interface LibreNMS instance.
             $knownReferences = [
-                'port' => DB::table('ports')->pluck('port_id')->map(fn ($id) => (string) $id),
-                'port_group' => DB::table('port_groups')->pluck('id')->map(fn ($id) => (string) $id),
-                'device' => DB::table('devices')->pluck('device_id')->map(fn ($id) => (string) $id),
-                'location' => DB::table('locations')->pluck('id')->map(fn ($id) => (string) $id),
+                'port' => $this->existingReferences($assignments, 'port', 'ports', 'port_id'),
+                'port_group' => $this->existingReferences($assignments, 'port_group', 'port_groups', 'id'),
+                'device' => $this->existingReferences($assignments, 'device', 'devices', 'device_id'),
+                'location' => $this->existingReferences($assignments, 'location', 'locations', 'id'),
             ];
             foreach (($document['schedules'] ?? []) as $index => $schedule) {
                 try {
@@ -147,5 +164,19 @@ class ConfigurationImportValidator
         } finally {
             restore_error_handler();
         }
+    }
+
+    private function existingReferences($assignments, string $type, string $table, string $column)
+    {
+        $values = $assignments->where('assignment_type', $type)->pluck('assignment_reference')->filter()->map(fn ($value) => (string) $value)->unique()->values()->all();
+
+        return $this->existing($table, $column, $values)->map(fn ($value) => (string) $value);
+    }
+
+    private function existing(string $table, string $column, array $values)
+    {
+        return collect($values)->chunk(1000)->flatMap(
+            fn ($chunk) => DB::table($table)->whereIn($column, $chunk->all())->pluck($column)
+        )->unique()->values();
     }
 }

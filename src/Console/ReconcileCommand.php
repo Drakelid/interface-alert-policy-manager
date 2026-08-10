@@ -30,11 +30,21 @@ class ReconcileCommand extends Command
             return self::SUCCESS;
         }
 
-        $query = Incident::with('policy')->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Suppressed])->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->when($this->option('device'), fn ($q, $id) => $q->where('device_id', $id));
+        $targeted = (bool) ($this->option('incident') || $this->option('device'));
+        $deadline = $targeted ? PHP_FLOAT_MAX : microtime(true) + max(5, (int) config('iapm.processing.reconcile_max_seconds', 50));
+        $cursor = $targeted ? 0 : (int) $settings->get('reconcile_cursor_id', 0);
+        $query = Incident::with('policy')->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged, IncidentState::Suppressed])->when($cursor > 0, fn ($q) => $q->where('id', '>', $cursor))->when($this->option('incident'), fn ($q, $id) => $q->whereKey($id))->when($this->option('device'), fn ($q, $id) => $q->where('device_id', $id));
         $deletedPortBehavior = $settings->get('deleted_port_behavior', 'recover');
         $changed = 0;
         $failed = 0;
-        $query->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$changed, &$failed, $contexts, $resolver, $suppression, $deletedPortBehavior, $dependencies, $receivers, $lifecycle): void {
+        $lastId = $cursor;
+        $stopped = false;
+        $query->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$changed, &$failed, &$lastId, &$stopped, $deadline, $contexts, $resolver, $suppression, $deletedPortBehavior, $dependencies, $receivers, $lifecycle): bool {
+            if (microtime(true) >= $deadline) {
+                $stopped = true;
+
+                return false;
+            }
             $ports = Port::with(['device.location', 'device.groups', 'device.parents', 'groups'])->whereIn('port_id', $items->pluck('port_id'))->get()->keyBy('port_id');
             $missing = $items->filter(fn (Incident $incident): bool => ! $ports->has($incident->port_id));
             $missingRecoveredInBatch = false;
@@ -49,6 +59,12 @@ class ReconcileCommand extends Command
                 }
             }
             foreach ($items as $incident) {
+                if (microtime(true) >= $deadline) {
+                    $stopped = true;
+
+                    return false;
+                }
+                $lastId = (int) $incident->id;
                 try {
                     if ($incident->muted_until?->isPast()) {
                         if (! $this->option('dry-run')) {
@@ -122,8 +138,10 @@ class ReconcileCommand extends Command
                     }
                     $data = array_merge((array) $incident->context_json, (array) $context);
                     unset($data['up_seen_at']);
-                    $data['observation_count'] = (int) ($data['observation_count'] ?? 0) + 1;
-                    $data['last_reconciled_down_at'] = now()->toIso8601String();
+                    // Once the policy's failed-poll threshold is met, repeated down
+                    // polls convey no new lifecycle information. Cap the counter and
+                    // avoid rewriting identical JSON every minute.
+                    $data['observation_count'] = min((int) $policy->failed_poll_count, (int) ($data['observation_count'] ?? 0) + 1);
                     $data['assignment_receivers'] = $receivers->assignmentReceivers($resolution);
                     $data['assignment_source'] = $resolution->winner?->assignment_type->value ?? 'configured_default';
                     if ((int) $incident->policy_id !== (int) $policy->id && ! $this->option('dry-run')) {
@@ -132,7 +150,7 @@ class ReconcileCommand extends Command
                     // Honour an operator acknowledgement while the interface stays down —
                     // don't bounce it through suppressed/active. Recovery (port up) still clears it above.
                     if ($incident->state === IncidentState::Acknowledged) {
-                        if (! $this->option('dry-run')) {
+                        if (! $this->option('dry-run') && $data !== (array) $incident->context_json) {
                             $incident->update(['context_json' => $data]);
                         }
 
@@ -143,7 +161,7 @@ class ReconcileCommand extends Command
                         if ($incident->state !== IncidentState::Suppressed || $incident->suppression_reason !== $reason) {
                             $this->transition($incident, IncidentState::Suppressed, "Suppressed during reconciliation: $reason", ['suppression_reason' => $reason, 'context_json' => $data]);
                             $changed++;
-                        } elseif (! $this->option('dry-run')) {
+                        } elseif (! $this->option('dry-run') && $data !== (array) $incident->context_json) {
                             $incident->update(['context_json' => $data]);
                         }
 
@@ -159,7 +177,7 @@ class ReconcileCommand extends Command
                     if ($incident->state === IncidentState::Pending && $this->requirementsMet($incident, $policy, $data['observation_count'])) {
                         $this->transition($incident, IncidentState::Active, 'Trigger requirements satisfied during reconciliation.', ['triggered_at' => now(), 'context_json' => $data]);
                         $changed++;
-                    } elseif (! $this->option('dry-run')) {
+                    } elseif (! $this->option('dry-run') && $data !== (array) $incident->context_json) {
                         $incident->update(['context_json' => $data]);
                     }
                 } catch (\Throwable $e) {
@@ -167,8 +185,13 @@ class ReconcileCommand extends Command
                     $this->error("Incident {$incident->id}: {$e->getMessage()}");
                 }
             }
+
+            return true;
         });
         if (! $this->option('dry-run')) {
+            if (! $targeted) {
+                $settings->put('reconcile_cursor_id', $stopped ? $lastId : 0);
+            }
             $settings->put('last_reconcile_at', now()->toIso8601String());
         }
         $this->info("Reconciled; {$changed} incident(s) changed, {$failed} failed.");

@@ -109,6 +109,18 @@ class MonitoringAndStatsTest extends IntegrationTestCase
         self::assertFalse(app(HealthService::class)->healthy());
     }
 
+    public function test_failed_outbox_that_has_remained_due_is_unhealthy(): void
+    {
+        $this->settings->put('last_reconcile_at', now()->toIso8601String());
+        $this->settings->put('last_process_actions_at', now()->toIso8601String());
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination());
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+        NotificationOutbox::create(['idempotency_key' => hash('sha256', 'failed-due'), 'episode_uuid' => $incident->episode_uuid, 'incident_id' => $incident->id, 'destination_id' => $action->destination_id, 'policy_action_id' => $action->id, 'phase' => 'trigger', 'receiver_hash' => hash('sha256', 'noc'), 'receiver_encrypted' => 'noc', 'message_encrypted' => 'down', 'incident_ids_encrypted' => [], 'status' => 'failed', 'available_at' => now()->subHour(), 'created_at' => now()->subHour()]);
+
+        self::assertFalse(app(HealthService::class)->healthy());
+    }
+
     public function test_backlog_query_failure_fails_health_closed(): void
     {
         Schema::rename('iapm_notification_outbox', 'iapm_notification_outbox_unavailable');

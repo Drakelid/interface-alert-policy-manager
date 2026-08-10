@@ -22,6 +22,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 $queryCount = 0;
 $failures = [];
 $hotQueryLimitMs = (float) (getenv('HOT_QUERY_LIMIT_MS') ?: 50);
+$hotQueryP95LimitMs = (float) (getenv('HOT_QUERY_P95_LIMIT_MS') ?: 50);
 $resolverLimitMs = (float) (getenv('RESOLVER_LIMIT_MS') ?: 2000);
 $resolverQueryLimit = (int) (getenv('RESOLVER_QUERY_LIMIT') ?: 25);
 $peakMemoryLimitMiB = (float) (getenv('PEAK_MEMORY_LIMIT_MIB') ?: 256);
@@ -30,22 +31,28 @@ DB::listen(function () use (&$queryCount): void {
 });
 $startedWith = memory_get_usage(true);
 
-$timeq = function (string $label, string $sql, array $binds = [], int $runs = 3) use (&$failures, $hotQueryLimitMs): void {
+$timeq = function (string $label, string $sql, array $binds = [], ?int $runs = null) use (&$failures, $hotQueryLimitMs, $hotQueryP95LimitMs): void {
+    $runs ??= max(3, (int) (getenv('QUERY_RUNS') ?: 20));
     try {
         $ex = DB::select('EXPLAIN '.$sql, $binds);
         $plan = implode(' | ', array_map(fn ($r) => ($r->key ?? 'NO-INDEX').' (~'.number_format((int) ($r->rows ?? 0)).' rows)', $ex));
     } catch (Throwable $e) {
         $plan = 'EXPLAIN failed: '.$e->getMessage();
     }
-    $best = PHP_FLOAT_MAX;
+    $samples = [];
     for ($i = 0; $i < $runs; $i++) {
         $t = microtime(true);
         DB::select($sql, $binds);
-        $best = min($best, (microtime(true) - $t) * 1000);
+        $samples[] = (microtime(true) - $t) * 1000;
     }
-    printf("  %-26s %9.1f ms   %s\n", $label, $best, $plan);
-    if ($best > $hotQueryLimitMs || str_contains($plan, 'NO-INDEX')) {
-        $failures[] = "{$label}: {$best}ms, {$plan}";
+    sort($samples);
+    $percentile = fn (float $p): float => $samples[(int) min(count($samples) - 1, ceil($p * count($samples)) - 1)];
+    $p50 = $percentile(0.50);
+    $p95 = $percentile(0.95);
+    $p99 = $percentile(0.99);
+    printf("  %-26s best=%6.1f p50=%7.1f p95=%7.1f p99=%7.1f ms   %s\n", $label, $samples[0], $p50, $p95, $p99, $plan);
+    if ($samples[0] > $hotQueryLimitMs || $p95 > $hotQueryP95LimitMs || str_contains($plan, 'NO-INDEX')) {
+        $failures[] = "{$label}: best={$samples[0]}ms, p95={$p95}ms, {$plan}";
     }
 };
 
@@ -57,19 +64,24 @@ echo "Row counts by state:\n";
 foreach (DB::select('SELECT state, count(*) c FROM iapm_incidents GROUP BY state') as $r) {
     echo '  '.str_pad($r->state, 14).number_format($r->c)."\n";
 }
-printf("\nSeeded scale: %s incidents, %s policies, %s assignments, %s actions\n",
+printf("\nSeeded scale: %s incidents, %s policies, %s assignments, %s actions, %s outbox rows\n",
     number_format(DB::table('iapm_incidents')->where('incident_key', 'like', 'loadtest:%')->count()),
     number_format(DB::table('iapm_policies')->count()),
     number_format(DB::table('iapm_assignments')->count()),
-    number_format(DB::table('iapm_policy_actions')->count()));
+    number_format(DB::table('iapm_policy_actions')->count()),
+    number_format(DB::table('iapm_notification_outbox')->count()));
 
-echo "\nHot-path query timings (best of 3, with chosen index):\n";
+echo "\nHot-path query timings (best/p50/p95/p99, with chosen index):\n";
 $timeq('Overview open counts', "SELECT state, count(*) c FROM iapm_incidents WHERE state IN $open GROUP BY state");
 $timeq('Overview recent 25', 'SELECT * FROM iapm_incidents ORDER BY last_seen_at DESC LIMIT 25');
 $timeq('missing_policies tile', "SELECT count(*) c FROM iapm_incidents WHERE state='suppressed' AND suppression_reason='no_policy'");
 $timeq('recovered_24h tile', "SELECT count(*) c FROM iapm_incidents WHERE state='recovered' AND recovered_at >= ?", [$cut24]);
 $timeq('reconcile 1st chunk', "SELECT * FROM iapm_incidents WHERE state IN $open AND id > 0 ORDER BY id LIMIT 500");
 $timeq('process-actions chunk', "SELECT * FROM iapm_incidents WHERE (state IN ('pending','active','acknowledged') OR (state='recovered' AND recovered_at >= ?)) AND id > 0 ORDER BY id LIMIT 500", [$cut48]);
+if (DB::table('iapm_notification_outbox')->exists()) {
+    $timeq('outbox due chunk', "SELECT id FROM iapm_notification_outbox WHERE status IN ('pending','failed') AND (available_at IS NULL OR available_at <= NOW()) ORDER BY id LIMIT 1000");
+    $timeq('outbox stale claims', "SELECT count(*) c FROM iapm_notification_outbox WHERE status='processing' AND claimed_at < ?", [now()->subMinutes(10)->format('Y-m-d H:i:s')]);
+}
 
 $ports = Port::query()->with(['device.location', 'device.groups', 'groups'])->limit((int) (getenv('RESOLVER_PORTS') ?: 500))->get();
 if ($ports->isNotEmpty()) {

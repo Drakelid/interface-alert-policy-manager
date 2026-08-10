@@ -26,6 +26,7 @@ class MaintenanceCommandsTest extends IntegrationTestCase
     public function test_install_check_fails_when_the_ingestion_token_is_missing(): void
     {
         DB::table('iapm_settings')->where('setting_key', 'ingestion_token')->delete();
+        $this->settings->forget('ingestion_token');
         $this->defaultPolicy();
         $this->smsDestination();
 

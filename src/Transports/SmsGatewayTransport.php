@@ -30,10 +30,23 @@ class SmsGatewayTransport implements NotificationTransport
             // and `"error": ""` are both "no error"; anything else in that field is one.
             $bodyError = preg_match('/"(?:success|ok)"\s*:\s*false|"error"\s*:\s*(?!null|"")/i', $body) === 1;
 
-            return new TransportResult($response->successful() && ! $bodyError, $response->status(), $body, $bodyError ? 'Gateway response indicates failure.' : null);
+            return new TransportResult($response->successful() && ! $bodyError, $response->status(), $body, $bodyError ? 'Gateway response indicates failure.' : null, $this->retryAfter($response->header('Retry-After')));
         } catch (\Throwable $e) {
             return new TransportResult(false, null, null, $this->redactor->text($e->getMessage()));
         }
+    }
+
+    private function retryAfter(?string $value): ?int
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+        if (ctype_digit(trim($value))) {
+            return min(86400, (int) trim($value));
+        }
+        $timestamp = strtotime($value);
+
+        return $timestamp === false ? null : min(86400, max(0, $timestamp - time()));
     }
 
     private function safeHeaders(array $headers): array

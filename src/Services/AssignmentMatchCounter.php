@@ -100,6 +100,10 @@ class AssignmentMatchCounter
         if ($pattern === '' || strlen($pattern) > 1000 || ! $this->validRegex($pattern)) {
             return $this->error('The regular expression is invalid.');
         }
+        $pattern = $pattern[0]
+            .'(*LIMIT_MATCH='.max(1000, (int) config('iapm.resolver.regex_backtrack_limit', 100000)).')'
+            .'(*LIMIT_DEPTH='.max(100, (int) config('iapm.resolver.regex_depth_limit', 1000)).')'
+            .substr($pattern, 1);
 
         $column = $type === 'ifalias_regex' ? 'ifAlias' : 'ifName';
         $count = 0;
@@ -133,6 +137,9 @@ class AssignmentMatchCounter
 
     private function matches(string $pattern, string $subject): bool
     {
+        if (strlen($subject) > max(1, (int) config('iapm.resolver.regex_subject_bytes', 2048))) {
+            return false;
+        }
         set_error_handler(static fn () => true);
         try {
             return preg_match($pattern, $subject) === 1;

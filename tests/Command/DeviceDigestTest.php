@@ -35,7 +35,7 @@ class DeviceDigestTest extends IntegrationTestCase
         $outbox = NotificationOutbox::sole();
         self::assertSame('digest', $outbox->phase);
         self::assertSame('queued', $outbox->status);
-        self::assertCount(100, $outbox->incident_ids_encrypted);
+        self::assertSame([], $outbox->incident_ids_encrypted);
         self::assertSame(100, DB::table('iapm_notification_outbox_incidents')->where('notification_outbox_id', $outbox->id)->count());
         Queue::assertPushed(SendNotificationJob::class, 1);
     }
@@ -239,6 +239,7 @@ class DeviceDigestTest extends IntegrationTestCase
         $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
 
         $this->artisan('iapm:process-actions');
+        NotificationOutbox::where('phase', 'digest')->update(['available_at' => now()->subSecond()]);
         $this->artisan('iapm:process-actions');
 
         self::assertSame(1, NotificationOutbox::where('phase', 'digest')->count());
@@ -329,5 +330,35 @@ class DeviceDigestTest extends IntegrationTestCase
         Http::assertSentCount(2);
         Http::assertSent(fn ($request) => in_array($request['receiver'], ['receiver-a', 'receiver-b'], true));
         self::assertSame(2, NotificationOutbox::where('phase', 'digest')->where('status', 'sent')->count());
+    }
+
+    public function test_successful_digest_destination_does_not_hide_failed_destination_fallbacks(): void
+    {
+        $failedDestinationCalls = 0;
+        Http::fake(function ($request) use (&$failedDestinationCalls) {
+            if (str_contains($request->url(), '/destination-b')) {
+                $failedDestinationCalls++;
+
+                return $failedDestinationCalls === 1 ? Http::response('failed', 500) : Http::response('ok', 200);
+            }
+
+            return Http::response('ok', 200);
+        });
+        $this->settings->put('aggregate_threshold', 2);
+        $this->settings->put('aggregate_window_seconds', 3600);
+        $policy = $this->policy();
+        $destinationA = $this->smsDestination(['url' => 'http://127.0.0.1:5000/destination-a', 'retry_count' => 0]);
+        $destinationB = $this->smsDestination(['url' => 'http://127.0.0.1:5000/destination-b', 'retry_count' => 0]);
+        $this->triggerAction($policy, $destinationA);
+        $this->triggerAction($policy, $destinationB);
+        $device = $this->device();
+        collect(range(1, 2))->each(fn () => $this->incident($policy, $this->downPort($device)));
+
+        $this->artisan('iapm:process-actions')->assertExitCode(0);
+
+        self::assertSame('sent', NotificationOutbox::where('phase', 'digest')->where('destination_id', $destinationA->id)->sole()->status);
+        self::assertSame('failed', NotificationOutbox::where('phase', 'digest')->where('destination_id', $destinationB->id)->sole()->status);
+        self::assertSame(0, NotificationOutbox::where('phase', 'trigger')->where('destination_id', $destinationA->id)->count());
+        self::assertSame(2, NotificationOutbox::where('phase', 'trigger')->where('destination_id', $destinationB->id)->where('status', 'sent')->count());
     }
 }
