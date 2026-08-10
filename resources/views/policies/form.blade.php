@@ -1,6 +1,6 @@
 @extends('layouts.librenmsv1') @section('title',$policy->exists?'Edit IAPM Policy':'Create IAPM Policy') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')<h2>{{ $policy->exists?'Edit':'Create' }} Policy</h2>
-<p class="text-muted">Timing controls the incident lifecycle: <strong>trigger delay</strong> + <strong>failed polls</strong> must both be satisfied before an incident becomes active and notifies; <strong>repeat</strong>/<strong>maximum repeats</strong> govern reminders; <strong>recovery hold-down</strong> is how long an interface must stay up before it's marked recovered. Set 0 for immediate. Add notification <em>actions</em> below after saving.</p>
+<p class="text-muted">Timing controls the incident lifecycle: <strong>trigger delay</strong> + <strong>down observations</strong> must both be satisfied before an incident becomes active and notifies; <strong>repeat</strong>/<strong>maximum repeats</strong> govern reminders; <strong>recovery hold-down</strong> is how long an interface must stay up before it's marked recovered. Set 0 for immediate. Detection can never be faster than your LibreNMS poll interval (300 seconds by default), so timings below that round up to the next poll. Add notification <em>actions</em> below after saving.</p>
 <form method="post" action="{{ $policy->exists?route('iapm.policies.update',$policy):route('iapm.policies.store') }}">@csrf @if($policy->exists)@method('PUT')@endif<div class="row"><div class="col-md-6">
 @php
 $fields = [
@@ -8,10 +8,10 @@ $fields = [
   'description'=>['label'=>'Description','type'=>'textarea'],
   'priority'=>['label'=>'Priority','type'=>'number','help'=>'Higher wins among assignments of the same type.'],
   'default_receiver'=>['label'=>'Default receiver','type'=>'text','help'=>'Fallback receiver when nothing more specific resolves.'],
-  'trigger_after_seconds'=>['label'=>'Trigger delay','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Wait this long after first seeing the interface down before it can notify. 0 = immediate.'],
-  'failed_poll_count'=>['label'=>'Failed polls','type'=>'number','min'=>1,'help'=>'Consecutive down observations required before triggering.'],
-  'recovery_after_seconds'=>['label'=>'Recovery hold-down','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Interface must stay up this long before it is marked recovered. 0 = immediate.'],
-  'repeat_seconds'=>['label'=>'Repeat every','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Re-send reminders at this interval. Blank = no repeat.'],
+  'trigger_after_seconds'=>['label'=>'Trigger delay','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Wait this long after first seeing the interface down before it can notify. 0 = immediate, so a single poll sample notifies. Use a multiple of your LibreNMS poll interval (300 seconds by default) to require that many polls of confirmation.'],
+  'failed_poll_count'=>['label'=>'Down observations','type'=>'number','min'=>1,'help'=>'Down observations required before triggering. Reconciliation counts one every minute while the interface stays down, so this does NOT count LibreNMS polls — use the trigger delay above for poll-based confirmation.'],
+  'recovery_after_seconds'=>['label'=>'Recovery hold-down','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Interface must stay up this long before it is marked recovered. 0 = immediate. Below one poll interval (300 seconds by default) this just means "at the next poll".'],
+  'repeat_seconds'=>['label'=>'Repeat every','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Re-send reminders at this interval. Blank = no repeat. Below one poll interval it re-notifies on unchanged data.'],
   'maximum_repeats'=>['label'=>'Maximum repeats','type'=>'number','min'=>0,'help'=>'Cap on reminder re-sends. Blank = unlimited.'],
 ];
 @endphp

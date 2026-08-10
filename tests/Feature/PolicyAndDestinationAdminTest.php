@@ -81,6 +81,39 @@ class PolicyAndDestinationAdminTest extends IntegrationTestCase
         self::assertSame('a-token', $destination->configuration_encrypted['bearer_token']);
     }
 
+    public function test_a_new_policy_defaults_to_one_poll_of_confirmation_each_way(): void
+    {
+        // Without a trigger delay a single poll sample both raises and notifies an
+        // incident, so one transient blip pages an operator and then sends a
+        // recovery. New policies must not start out that way.
+        $policy = new Policy;
+
+        self::assertSame(300, (int) $policy->trigger_after_seconds);
+        self::assertSame(300, (int) $policy->recovery_after_seconds);
+        self::assertSame(1, (int) $policy->failed_poll_count);
+        self::assertNull($policy->repeat_seconds, 'reminders stay opt-in');
+    }
+
+    public function test_a_repeat_interval_the_import_would_reject_cannot_be_saved(): void
+    {
+        // The export/import round trip caps repeat_seconds at 30 days. Accepting a
+        // larger value here produced a policy that could not be re-imported from
+        // its own export.
+        $this->actingAs($this->admin())
+            ->post('/plugin/interface-alert-policy-manager/policies', [
+                'name' => 'Slow repeat',
+                'priority' => 0,
+                'severity' => 'critical',
+                'trigger_after_seconds' => 300,
+                'failed_poll_count' => 1,
+                'recovery_after_seconds' => 300,
+                'repeat_seconds' => 2592001,
+            ])
+            ->assertSessionHasErrors('repeat_seconds');
+
+        self::assertSame(0, Policy::where('name', 'Slow repeat')->count());
+    }
+
     public function test_a_destination_whose_attempts_outlive_the_worker_timeout_is_rejected(): void
     {
         // Each field is individually valid, but 11 attempts x 300s cannot finish
