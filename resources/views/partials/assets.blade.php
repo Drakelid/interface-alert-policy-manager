@@ -102,6 +102,19 @@
         });
     });
 
+    // Copy a literal value (per-row ids in tables, where a selector would need
+    // a unique element id for every row).
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('[data-iapm-copy-text]');
+        if (! btn) { return; }
+        e.preventDefault();
+        navigator.clipboard.writeText(btn.dataset.iapmCopyText).then(function () {
+            var original = btn.innerHTML;
+            btn.innerHTML = '<i class="fa fa-check"></i>';
+            setTimeout(function () { btn.innerHTML = original; }, 1200);
+        });
+    });
+
     // Copy the live contents of the element named by data-copy.
     document.querySelectorAll('[data-copy]').forEach(function (btn) {
         if (btn.dataset.iapmCopyBound === '1') { return; }

@@ -4,7 +4,9 @@
 <p class="text-muted">Fire a synthetic alert for one interface through the real ingestion pipeline to validate policy, assignment, and suppression behaviour. Incidents are created/updated as normal; external delivery still respects dry-run mode. Use the <a href="{{ route('iapm.matrix') }}">Interface Matrix</a> to find a port_id.</p>
 
 <form method="post" action="{{ route('iapm.simulate.run') }}" class="form-inline" data-iapm-busy onsubmit="return confirm('Run a simulated alert now? This creates or updates a real incident.')">@csrf
-    <div class="form-group"><label>Port ID</label> <input class="form-control" name="port_id" value="{{ old('port_id') }}" required></div>
+    {{-- Prefilled from ?port_id= so the Interface Matrix's per-row shortcut lands
+         on a ready-to-run form instead of an empty box (P1-1). --}}
+    <div class="form-group"><label for="iapm-sim-port">Port ID</label> <input class="form-control" id="iapm-sim-port" name="port_id" value="{{ old('port_id', request('port_id')) }}" required></div>
     <div class="form-group"><label>State</label>
         <select name="state" class="form-control"><option value="down">Down (raise/continue)</option><option value="up">Up (recover)</option></select>
     </div>
