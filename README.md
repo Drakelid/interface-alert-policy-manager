@@ -33,14 +33,29 @@ Follow these steps in order. At the end the plugin is fully operational and deli
 
 ### 1. Install the package (Packagist)
 
-Installs via LibreNMS's composer wrapper so it is written to `composer.plugins.json` and **survives `daily.sh` updates**:
+Two steps, and **both are required**. `composer.plugins.json` is what makes the
+plugin survive `daily.sh`; the composer command alone does not, because
+`daily.sh` runs `git checkout -- composer.json composer.lock` during an update
+and then re-requires only the packages listed in `composer.plugins.json`.
 
 ```bash
 cd /opt/librenms
+
+# 1a. Record the plugin so updates cannot drop it. Merge this entry if the file
+#     already exists — do not overwrite other plugins.
+sudo -u librenms tee composer.plugins.json >/dev/null <<'JSON'
+{
+    "require": {
+        "drakelid/interface-alert-policy-manager": "^1.3"
+    }
+}
+JSON
+
+# 1b. Install it now.
 sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php require drakelid/interface-alert-policy-manager
 ```
 
-<sub>If your LibreNMS version's wrapper has no `require` subcommand: add `{"require":{"drakelid/interface-alert-policy-manager":"^1.0"}}` to `/opt/librenms/composer.plugins.json`, then `sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php update drakelid/interface-alert-policy-manager`.</sub>
+<sub>Verify the first step took effect with `sudo -u librenms php daily.php -f composer_get_plugins`; it must print `drakelid/interface-alert-policy-manager:^1.3`. If it prints nothing, `daily.sh` will remove the plugin on its next run. `composer_wrapper.php` is only a wrapper around composer itself — it writes to `composer.json`, never to `composer.plugins.json`.</sub>
 
 ### 2. Migrate and enable
 
@@ -205,6 +220,8 @@ sudo -u librenms php artisan tinker --execute="app(LibreNMS\Plugins\InterfaceAle
 **`install-check` shows `[FAIL] default_policy`.** Decide coverage: add a **Default** assignment (or set a default policy) so unmatched interfaces are covered, **or** Settings → turn off *Record alerts for interfaces with no policy* to intentionally ignore them (recommended when you scope IAPM to specific interfaces).
 
 **Plugin missing from the menu / "must be run as the user librenms".** Run `artisan`/`lnms` as `sudo -u librenms`. If the plugin vanished after an update, confirm it's in `composer.plugins.json` (that's what `daily.sh` reinstalls from) and that `vendor/drakelid/interface-alert-policy-manager` exists; re-run step 1 if not.
+
+**Alert POSTs return 419 or 404, or no IAPM routes appear in `php artisan route:list`.** The routes are cached from before the plugin was installed — common on container images, which ship a prebuilt `bootstrap/cache/routes-v7.php`. Run `sudo -u librenms php artisan optimize:clear` (step 2) and reload PHP-FPM. Until the cache is cleared the ingest URL falls through to LibreNMS's own web routes, so CSRF rejects it with 419 rather than a clearer 401/404.
 
 ## Configuration and security
 
