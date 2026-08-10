@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\AssignmentController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\ComparisonReportController;
@@ -47,6 +48,9 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::get('interface-matrix/export', [InterfaceMatrixController::class, 'export'])->name('matrix.export');
     Route::get('policy-test', PolicyTestController::class)->name('policy-test');
     Route::get('stats', StatsController::class)->name('stats');
+    // The nav labels this page "Statistics & SLA", so /statistics is the obvious
+    // guess. Alias it rather than letting a plausible URL dead-end on a 404.
+    Route::get('statistics', fn (Request $request) => redirect()->route('iapm.stats', $request->query()))->name('statistics');
     Route::get('tools/simulate', [SimulationController::class, 'form'])->name('simulate');
     Route::post('tools/simulate', [SimulationController::class, 'run'])->name('simulate.run');
     Route::get('export', [ImportExportController::class, 'export'])->name('export');
@@ -78,4 +82,13 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::post('settings/rotate-token', [SettingsController::class, 'rotateToken'])->name('settings.rotate-token');
     Route::get('delivery-log', [LogController::class, 'deliveries'])->middleware('can:view iapm audit logs')->name('delivery-log');
     Route::get('audit-log', [LogController::class, 'audits'])->middleware('can:view iapm audit logs')->name('audit-log');
+
+    // Must stay last: an unmatched path under the plugin prefix renders the
+    // plugin's own 404 so the navigation is still reachable. Registering it as a
+    // route rather than only as an exception renderer keeps the `web` middleware
+    // stack in play, which the LibreNMS layout expects.
+    Route::get('{iapmMissingPath}', fn (Request $request) => response()->view('iapm::errors.404', [
+        'requestedPath' => '/'.ltrim($request->path(), '/'),
+        'missingResource' => null,
+    ], 404))->where('iapmMissingPath', '.*')->name('not-found');
 });

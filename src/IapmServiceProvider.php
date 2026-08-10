@@ -4,6 +4,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager;
 
 use App\Models\User;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
@@ -23,6 +24,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestDestinationCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestPolicyCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Hooks\MenuEntry;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Hooks\Settings;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\PluginNotFoundRenderer;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 
 class IapmServiceProvider extends ServiceProvider
@@ -55,6 +57,10 @@ class IapmServiceProvider extends ServiceProvider
         }
         $plugins->publishHook(self::PLUGIN_NAME, MenuEntryHook::class, MenuEntry::class);
         $plugins->publishHook(self::PLUGIN_NAME, SettingsHook::class, Settings::class);
+
+        // A 404 under the plugin prefix should still show the plugin's navigation.
+        // Resolved lazily so a console run never builds the exception handler.
+        $this->callAfterResolving(ExceptionHandler::class, PluginNotFoundRenderer::register(...));
 
         // Registered unconditionally: `php artisan migrate` must work before the
         // plugin row exists, and routes carry their own enablement middleware.
