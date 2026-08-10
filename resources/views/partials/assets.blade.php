@@ -3,6 +3,12 @@
 :root {
     --iapm-critical:#d9534f; --iapm-warning:#f0ad4e; --iapm-info:#5bc0de; --iapm-ok:#5cb85c; --iapm-muted:#888;
 }
+/* Secondary/help text. Bootstrap 3's .text-muted is #777, which is 4.48:1 on
+   white -- just under WCAG AA -- and far worse on the dark theme. LibreNMS
+   toggles dark mode with a .dark class on <html>, so both themes are covered.
+   #595959 is 7.0:1 on white; #adb5bd is >7:1 on the dark panel backgrounds. */
+.iapm-hint { color:#595959; }
+.dark .iapm-hint { color:#adb5bd; }
 .iapm-toolbar { margin-bottom:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .iapm-toolbar .spacer { flex:1 1 auto; }
 .iapm-num { text-align:right; font-variant-numeric:tabular-nums; }
