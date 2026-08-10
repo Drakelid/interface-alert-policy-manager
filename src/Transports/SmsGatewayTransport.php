@@ -49,10 +49,18 @@ class SmsGatewayTransport implements NotificationTransport
         return $timestamp === false ? null : min(86400, max(0, $timestamp - time()));
     }
 
+    /**
+     * Drop headers the transport controls itself. HTTP header names are
+     * case-insensitive, so this must compare case-insensitively — unsetting only
+     * the two spellings let `AUTHORIZATION` through and override the Basic auth
+     * credentials configured on the destination.
+     */
     private function safeHeaders(array $headers): array
     {
-        unset($headers['Authorization'], $headers['authorization'], $headers['Host'], $headers['host'], $headers['Content-Length'], $headers['content-length']);
-
-        return array_filter($headers, fn ($v, $k) => is_string($k) && is_scalar($v), ARRAY_FILTER_USE_BOTH);
+        return array_filter(
+            $headers,
+            fn ($v, $k) => is_string($k) && is_scalar($v) && ! in_array(strtolower($k), ['authorization', 'host', 'content-length'], true),
+            ARRAY_FILTER_USE_BOTH
+        );
     }
 }

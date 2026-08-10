@@ -117,6 +117,33 @@ class OutboxSafetyTest extends IntegrationTestCase
         self::assertNotNull($outbox->available_at);
     }
 
+    public function test_transport_controlled_headers_are_stripped_case_insensitively(): void
+    {
+        // HTTP header names are case-insensitive. Both transports reserve
+        // Authorization/Host/Content-Length for themselves, so a differently
+        // cased spelling in a destination's configured headers must not reach the
+        // gateway — a stray Host in particular selects a different virtual host on
+        // the IP the URL guard pinned.
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination([
+            'username' => null,
+            'password' => null,
+            'headers' => ['AUTHORIZATION' => 'Bearer injected', 'HOST' => 'evil.example', 'X-Trace' => 'keep-me'],
+        ]));
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+
+        app(NotificationDispatcher::class)->dispatch($incident, $action->destination, $action, 'trigger', 'noc', 'down');
+
+        Http::assertSent(function ($request): bool {
+            self::assertSame('keep-me', $request->header('X-Trace')[0] ?? null, 'benign headers must survive');
+            self::assertSame([], $request->header('AUTHORIZATION'), 'a reserved header must be dropped whatever its casing');
+            self::assertNotSame('evil.example', $request->header('Host')[0] ?? null, 'a stray Host must not reach the gateway');
+
+            return true;
+        });
+    }
+
     public function test_drain_command_requeues_due_failed_work(): void
     {
         Queue::fake();

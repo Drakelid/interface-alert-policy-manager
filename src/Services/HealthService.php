@@ -23,6 +23,15 @@ class HealthService
 
     public const BACKLOG_OVERDUE_SECONDS = 600;
 
+    /**
+     * How long an abandoned ingestion payload keeps the health check red. Dead
+     * rows are retained until the retention cutoff (a year by default), so an
+     * unbounded check would leave `iapm:health` failing — and any external
+     * monitor watching its exit code alarming — long after the operator had
+     * seen and handled the loss. The count stays visible in the detail line.
+     */
+    public const ABANDONED_ALERT_SECONDS = 86400;
+
     public function __construct(private readonly SettingStore $settings) {}
 
     /** @return list<array{key:string,label:string,ok:bool,detail:string}> */
@@ -146,14 +155,16 @@ class HealthService
             $pending = IngestionInbox::whereIn('status', ['pending', 'failed', 'processing'])->count();
             // Abandoned payloads were accepted with 202 but never applied. That is
             // silent alert loss unless an operator is told, so surface it here.
+            // Only a recent abandonment fails the check; the total stays visible.
             $dead = IngestionInbox::where('status', 'dead')->count();
+            $recentlyDead = IngestionInbox::where('status', 'dead')->where('updated_at', '>=', now()->subSeconds(self::ABANDONED_ALERT_SECONDS))->count();
         } catch (\Throwable $exception) {
             Log::channel('iapm')->error('Ingestion inbox health query failed.', ['error' => $exception->getMessage()]);
 
             return ['key' => 'ingestion_inbox', 'label' => 'Durable ingestion draining', 'ok' => false, 'detail' => 'Ingestion inbox query failed.'];
         }
 
-        return ['key' => 'ingestion_inbox', 'label' => 'Durable ingestion draining', 'ok' => $stuck === 0 && $dead === 0, 'detail' => "pending={$pending}, stale={$stuck}, abandoned={$dead}".($dead > 0 ? ' — accepted payloads were never applied; inspect last_error_redacted.' : '.')];
+        return ['key' => 'ingestion_inbox', 'label' => 'Durable ingestion draining', 'ok' => $stuck === 0 && $recentlyDead === 0, 'detail' => "pending={$pending}, stale={$stuck}, abandoned={$dead}".($dead > 0 ? ' — accepted payloads were never applied; inspect last_error_redacted.' : '.')];
     }
 
     private function timestamp(string $key): ?CarbonImmutable

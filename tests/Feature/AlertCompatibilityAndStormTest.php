@@ -337,6 +337,26 @@ class AlertCompatibilityAndStormTest extends IntegrationTestCase
         self::assertSame(0, IngestionInbox::count());
     }
 
+    public function test_an_old_abandoned_row_stops_failing_health_but_stays_visible(): void
+    {
+        // Dead rows survive until the retention cutoff (a year by default). An
+        // unbounded check would keep iapm:health failing — and any monitor
+        // watching its exit code alarming — long after the operator handled it.
+        config(['iapm.ingestion.async_threshold' => 1, 'iapm.ingestion.inbox_max_attempts' => 1]);
+        $device = $this->device();
+        $this->ingest($this->alertPayload($device, [['port_id' => 1]]))->assertStatus(202);
+        DB::table('devices')->where('device_id', $device->device_id)->delete();
+        $this->artisan('iapm:drain-ingestion')->assertExitCode(1);
+
+        $inbox = collect(app(HealthService::class)->checks())->firstWhere('key', 'ingestion_inbox');
+        self::assertFalse($inbox['ok'], 'a fresh abandonment must fail the health check');
+
+        $this->travel(HealthService::ABANDONED_ALERT_SECONDS + 60)->seconds();
+        $inbox = collect(app(HealthService::class)->checks())->firstWhere('key', 'ingestion_inbox');
+        self::assertTrue($inbox['ok'], 'health must recover once the abandonment is no longer recent');
+        self::assertStringContainsString('abandoned=1', $inbox['detail'], 'the loss must remain visible');
+    }
+
     public function test_oversized_json_is_rejected_before_authentication_or_validation(): void
     {
         config(['iapm.ingestion.max_bytes' => 32]);
