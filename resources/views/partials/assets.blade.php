@@ -66,6 +66,58 @@
         }
     }, true);
 
+    // --- Ingestion token reveal / copy (P0-5) ---
+    // Slots carry the surrounding text in data-iapm-token-template with a
+    // __TOKEN__ marker, so one mechanism serves both the bare token field on
+    // Settings and the paste-ready header block on the Setup Helper.
+    function tokenSlots() { return document.querySelectorAll('[data-iapm-token-template]'); }
+    function paintToken(value) {
+        tokenSlots().forEach(function (slot) {
+            var text = slot.dataset.iapmTokenTemplate.replace('__TOKEN__', value);
+            if ('value' in slot && slot.tagName !== 'DIV') { slot.value = text; } else { slot.textContent = text; }
+        });
+    }
+    document.querySelectorAll('[data-iapm-reveal-token]').forEach(function (btn) {
+        var mask = btn.dataset.iapmTokenMask || '••••••••••••••••';
+        btn.addEventListener('click', function () {
+            if (btn.dataset.shown === '1') {
+                paintToken(mask);
+                btn.dataset.shown = '0';
+                btn.innerHTML = '<i class="fa fa-eye"></i> Reveal';
+                return;
+            }
+            btn.disabled = true;
+            fetch(btn.dataset.iapmRevealToken, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+                .then(function (r) { if (! r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
+                .then(function (data) {
+                    paintToken(data.token);
+                    btn.dataset.shown = '1';
+                    btn.innerHTML = '<i class="fa fa-eye-slash"></i> Hide';
+                })
+                .catch(function (err) {
+                    btn.innerHTML = '<i class="fa fa-exclamation-triangle"></i> Unavailable';
+                    btn.title = 'Could not read the token (' + err.message + '). You may not have permission to manage IAPM settings.';
+                })
+                .finally(function () { btn.disabled = false; });
+        });
+    });
+
+    // Copy the live contents of the element named by data-copy.
+    document.querySelectorAll('[data-copy]').forEach(function (btn) {
+        if (btn.dataset.iapmCopyBound === '1') { return; }
+        btn.dataset.iapmCopyBound = '1';
+        btn.addEventListener('click', function () {
+            var el = document.querySelector(btn.dataset.copy);
+            if (! el) { return; }
+            var text = ('value' in el && el.tagName !== 'DIV') ? el.value : el.textContent;
+            navigator.clipboard.writeText(text).then(function () {
+                var original = btn.innerHTML;
+                btn.innerHTML = '<i class="fa fa-check"></i> Copied';
+                setTimeout(function () { btn.innerHTML = original; }, 1500);
+            });
+        });
+    });
+
     // --- Auto-refresh (opt in with an element #iapm-autorefresh[data-interval]) ---
     var ar = document.getElementById('iapm-autorefresh');
     if (ar) {

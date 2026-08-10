@@ -5,10 +5,32 @@
 <div class="panel {{ $values['has_token'] ? 'panel-default' : 'panel-warning' }}" id="ingestion-token">
     <div class="panel-heading"><i class="fa fa-key"></i> Ingestion token @unless($values['has_token'])<span class="label label-warning pull-right">Step 0 — start here</span>@endunless</div>
     <div class="panel-body">
-        <p class="help-block">The bearer token LibreNMS uses to authenticate to <code>/plugin/interface-alert-policy-manager/api/v1/alerts</code>. Rotating keeps the previous token valid for 15 minutes so you can update the transport without missing alerts.</p>
+        <p class="iapm-hint">The bearer token LibreNMS uses to authenticate to <code>/plugin/interface-alert-policy-manager/api/v1/alerts</code>. Rotating keeps the previous token valid for 15 minutes so you can update the transport without missing alerts.</p>
         <p>Status: @if($values['has_token'])<span class="label label-success">Configured</span>@else<span class="label label-warning">Not generated</span>@endif</p>
+
+        @if($values['has_token'])
+        {{-- P0-5: the token used to be write-only -- the Setup Helper asked for it
+             but the only way to obtain one was to rotate, breaking a live install.
+             The value is fetched from settings/ingestion-token on demand rather
+             than rendered here, because this page only needs `view iapm` while the
+             token is a `manage iapm settings` secret. --}}
+        <div class="form-group">
+            <label for="iapm-token-value">Current token</label>
+            <div class="input-group" style="max-width:640px;">
+                <input type="text" readonly class="form-control" id="iapm-token-value" style="font-family:monospace;"
+                       value="••••••••••••••••" data-iapm-token-template="__TOKEN__" aria-describedby="iapm-token-help">
+                <span class="input-group-btn">
+                    <button type="button" class="btn btn-default" data-iapm-reveal-token="{{ route('iapm.settings.reveal-token') }}" data-iapm-token-mask="••••••••••••••••"><i class="fa fa-eye"></i> Reveal</button>
+                    <button type="button" class="btn btn-default" data-copy="#iapm-token-value"><i class="fa fa-copy"></i> Copy</button>
+                </span>
+            </div>
+            <p class="iapm-hint" id="iapm-token-help">Reveal before copying &mdash; copying while masked copies the dots. Every reveal is recorded in the audit log. Managing settings is required; viewers cannot read it.</p>
+        </div>
+        @endif
+
         <form method="post" action="{{ route('iapm.settings.rotate-token') }}" onsubmit="return confirm('Rotate ingestion token? The previous token stays valid for 15 minutes.')">@csrf
             <button class="btn btn-warning">{{ $values['has_token']?'Rotate':'Generate' }} ingestion token</button>
+            @if($values['has_token'])<span class="iapm-hint" style="margin-left:8px;">Only needed if the token may have leaked &mdash; use Reveal above to read the current one.</span>@endif
         </form>
     </div>
 </div>

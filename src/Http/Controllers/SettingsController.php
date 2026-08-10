@@ -30,6 +30,28 @@ class SettingsController extends Controller
         return back()->with('status', 'Settings updated.');
     }
 
+    /**
+     * P0-5: the Setup Helper told operators to send
+     * `Authorization: Bearer <your IAPM ingestion token>`, but the token was
+     * never shown anywhere. The only way to obtain a usable value was to rotate
+     * it, which breaks a working install.
+     *
+     * Served from its own endpoint rather than rendered into the settings and
+     * setup-helper pages: both are reachable with only `view iapm`, while the
+     * token itself is a `manage iapm settings` secret. Every reveal is audited.
+     */
+    public function revealToken(Request $r, SettingStore $s, AuditService $audit)
+    {
+        abort_unless($r->user()->can('manage iapm settings'), 403);
+        $token = $s->get('ingestion_token');
+        abort_unless(filled($token), 404, 'No ingestion token has been generated yet.');
+        $audit->record($r, 'revealed_token', 'settings', null, null, ['ingestion_token' => '[REDACTED]']);
+
+        return response()->json(['token' => $token])
+            ->header('Cache-Control', 'no-store, max-age=0')
+            ->header('X-Robots-Tag', 'noindex');
+    }
+
     public function rotateToken(Request $r, SettingStore $s, AuditService $audit)
     {
         abort_unless($r->user()->can('manage iapm settings'), 403);

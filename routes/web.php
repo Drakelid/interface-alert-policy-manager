@@ -80,6 +80,9 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::get('settings', [SettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
     Route::post('settings/rotate-token', [SettingsController::class, 'rotateToken'])->name('settings.rotate-token');
+    // Fetched on demand rather than rendered into the page, so the token is not
+    // in the HTML of every settings/setup-helper view for anyone with `view iapm`.
+    Route::get('settings/ingestion-token', [SettingsController::class, 'revealToken'])->middleware('throttle:10,1')->name('settings.reveal-token');
     Route::get('delivery-log', [LogController::class, 'deliveries'])->middleware('can:view iapm audit logs')->name('delivery-log');
     Route::get('audit-log', [LogController::class, 'audits'])->middleware('can:view iapm audit logs')->name('audit-log');
 

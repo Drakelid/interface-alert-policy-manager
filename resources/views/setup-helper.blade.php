@@ -29,10 +29,22 @@
     <div class="panel-heading"><strong>Step 3 — API transport</strong> <button type="button" class="btn btn-default btn-xs pull-right" data-copy="#iapm-transport"><i class="fa fa-copy"></i> Copy body</button></div>
     <div class="panel-body">
         <p>Create an <strong>API</strong> transport (POST, "send as form" OFF), route the rule to it, and set:</p>
-        <pre>POST {{ $endpoint }}
-Authorization: Bearer &lt;your IAPM ingestion token&gt;
-Content-Type: application/json
-Accept: application/json</pre>
+        @php($iapmHeaderBlock = "POST $endpoint\nAuthorization: Bearer __TOKEN__\nContent-Type: application/json\nAccept: application/json")
+        {{-- P0-5: this block used to read "<your IAPM ingestion token>" with no way
+             to obtain the value. Reveal fetches it from the settings endpoint so
+             the block becomes paste-ready without ever putting the secret in the
+             page source of a view that only requires `view iapm`. --}}
+        <div class="iapm-toolbar" style="margin-bottom:6px;">
+            @if($hasToken)
+                <button type="button" class="btn btn-default btn-xs" data-iapm-reveal-token="{{ route('iapm.settings.reveal-token') }}" data-iapm-token-mask="&lt;your IAPM ingestion token&gt;"><i class="fa fa-eye"></i> Reveal</button>
+                <button type="button" class="btn btn-default btn-xs" data-copy="#iapm-transport-headers"><i class="fa fa-copy"></i> Copy headers</button>
+                <span class="iapm-hint">Reveal inserts the live token into the block below. Requires permission to manage IAPM settings.</span>
+            @else
+                <span class="iapm-hint">No token yet &mdash; <a href="{{ route('iapm.settings.edit') }}#ingestion-token">generate one</a> and this block becomes paste-ready.</span>
+            @endif
+        </div>
+        <textarea id="iapm-transport-headers" class="form-control" rows="4" readonly style="font-family:monospace;"
+                  data-iapm-token-template="{{ $iapmHeaderBlock }}">{{ str_replace('__TOKEN__', '<your IAPM ingestion token>', $iapmHeaderBlock) }}</textarea>
         <p>Body:</p>
         <textarea id="iapm-transport" class="form-control" rows="1" readonly>@{{ $msg }}</textarea>
         <div class="alert alert-warning" style="margin-top:10px;"><i class="fa fa-shield"></i> Do <strong>not</strong> put SMS credentials in this transport — IAPM owns downstream delivery. This transport only forwards the alert JSON.</div>
@@ -52,18 +64,6 @@ Accept: application/json</pre>
 </div>
 </div>
 
-<script>
-document.querySelectorAll('[data-copy]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        var el = document.querySelector(btn.dataset.copy);
-        if (!el) return;
-        el.select && el.select();
-        navigator.clipboard.writeText(el.value !== undefined ? el.value : el.textContent).then(function () {
-            var original = btn.innerHTML;
-            btn.innerHTML = '<i class="fa fa-check"></i> Copied';
-            setTimeout(function () { btn.innerHTML = original; }, 1500);
-        });
-    });
-});
-</script>
+{{-- The data-copy handler now lives in partials/assets so the Settings page
+     shares it; this page no longer ships its own copy. --}}
 @endsection
