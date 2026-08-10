@@ -16,6 +16,7 @@
 use App\Models\Port;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 
@@ -83,7 +84,13 @@ if (DB::table('iapm_notification_outbox')->exists()) {
     $timeq('outbox stale claims', "SELECT count(*) c FROM iapm_notification_outbox WHERE status='processing' AND claimed_at < ?", [now()->subMinutes(10)->format('Y-m-d H:i:s')]);
 }
 
-$ports = Port::query()->with(['device.location', 'device.groups', 'groups'])->limit((int) (getenv('RESOLVER_PORTS') ?: 500))->get();
+// An isolated IAPM schema clone carries no LibreNMS core inventory at all, so
+// the table can be absent rather than merely empty. Both mean the same thing
+// here: report the resolver measurement as skipped instead of aborting the run
+// after the hot-path timings have already been collected.
+$ports = Schema::hasTable('ports')
+    ? Port::query()->with(['device.location', 'device.groups', 'groups'])->limit((int) (getenv('RESOLVER_PORTS') ?: 500))->get()
+    : collect();
 if ($ports->isNotEmpty()) {
     $contexts = app(InterfaceContextService::class);
     $resolver = app(PolicyResolver::class);

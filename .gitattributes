@@ -1,3 +1,8 @@
+# Check every text file out with LF on all platforms. Pint enforces the
+# `line_ending` rule, so a Windows clone under core.autocrlf=true would otherwise
+# fail `pint --test` locally on files nobody had edited, while Linux CI passed.
+* text=auto eol=lf
+
 # Keep the composer/Packagist dist install lean — these are dev-only and are
 # excluded from `git archive` (what Composer downloads), but stay in a git clone.
 /tests            export-ignore
