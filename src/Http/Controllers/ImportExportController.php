@@ -5,12 +5,12 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ConfigurationImportPlanner;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ConfigurationImportValidator;
 
 /**
@@ -61,80 +61,90 @@ class ImportExportController extends Controller
 
     public function importForm()
     {
-        return view('iapm::import', ['report' => null]);
+        return view('iapm::import', $this->importView());
     }
 
-    public function import(Request $request, AuditService $audit, ConfigurationImportValidator $documents)
+    /**
+     * P1-8: import was paste-only, create-only and had no preview — existing
+     * items matched by name were silently skipped, which makes the page's stated
+     * purpose (promotion between installs) unachievable after the first run.
+     *
+     * The form now submits either `preview` or `apply`. Both build the same plan;
+     * apply simply executes it, so what the operator approved is what happens.
+     */
+    public function import(Request $request, AuditService $audit, ConfigurationImportValidator $documents, ConfigurationImportPlanner $planner)
     {
         abort_unless($request->user()->can('manage iapm policies'), 403);
-        $data = $request->validate(['document' => ['required', 'string', 'max:5000000']]);
+        $request->validate([
+            'document' => ['nullable', 'string', 'max:5000000'],
+            'file' => ['nullable', 'file', 'max:5120', 'mimetypes:application/json,text/plain'],
+            'update_existing' => ['nullable', 'boolean'],
+        ]);
+
+        $source = $this->documentText($request);
+        if ($source === null) {
+            return back()->withErrors('Paste the exported JSON or choose a file to upload.');
+        }
 
         try {
-            $doc = json_decode($data['document'], true, 64, JSON_THROW_ON_ERROR);
+            $doc = json_decode($source, true, 64, JSON_THROW_ON_ERROR);
         } catch (\Throwable) {
-            return back()->withErrors('The pasted content is not valid JSON.');
+            return back()->withErrors('That content is not valid JSON.')->withInput();
         }
         if (! is_array($doc) || ($doc['version'] ?? null) !== 1) {
-            return back()->withErrors('Unrecognised export format (expected version 1).');
+            return back()->withErrors('Unrecognised export format (expected version 1).')->withInput();
         }
-        $report = ['schedules' => 0, 'policies' => 0, 'actions' => 0, 'assignments' => 0, 'skipped' => []];
-        DB::transaction(function () use ($doc, &$report, $request, $documents, $audit): void {
-            // Validate references and write from one database snapshot. If any
-            // validation or write fails, the entire document is rolled back.
-            $doc = $documents->validate($doc);
-            $destinationNames = collect($doc['policies'] ?? [])->flatMap(fn (array $policy) => collect($policy['actions'] ?? [])->pluck('destination'))->filter()->unique();
-            $destinations = Destination::whereIn('name', $destinationNames)->pluck('id', 'name');
-            foreach ((array) ($doc['schedules'] ?? []) as $s) {
-                if (empty($s['name']) || Schedule::where('name', $s['name'])->exists()) {
-                    continue;
-                }
-                Schedule::create($this->only($s, (new Schedule)->getFillable()));
-                $report['schedules']++;
-            }
 
-            foreach ((array) ($doc['policies'] ?? []) as $p) {
-                if (empty($p['name']) || Policy::where('name', $p['name'])->exists()) {
-                    $report['skipped'][] = 'policy "'.($p['name'] ?? '?').'" (already exists)';
+        $updateExisting = $request->boolean('update_existing');
+        $apply = $request->input('action') === 'apply';
 
-                    continue;
-                }
-                $policy = Policy::create($this->only($p, (new Policy)->getFillable()) + [
-                    'business_schedule_id' => isset($p['schedule']) ? Schedule::where('name', $p['schedule'])->value('id') : null,
-                    'created_by' => $request->user()->getAuthIdentifier(),
-                    'updated_by' => $request->user()->getAuthIdentifier(),
-                ]);
-                $report['policies']++;
+        try {
+            // Validation runs for the preview too, so problems surface before the
+            // operator commits rather than after they press the destructive button.
+            $doc = $documents->validate($doc, $updateExisting);
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->validator)->withInput();
+        }
 
-                foreach ((array) ($p['actions'] ?? []) as $a) {
-                    $destId = $destinations[$a['destination'] ?? ''] ?? null;
-                    if (! $destId) {
-                        throw new \LogicException('Validated destination disappeared during import.');
-                    }
-                    $policy->actions()->create($this->only($a, (new PolicyAction)->getFillable()) + ['destination_id' => $destId]);
-                    $report['actions']++;
-                }
+        if (! $apply) {
+            return view('iapm::import', $this->importView(
+                plan: $planner->plan($doc, $updateExisting),
+                document: $source,
+                updateExisting: $updateExisting,
+            ));
+        }
 
-                foreach ((array) ($p['assignments'] ?? []) as $a) {
-                    $assignment = $policy->assignments()->create($this->only($a, (new Assignment)->getFillable()));
-                    foreach ((array) ($a['device_group_ids'] ?? []) as $gid) {
-                        $assignment->deviceGroups()->create(['device_group_id' => (int) $gid, 'inclusion_mode' => ($a['match_mode'] ?? 'any') === 'exclude' ? 'exclude' : 'include']);
-                    }
-                    $report['assignments']++;
-                }
-            }
-            $audit->record($request, 'imported', 'configuration', null, null, $report);
-        });
+        // One snapshot: if any write fails the whole document is rolled back.
+        $report = DB::transaction(fn () => $planner->apply($doc, $updateExisting, $request->user()?->getAuthIdentifier()));
+        $audit->record($request, 'imported', 'configuration', null, null, ['counts' => $report['counts'], 'update_existing' => $updateExisting]);
 
-        return view('iapm::import', ['report' => $report]);
+        return view('iapm::import', $this->importView(report: $report, updateExisting: $updateExisting));
+    }
+
+    /**
+     * An uploaded file wins over the textarea, so choosing a file after pasting
+     * does the obvious thing rather than silently importing the stale paste.
+     */
+    private function documentText(Request $request): ?string
+    {
+        if ($request->hasFile('file')) {
+            $contents = file_get_contents($request->file('file')->getRealPath());
+
+            return $contents === false ? null : $contents;
+        }
+        $pasted = trim((string) $request->input('document', ''));
+
+        return $pasted === '' ? null : $pasted;
+    }
+
+    /** @return array<string, mixed> */
+    private function importView(?array $plan = null, ?array $report = null, string $document = '', bool $updateExisting = false): array
+    {
+        return ['plan' => $plan, 'report' => $report, 'document' => $document, 'updateExisting' => $updateExisting];
     }
 
     private function strip(array $row): array
     {
         return collect($row)->except(self::EXCLUDED)->all();
-    }
-
-    private function only(array $row, array $fillable): array
-    {
-        return collect($row)->only($fillable)->except(['created_by', 'updated_by'])->all();
     }
 }

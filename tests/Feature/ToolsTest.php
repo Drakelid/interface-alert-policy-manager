@@ -50,8 +50,10 @@ class ToolsTest extends IntegrationTestCase
         $policy->delete();
         self::assertNull(Policy::where('name', 'Exported policy')->first());
 
+        // P1-8 made import preview-then-apply: a POST without action=apply is a
+        // dry run and writes nothing, so an import must now be confirmed.
         $this->actingAs($admin)
-            ->post('/plugin/interface-alert-policy-manager/import', ['document' => $json])
+            ->post('/plugin/interface-alert-policy-manager/import', ['document' => $json, 'action' => 'apply'])
             ->assertOk();
 
         $imported = Policy::where('name', 'Exported policy')->first();

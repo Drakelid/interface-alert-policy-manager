@@ -13,7 +13,12 @@ class ConfigurationImportValidator
 
     public function __construct(private readonly ScheduleEvaluator $schedules) {}
 
-    public function validate(array $document): array
+    /**
+     * @param  bool  $updateExisting  when true the import also writes assignments
+     *                                belonging to policies that already exist, so
+     *                                they must count towards the regex safety limit
+     */
+    public function validate(array $document, bool $updateExisting = false): array
     {
         $validator = Validator::make($document, [
             'version' => ['required', 'integer', Rule::in([1])],
@@ -75,13 +80,18 @@ class ConfigurationImportValidator
             'policies.*.assignments.*.device_group_ids' => ['nullable', 'array', 'max:1000'],
             'policies.*.assignments.*.device_group_ids.*' => ['integer'],
         ]);
-        $validator->after(function ($validator) use ($document): void {
+        $validator->after(function ($validator) use ($document, $updateExisting): void {
             $records = count($document['schedules'] ?? []) + count($document['policies'] ?? []);
             $importedSchedules = collect($document['schedules'] ?? [])->pluck('name');
             $policies = collect($document['policies'] ?? []);
             $assignments = $policies->flatMap(fn (array $policy) => $policy['assignments'] ?? []);
             $existingPolicyNames = $this->existing('iapm_policies', 'name', $policies->pluck('name')->filter()->all());
-            $newAssignments = $policies->reject(fn (array $policy) => $existingPolicyNames->contains($policy['name'] ?? null))->flatMap(fn (array $policy) => $policy['assignments'] ?? []);
+            // Assignments belonging to an already-existing policy are only written
+            // when updating is enabled; otherwise that policy is skipped whole and
+            // its assignments never reach the database.
+            $newAssignments = $updateExisting
+                ? $assignments
+                : $policies->reject(fn (array $policy) => $existingPolicyNames->contains($policy['name'] ?? null))->flatMap(fn (array $policy) => $policy['assignments'] ?? []);
             $regexLimit = max(1, (int) config('iapm.resolver.max_regex_assignments', 5000));
             foreach (['ifalias_regex', 'ifname_regex'] as $regexType) {
                 $existingRegex = DB::table('iapm_assignments')->join('iapm_policies', 'iapm_policies.id', '=', 'iapm_assignments.policy_id')->where('iapm_assignments.assignment_type', $regexType)->where('iapm_assignments.enabled', true)->where('iapm_policies.enabled', true)->count();
