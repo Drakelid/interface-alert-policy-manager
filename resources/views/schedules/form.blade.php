@@ -70,7 +70,7 @@
             <div id="iapm-day-editor" @if($iapmMode==='always') style="display:none;" @endif>
                 <span class="iapm-field-legend">Weekly times</span>
                 <p class="iapm-hint">Add one or more ranges per day. A range that ends before it starts (e.g. 22:00&ndash;06:00) wraps past midnight. Leave a day empty for no window that day.</p>
-                <table class="table table-condensed" id="iapm-day-table">
+                <div class="iapm-table-wrap"><table class="table table-condensed" id="iapm-day-table">
                     <thead><tr><th style="width:9em;">Day</th><th>Time ranges</th><th style="width:6em;"></th></tr></thead>
                     <tbody>
                     @foreach($days as $day)
@@ -96,7 +96,7 @@
                     </tr>
                     @endforeach
                     </tbody>
-                </table>
+                </table></div>
                 <button type="button" class="btn btn-default btn-sm" id="iapm-fill-weekdays"><i class="fa fa-magic"></i> Fill Mon&ndash;Fri 08:00&ndash;16:00</button>
             </div>
 

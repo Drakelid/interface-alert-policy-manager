@@ -14,7 +14,22 @@ php artisan iapm:cache-rebuild
 php artisan iapm:health
 ```
 
-The production-safety migrations are additive. A preflight migration adds episode columns and fills UUIDs in restartable 5,000-row set-based batches before the released v1.2.1 migration runs; already-upgraded installations treat it as a no-op. Later migrations add storm-path indexes and the encrypted durable ingestion inbox. On multi-million-row tables, verify free disk for a second index copy and test MariaDB's online-DDL behavior on a staging clone. Start one inbox worker and one queue worker, exercise a controlled dry-run trigger/recovery, then one controlled live delivery before restoring normal concurrency.
+### Schema change in this release: `failed_poll_count` → `down_observations`
+
+`iapm_policies.failed_poll_count` is renamed to `down_observations`. The field
+never counted polls — reconciliation increments it once a minute while an
+interface stays down — and the UI already called it "Down observations".
+
+The migration is a straight `renameColumn`, guarded on both sides and reversible
+with `down()`. `iapm_policies` holds tens of rows, so the lock is negligible. It
+is **not** additive: rolling the plugin code back without also rolling this
+migration back will break policy reads, so roll both back together or neither.
+
+Export now emits `down_observations`. Import accepts either key, so
+configuration documents exported before this release still import unchanged; if
+a document carries both, the new key wins.
+
+The remaining production-safety migrations are additive. A preflight migration adds episode columns and fills UUIDs in restartable 5,000-row set-based batches before the released v1.2.1 migration runs; already-upgraded installations treat it as a no-op. Later migrations add storm-path indexes and the encrypted durable ingestion inbox. On multi-million-row tables, verify free disk for a second index copy and test MariaDB's online-DDL behavior on a staging clone. Start one inbox worker and one queue worker, exercise a controlled dry-run trigger/recovery, then one controlled live delivery before restoring normal concurrency.
 
 ## Rollback
 

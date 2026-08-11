@@ -264,6 +264,8 @@ Use `samples/librenms-alert-template.blade.php`; it constructs an array from the
 
 ## Policies and lifecycle
 
+Administration forms take names, not internal ids: low-cardinality sets (destinations, device groups, locations, port groups, schedules) are selects, and devices, interfaces, incidents and users are debounced type-aheads that submit the id while displaying the name. The Interface Matrix shows and copies each `port_id` and links each row to Policy Test, Simulate Alert and the LibreNMS port page, for the tools that still accept a raw id.
+
 Assignment precedence is port, port group, device, device group, location, ifAlias regex, ifName regex, interface type, default. Ties use assignment priority, policy priority, then newest assignment. Device-group assignments support `any`, `all`, and `exclude`. Incidents begin pending, become active when delay/poll requirements pass, may be suppressed or acknowledged, and finally recover. The stable key is `interface-down:{device_id}:{port_id}`.
 
 Commands:
@@ -319,16 +321,15 @@ IAPM is built to scale to very large fleets, but a few things must be configured
 - **Set a default assignment/policy _or_ turn off "Record alerts for interfaces with no policy"** (Settings). Otherwise every alerting interface without a matching policy is stored as a suppressed `no_policy` incident — at hundreds of thousands of interfaces that is a lot of rows. Scope IAPM to the interfaces you care about, then disable `record_unpoliced` so the rest are ignored.
 - **Tune the ingestion rate limit.** `iapm.ingestion.rate_limit` (env `IAPM_INGEST_RATE`, default `20000,1`) caps all of LibreNMS's alert POSTs together. A 429 is explicitly retryable but LibreNMS must be configured to retry it; firewall the endpoint to the LibreNMS host and size the limit to the fleet's burst rate.
 - **Enable the device digest** (`aggregate_threshold`) so a device dropping many interfaces sends one message instead of hundreds, and consider **queued dispatch** for very wide simultaneous events.
-- **Schedule `iapm:cache-rebuild`** (e.g. hourly) if you rely on the Interface Matrix policy filters — the per-request/reconcile cache writes were removed to keep the hot paths write-light, so the matrix cache is refreshed on view and by the rebuild command.
+- **Rebuild the policy cache after broad changes** if you rely on the Interface Matrix policy/source/no-policy filters. The per-request/reconcile cache writes were removed to keep the hot paths write-light. The matrix has a **Rebuild cache** button (queued, with progress) and shows the last-rebuilt time plus a warning when policies or assignments have changed since; `iapm:cache-rebuild` does the same from the CLI and can be scheduled (e.g. hourly) if you prefer. Rebuilding is never automatic on save — it is O(every port).
 - Recovered incidents are retained (`retention_days`, default 365) and cleaned up in batches nightly; process-actions only re-scans recoveries from the last 48h, so old history doesn't slow the every-minute run.
 
 ### Known limitations
 
-- Materialized policy filters are complete only after `iapm:cache-rebuild` has covered the relevant ports.
+- Materialized policy filters are complete only after a cache rebuild has covered the relevant ports (Interface Matrix → **Rebuild cache**, or `iapm:cache-rebuild`).
 - Delivery is queued by default. Scheduled discovery is time-budgeted and cursor-resumable; large storms should use the device digest, durable outbox, and supervised Redis workers.
 - Parent suppression uses current LibreNMS device relationships and cannot infer dependencies not modeled in LibreNMS.
 - Private-network destinations must be explicitly allowed and should be limited to trusted internal gateway hosts.
-- The current administration forms accept numeric LibreNMS group/entity identifiers instead of providing every possible type-ahead selector.
 
 ### Future extensions
 

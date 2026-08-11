@@ -57,7 +57,7 @@ $fields = [
 @if($enabledActionCount===0)<div class="alert alert-warning"><i class="fa fa-bell-slash"></i> <strong>This policy won't notify anyone yet.</strong> It has no enabled notification action, so matched interfaces will trigger incidents silently. <a href="{{ route('iapm.actions.create',$policy) }}">Add an action</a> pointing at a destination (e.g. your SMS gateway).</div>@endif
 <p class="iapm-hint">Build an <strong>escalation chain</strong> by adding multiple <em>escalation</em> actions with increasing delays and different destinations/receivers (e.g. 10m → primary, 20m → secondary, 30m → manager). Delays are measured from when the incident triggered; acknowledging the incident stops further escalation.</p>{{-- P1-4: only the phase cell was a link, and deleting an action was reachable
      only from inside the action editor. Both are explicit controls now. --}}
-<table class="table"><thead><tr><th>Phase</th><th>Destination</th><th>Delay</th><th>Repeat</th><th>Maximum</th><th>Status</th><th></th></tr></thead><tbody>
+<div class="iapm-table-wrap"><table class="table"><thead><tr><th>Phase</th><th>Destination</th><th>Delay</th><th>Repeat</th><th>Maximum</th><th>Status</th><th></th></tr></thead><tbody>
 @foreach($policy->actions()->with('destination')->orderBy('sort_order')->get() as $action)<tr>
 <td><a href="{{ route('iapm.actions.edit',$action) }}">{{ $action->phase->value }}</a></td>
 <td>@if($action->destination)<a href="{{ route('iapm.destinations.edit',$action->destination) }}">{{ $action->destination->name }}</a>@else<span class="text-warning">none</span>@endif</td>
@@ -69,7 +69,7 @@ $fields = [
     <a class="btn btn-default btn-xs" href="{{ route('iapm.actions.edit',$action) }}"><i class="fa fa-pencil"></i> Edit</a>
     <form method="post" action="{{ route('iapm.actions.destroy',$action) }}" style="display:inline;" data-iapm-confirm="Delete the {{ $action->phase->value }} action sending to {{ $action->destination?->name ?? 'no destination' }}? This policy will stop notifying through it.">@csrf @method('DELETE')<button class="btn btn-danger btn-xs"><i class="fa fa-trash"></i> Delete</button></form>
 </td>
-</tr>@endforeach</tbody></table>
+</tr>@endforeach</tbody></table></div>
 <hr>
 <h2>Manage this policy</h2>
 <form method="post" action="{{ route('iapm.policies.clone',$policy) }}" style="margin-bottom:14px;">@csrf<button class="btn btn-default"><i class="fa fa-copy"></i> Clone policy</button> <span class="iapm-hint">Creates a disabled copy with the same timing and actions.</span></form>
