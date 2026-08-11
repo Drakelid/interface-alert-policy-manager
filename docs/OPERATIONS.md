@@ -16,6 +16,42 @@ Large active payloads and all whole-device recoveries return HTTP 202 only after
 
 Successful ingestion logs are sampled and heartbeat writes are throttled. Authentication and validation rejection logs are rate-limited per source IP; use web-server/firewall counters for volumetric abuse.
 
+## Duplicate queue workers
+
+Applies to scheduler-managed workers (`IAPM_QUEUE_WORKERS` greater than 0).
+
+`php artisan schedule:clear-cache` releases every scheduled task's overlap lock,
+including those held by IAPM workers that are still running. The scheduler then
+sees a free slot on the next tick and starts a second worker under the same
+`--name`. That state does not heal on its own: the lock is keyed by the command
+string, not by the process, so whichever duplicate exits first releases the slot
+for both and a replacement starts again. The steady state is two workers per
+name indefinitely.
+
+This is not harmful — the queue backend locks each job row, so no notification is
+delivered twice — but it runs more concurrent deliveries than configured, which
+can exceed what the SMS gateway accepts.
+
+Check with:
+
+```bash
+pgrep -af 'queue:work --queue=iapm' | wc -l    # should equal IAPM_QUEUE_WORKERS
+```
+
+To recover, stop every worker and let the scheduler rebuild the set:
+
+```bash
+pkill -f 'queue:work --queue=iapm'
+php artisan schedule:clear-cache
+```
+
+Workers reappear over the next few minutes as each staggered slot comes due.
+
+The reason to reach for `schedule:clear-cache` at all is a worker that died
+without releasing its lock, which `iapm:health` now reports. Since v1.4.1 that
+clears itself within minutes, so prefer waiting over clearing the cache — and if
+you do clear it, stop the workers in the same step as above.
+
 ## LibreNMS alert operations (26.x)
 
 LibreNMS 26.x resolves transports through **alert operations**, not through `alert_transport_map`. A rule whose `alert_operation_id` is `NULL` is muted before any transport runs, so IAPM receives nothing and its ingestion heartbeat never advances. The signature in `php /opt/librenms/alerts.php` output is:

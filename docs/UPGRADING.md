@@ -59,6 +59,9 @@ tick. Nothing to do on upgrade; expect worker PIDs to change every few minutes,
 and treat that as normal. Raising the value lengthens the unreplaced-worker
 window by roughly the same amount.
 
+Do not run `php artisan schedule:clear-cache` while IAPM workers are running —
+see "Duplicate queue workers" in [OPERATIONS.md](OPERATIONS.md#duplicate-queue-workers).
+
 ### Schema change in this release: `failed_poll_count` → `down_observations`
 
 `iapm_policies.failed_poll_count` is renamed to `down_observations`. The field
