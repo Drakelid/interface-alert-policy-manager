@@ -55,8 +55,17 @@
         <li class="{{ $iapmActive('iapm.settings.edit') }}"><a href="{{ route('iapm.settings.edit') }}"><i class="fa fa-cog"></i> Settings</a></li>
     </ul>
     <span class="pull-right" style="margin-top:4px;">
-        <form class="form-inline iapm-hide-sm" method="get" action="{{ route('iapm.matrix') }}" style="display:inline-block;margin-right:8px;" title="Find an interface or description">
-            <input class="form-control input-sm iapm-quickfind" name="search" placeholder="Find interface…" value="{{ $iapmRoute==='iapm.matrix' ? request('search') : '' }}">
+        {{-- P1-2: the quick-find box deep-linked into the matrix on Enter but
+             offered no suggestions. Picking a suggestion now jumps straight to
+             that one interface; pressing Enter still runs the name search. --}}
+        <form class="form-inline iapm-hide-sm" method="get" action="{{ route('iapm.matrix') }}" style="display:inline-block;margin-right:8px;position:relative;"
+              data-iapm-quickfind="{{ route('iapm.lookup.ports') }}" data-iapm-quickfind-target="{{ route('iapm.matrix') }}">
+            <label class="sr-only" for="iapm-quickfind">Find an interface</label>
+            <input class="form-control input-sm iapm-quickfind" id="iapm-quickfind" name="search" autocomplete="off"
+                   role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="iapm-quickfind-results"
+                   placeholder="Find interface…" value="{{ $iapmRoute==='iapm.matrix' ? request('search') : '' }}">
+            <div id="iapm-quickfind-results" class="list-group" role="listbox" data-iapm-quickfind-results
+                 style="display:none;position:absolute;z-index:1050;right:0;min-width:380px;max-height:300px;overflow:auto;box-shadow:0 2px 8px rgba(0,0,0,.2);"></div>
         </form>
         <span class="label label-default" style="margin-right:4px;" title="Installed Interface Alert Policy Manager package version">IAPM {{ $iapmVersion->display() }}</span>
         @if($iapmDryRun)

@@ -6,6 +6,7 @@ use App\Models\Port;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests\IngestAlertRequest;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 
 /**
  * Admin convenience: fire a synthetic alert for a chosen interface through the
@@ -15,12 +16,16 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests\IngestAlertReques
  */
 class SimulationController extends Controller
 {
-    public function form()
+    public function form(Request $request, EntityLookup $lookup)
     {
-        return view('iapm::simulate', ['result' => null, 'port' => null]);
+        // The Interface Matrix links here with ?port_id=, and the picker needs a
+        // label for it so the operator sees the interface, not just a number.
+        $port = $request->filled('port_id') ? Port::with('device')->find($request->integer('port_id')) : null;
+
+        return view('iapm::simulate', ['result' => null, 'port' => null, 'portLabel' => $port ? $lookup->portLabel($port) : '']);
     }
 
-    public function run(Request $request)
+    public function run(Request $request, EntityLookup $lookup)
     {
         abort_unless($request->user()->can('manage iapm policies'), 403);
         $data = $request->validate([
@@ -58,6 +63,6 @@ class SimulationController extends Controller
             $result = ['error' => $e->getMessage()];
         }
 
-        return view('iapm::simulate', ['result' => $result, 'port' => $port]);
+        return view('iapm::simulate', ['result' => $result, 'port' => $port, 'portLabel' => $lookup->portLabel($port)]);
     }
 }

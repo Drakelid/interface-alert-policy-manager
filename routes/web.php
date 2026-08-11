@@ -12,6 +12,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\IncidentContro
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\IngestionController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\InterfaceMatrixController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\LogController;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\LookupController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\MessageTemplateController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\OverviewController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\PolicyActionController;
@@ -41,6 +42,14 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::delete('actions/{action}', [PolicyActionController::class, 'destroy'])->name('actions.destroy');
     Route::post('assignments/preview', [AssignmentController::class, 'preview'])->name('assignments.preview');
     Route::get('devices/search', [AssignmentController::class, 'deviceSearch'])->middleware('can:manage iapm assignments')->name('devices.search');
+    // Name-for-id pickers (P1-2). Throttled because they are unauthenticated-shaped
+    // search endpoints from the browser's point of view and hit LIKE queries.
+    Route::middleware('throttle:60,1')->prefix('lookup')->name('lookup.')->group(function (): void {
+        Route::get('devices', [LookupController::class, 'devices'])->name('devices');
+        Route::get('ports', [LookupController::class, 'ports'])->name('ports');
+        Route::get('incidents', [LookupController::class, 'incidents'])->name('incidents');
+        Route::get('users', [LookupController::class, 'users'])->name('users');
+    });
     Route::delete('assignments-bulk', [AssignmentController::class, 'bulkDestroy'])->name('assignments.bulk-destroy');
     Route::resource('assignments', AssignmentController::class)->except('show');
     Route::get('interface-matrix', [InterfaceMatrixController::class, 'index'])->name('matrix');

@@ -6,6 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class AuditLog extends Model
 {
+    /**
+     * Every object_type AuditService::record() is called with, so the Audit Log
+     * filter offers a select rather than asking the operator to guess a string
+     * (P1-2). AuditLogVocabularyTest scans the source and fails if the two drift.
+     *
+     * @var list<string>
+     */
+    public const OBJECT_TYPES = ['assignment', 'configuration', 'destination', 'incident', 'interface_matrix', 'message_templates', 'policy', 'policy_action', 'schedule', 'settings'];
+
     public $timestamps = false;
 
     protected $table = 'iapm_audit_logs';

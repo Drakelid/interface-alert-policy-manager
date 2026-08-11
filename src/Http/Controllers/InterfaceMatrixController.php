@@ -2,6 +2,9 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 
+use App\Models\Device;
+use App\Models\DeviceGroup;
+use App\Models\Location;
 use App\Models\Port;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -9,6 +12,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 
@@ -25,7 +29,19 @@ class InterfaceMatrixController
         });
         $ports->setCollection($rows);
 
-        return view('iapm::matrix', ['rows' => $ports, 'policies' => Policy::where('enabled', true)->orderBy('name')->get()]);
+        // P1-2: the device-group and location filters were free-text numeric
+        // boxes. Both sets are small enough to enumerate, so they become selects;
+        // devices are not, so that filter is a type-ahead and only needs the
+        // label of whatever is currently selected.
+        $device = $request->filled('device_id') ? Device::find($request->integer('device_id')) : null;
+
+        return view('iapm::matrix', [
+            'rows' => $ports,
+            'policies' => Policy::where('enabled', true)->orderBy('name')->get(),
+            'deviceGroups' => DeviceGroup::orderBy('name')->get(['id', 'name']),
+            'locations' => Location::orderBy('location')->get(['id', 'location']),
+            'deviceFilterLabel' => $device ? app(EntityLookup::class)->deviceLabel($device) : '',
+        ]);
     }
 
     public function bulk(Request $request, AuditService $audit)
@@ -70,7 +86,10 @@ class InterfaceMatrixController
 
     private function query(Request $request)
     {
-        return Port::query()->select('ports.*')->leftJoin('iapm_interface_policy_cache as ipc', 'ipc.port_id', '=', 'ports.port_id')->with(['device.location', 'device.groups', 'groups'])->when($request->filled('device_group_id'), fn ($q) => $q->whereHas('device.groups', fn ($g) => $g->where('device_groups.id', $request->integer('device_group_id'))))->when($request->filled('device_id'), fn ($q) => $q->where('ports.device_id', $request->integer('device_id')))->when($request->filled('location_id'), fn ($q) => $q->whereHas('device', fn ($d) => $d->where('location_id', $request->integer('location_id'))))->when($request->filled('policy_id'), fn ($q) => $q->where('ipc.policy_id', $request->integer('policy_id')))->when($request->filled('assignment_source'), fn ($q) => $q->where('ipc.assignment_source', $request->string('assignment_source')))->when($request->boolean('no_policy'), fn ($q) => $q->whereNull('ipc.policy_id'))->when($request->filled('admin'), fn ($q) => $q->where('ports.ifAdminStatus', $request->string('admin')))->when($request->filled('oper'), fn ($q) => $q->where('ports.ifOperStatus', $request->string('oper')))->when($request->filled('incident_state'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.state', $request->string('incident_state'))))->when($request->boolean('active_incident'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->whereIn('ii.state', ['pending', 'active', 'acknowledged', 'suppressed'])))->when($request->boolean('muted'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.muted_until', '>', now())))->when($request->filled('search'), function ($q) use ($request) {
+        // port_id lets the header's "Find interface…" type-ahead land on the exact
+        // interface the operator picked instead of a name search that may match
+        // the same ifName on many devices (P1-2).
+        return Port::query()->select('ports.*')->leftJoin('iapm_interface_policy_cache as ipc', 'ipc.port_id', '=', 'ports.port_id')->with(['device.location', 'device.groups', 'groups'])->when($request->filled('port_id'), fn ($q) => $q->where('ports.port_id', $request->integer('port_id')))->when($request->filled('device_group_id'), fn ($q) => $q->whereHas('device.groups', fn ($g) => $g->where('device_groups.id', $request->integer('device_group_id'))))->when($request->filled('device_id'), fn ($q) => $q->where('ports.device_id', $request->integer('device_id')))->when($request->filled('location_id'), fn ($q) => $q->whereHas('device', fn ($d) => $d->where('location_id', $request->integer('location_id'))))->when($request->filled('policy_id'), fn ($q) => $q->where('ipc.policy_id', $request->integer('policy_id')))->when($request->filled('assignment_source'), fn ($q) => $q->where('ipc.assignment_source', $request->string('assignment_source')))->when($request->boolean('no_policy'), fn ($q) => $q->whereNull('ipc.policy_id'))->when($request->filled('admin'), fn ($q) => $q->where('ports.ifAdminStatus', $request->string('admin')))->when($request->filled('oper'), fn ($q) => $q->where('ports.ifOperStatus', $request->string('oper')))->when($request->filled('incident_state'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.state', $request->string('incident_state'))))->when($request->boolean('active_incident'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->whereIn('ii.state', ['pending', 'active', 'acknowledged', 'suppressed'])))->when($request->boolean('muted'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.muted_until', '>', now())))->when($request->filled('search'), function ($q) use ($request) {
             $term = '%'.str_replace(['%', '_'], ['\%', '\_'], $request->string('search')).'%';
             $q->where(fn ($s) => $s->where('ports.ifName', 'like', $term)->orWhere('ports.ifAlias', 'like', $term)->orWhere('ports.ifDescr', 'like', $term));
         })->orderBy('ports.port_id');

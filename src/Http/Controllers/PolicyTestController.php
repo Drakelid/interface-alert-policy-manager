@@ -5,13 +5,14 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 use App\Models\Port;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReceiverResolver;
 
 class PolicyTestController extends Controller
 {
-    public function __invoke(Request $r, InterfaceContextService $contexts, PolicyResolver $resolver, ReceiverResolver $receivers)
+    public function __invoke(Request $r, InterfaceContextService $contexts, PolicyResolver $resolver, ReceiverResolver $receivers, EntityLookup $lookup)
     {
         $r->validate(['port_id' => ['nullable', 'integer', 'exists:ports,port_id']]);
         $port = $r->filled('port_id') ? Port::with(['device.location', 'device.groups', 'groups'])->find($r->integer('port_id')) : null;
@@ -33,6 +34,10 @@ class PolicyTestController extends Controller
             }
         }
 
-        return view('iapm::policy-test', compact('port', 'resolution', 'delivery'));
+        // Label for the interface picker, so returning to the page shows the name
+        // the operator chose rather than an empty box beside a bare number (P1-2).
+        $portLabel = $port ? $lookup->portLabel($port) : '';
+
+        return view('iapm::policy-test', compact('port', 'resolution', 'delivery', 'portLabel'));
     }
 }

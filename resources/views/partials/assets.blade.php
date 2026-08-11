@@ -9,6 +9,22 @@
    #595959 is 7.0:1 on white; #adb5bd is >7:1 on the dark panel backgrounds. */
 .iapm-hint { color:#595959; }
 .dark .iapm-hint { color:#adb5bd; }
+/* Filter and bulk-action bars. Bootstrap 3's .form-inline gives inline controls
+   no gap, which is how the matrix checkboxes ended up butted against their own
+   labels and the adjacent buttons (P2-6). A grid gives every control room and
+   wraps predictably at narrow widths. */
+.iapm-field-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px 14px; align-items:end; }
+.iapm-field-grid .form-group { margin-bottom:0; }
+.iapm-field-grid label { display:block; margin-bottom:3px; font-weight:600; font-size:12px; }
+.iapm-checkbox-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; margin-top:12px; padding-top:10px; border-top:1px solid rgba(128,128,128,.25); }
+.iapm-checkbox-row .checkbox-inline { margin:0; padding-left:20px; }
+.iapm-filter-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+/* Keeps a button aligned with the inputs beside it without an empty-looking gap. */
+.iapm-invisible-label { visibility:hidden; }
+.iapm-result-count { margin:8px 0; }
+/* Pages started at h2 with no h1 (P3-3). The h1 keeps the visual weight the h2
+   had rather than jumping to the browser default. */
+h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
 .iapm-toolbar { margin-bottom:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .iapm-toolbar .spacer { flex:1 1 auto; }
 .iapm-num { text-align:right; font-variant-numeric:tabular-nums; }
@@ -65,6 +81,150 @@
             }
         }
     }, true);
+
+    // --- Header quick-find suggestions (P1-2) ---
+    // Distinct from the field type-aheads above: this one navigates rather than
+    // filling a hidden id, so picking a result lands on that exact interface.
+    document.querySelectorAll('[data-iapm-quickfind]').forEach(function (form) {
+        var input = form.querySelector('input[name=search]');
+        var results = form.querySelector('[data-iapm-quickfind-results]');
+        var timer = null;
+
+        function close() { results.style.display = 'none'; results.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); }
+
+        input.addEventListener('input', function () {
+            var term = input.value.trim();
+            clearTimeout(timer);
+            if (term.length < 2) { close(); return; }
+            timer = setTimeout(function () {
+                fetch(form.dataset.iapmQuickfind + '?q=' + encodeURIComponent(term), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+                    .then(function (r) { return r.ok ? r.json() : []; })
+                    .then(function (list) {
+                        results.innerHTML = '';
+                        if (! list.length) { close(); return; }
+                        list.forEach(function (item) {
+                            var a = document.createElement('a');
+                            a.className = 'list-group-item';
+                            a.setAttribute('role', 'option');
+                            a.textContent = item.label;
+                            a.href = form.dataset.iapmQuickfindTarget + '?port_id=' + encodeURIComponent(item.id);
+                            results.appendChild(a);
+                        });
+                        results.style.display = 'block';
+                        input.setAttribute('aria-expanded', 'true');
+                    })
+                    .catch(close);
+            }, 200);
+        });
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { close(); }
+            // Enter keeps its existing behaviour: submit the name search.
+        });
+        document.addEventListener('click', function (e) { if (! form.contains(e.target)) { close(); } });
+    });
+
+    // --- Delegated confirmation for destructive actions (P3-6) ---
+    // A delegated listener rather than inline onsubmit/onclick, so the plugin
+    // stays usable under a Content-Security-Policy without 'unsafe-inline'.
+    // data-iapm-confirm may sit on the form or on the submitting control.
+    document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (! form.matches || ! form.matches('form')) { return; }
+        var source = (e.submitter && e.submitter.dataset && e.submitter.dataset.iapmConfirm) ? e.submitter : form;
+        var message = source.dataset ? source.dataset.iapmConfirm : null;
+        if (message && ! window.confirm(message)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, true);
+
+    // --- Name-for-id type-ahead (P1-2) ---
+    // One implementation for every picker; markup comes from partials/typeahead.
+    document.querySelectorAll('[data-iapm-typeahead]').forEach(function (root) {
+        var input = root.querySelector('[data-iapm-typeahead-input]');
+        var hidden = root.querySelector('[data-iapm-typeahead-value]');
+        var results = root.querySelector('[data-iapm-typeahead-results]');
+        var endpoint = root.dataset.iapmTypeahead;
+        var dependsOn = root.dataset.iapmTypeaheadDepends;
+        var timer = null;
+
+        function close() { results.style.display = 'none'; results.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); }
+
+        // The port picker keeps a visible raw-id box alongside the search, for
+        // operators who already have the number. data-iapm-mirror keeps the two
+        // in step in both directions rather than making them rival inputs.
+        var mirror = hidden.dataset.iapmMirror ? document.querySelector(hidden.dataset.iapmMirror) : null;
+
+        function choose(item) {
+            input.value = item.label;
+            hidden.value = item.id;
+            if (mirror) { mirror.value = item.id; }
+            close();
+            // Filter bars submit on change; let listeners know the id moved.
+            hidden.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        if (mirror) {
+            mirror.addEventListener('input', function () {
+                // A hand-typed id wins; the stale label beside it would lie.
+                if (mirror.value !== hidden.value) { hidden.value = mirror.value; input.value = ''; }
+            });
+        }
+
+        input.addEventListener('input', function () {
+            // Clearing the box clears the id: a stale id behind an edited label
+            // is how these pickers silently filter by the wrong thing.
+            hidden.value = '';
+            var term = input.value.trim();
+            clearTimeout(timer);
+            if (term === '') { close(); return; }
+            timer = setTimeout(function () {
+                var url = endpoint + '?q=' + encodeURIComponent(term);
+                if (dependsOn) {
+                    var dep = document.getElementById(dependsOn);
+                    if (dep && dep.value) { url += '&device_id=' + encodeURIComponent(dep.value); }
+                }
+                fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+                    .then(function (r) { return r.ok ? r.json() : []; })
+                    .then(function (list) {
+                        results.innerHTML = '';
+                        if (! list.length) {
+                            var none = document.createElement('span');
+                            none.className = 'list-group-item iapm-hint';
+                            none.textContent = 'No matches';
+                            results.appendChild(none);
+                        }
+                        list.forEach(function (item) {
+                            var a = document.createElement('a');
+                            a.href = '#';
+                            a.className = 'list-group-item';
+                            a.setAttribute('role', 'option');
+                            a.textContent = item.label;
+                            a.addEventListener('click', function (e) { e.preventDefault(); choose(item); });
+                            results.appendChild(a);
+                        });
+                        results.style.display = 'block';
+                        input.setAttribute('aria-expanded', 'true');
+                    })
+                    .catch(close);
+            }, 200);
+        });
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { close(); return; }
+            if (e.key !== 'ArrowDown' && e.key !== 'Enter') { return; }
+            var first = results.querySelector('a');
+            if (! first) { return; }
+            e.preventDefault();
+            first.focus();
+            if (e.key === 'Enter') { first.click(); }
+        });
+
+        document.addEventListener('click', function (e) {
+            if (! root.contains(e.target)) { close(); }
+        });
+    });
 
     // --- Ingestion token reveal / copy (P0-5) ---
     // Slots carry the surrounding text in data-iapm-token-template with a
