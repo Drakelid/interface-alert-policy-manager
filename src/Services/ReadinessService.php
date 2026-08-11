@@ -35,7 +35,11 @@ class ReadinessService
         $migrated = collect(self::TABLES)->every(fn ($table) => Schema::hasTable($table));
 
         return [
-            $this->check('migrations', 'Database migrated', $migrated, 'system', 'Run: php artisan migrate --force'),
+            // `hint` is phrased as a condition because it is rendered in the UI,
+            // where a web-only administrator cannot act on a shell command (P1-7).
+            // `cli_hint` carries the command for iapm:install-check, which is
+            // already being run from a shell.
+            $this->check('migrations', 'Database migrated', $migrated, 'system', 'IAPM tables are missing — the database migration has not been applied on this host.', cliHint: 'Run: php artisan migrate --force'),
             $this->check('encryption_key', 'Application encryption key present', filled(config('app.key')), 'system', 'LibreNMS APP_KEY is required to encrypt destination secrets.'),
             $this->check('writable_storage', 'Log path writable', is_writable(storage_path('logs')), 'system', 'storage/logs must be writable by the web and cron users.'),
             $this->check('ingestion_token', 'Ingestion token generated', $migrated && filled($this->settings->get('ingestion_token')), 'setup', 'Generate the bearer token LibreNMS uses to post alerts.', 'iapm.settings.edit', 'Generate token'),
@@ -95,8 +99,8 @@ class ReadinessService
         return Incident::query()->exists() || filled($this->settings->get('last_ingestion_at'));
     }
 
-    private function check(string $key, string $label, bool $ok, string $group, string $hint, ?string $route = null, ?string $action = null): array
+    private function check(string $key, string $label, bool $ok, string $group, string $hint, ?string $route = null, ?string $action = null, ?string $cliHint = null): array
     {
-        return ['key' => $key, 'label' => $label, 'ok' => $ok, 'group' => $group, 'hint' => $hint, 'route' => $route, 'action' => $action];
+        return ['key' => $key, 'label' => $label, 'ok' => $ok, 'group' => $group, 'hint' => $hint, 'route' => $route, 'action' => $action, 'cli_hint' => $cliHint];
     }
 }

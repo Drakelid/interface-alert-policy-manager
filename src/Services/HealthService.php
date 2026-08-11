@@ -70,9 +70,12 @@ class HealthService
             'key' => 'queue_worker',
             'label' => 'Queue worker delivering',
             'ok' => $ok,
+            // Names the condition and the remedy the operator can actually reach
+            // from here, rather than a shell command a web-only administrator
+            // cannot run (P1-7). Host-level worker setup is in the README.
             'detail' => $ok
                 ? ($last ? 'Last worker activity '.$last->diffForHumans() : 'Queued mode enabled; no traffic yet.')
-                : "Queued delivery is enabled but a worker is not draining the queue ({$pending} stuck). Run `php artisan queue:work`.",
+                : "Queued delivery is enabled but no worker is draining the queue ({$pending} notification(s) stuck). Either start the IAPM queue workers on the LibreNMS host, or switch Delivery dispatch to Synchronous in Settings to send inline instead.",
         ];
     }
 
@@ -85,8 +88,10 @@ class HealthService
     {
         $last = $this->timestamp($settingKey);
         $ok = $last !== null && $last->addSeconds(self::STALE_AFTER_SECONDS)->isFuture();
+        // A stalled scheduler is a host-level cron problem and cannot be fixed
+        // from this UI, so state the condition rather than a command to paste.
         $detail = $last === null
-            ? 'Has not run yet — confirm the LibreNMS scheduler executes `php artisan schedule:run` every minute.'
+            ? 'Has not run yet — IAPM relies on the LibreNMS scheduler running every minute. Confirm the standard LibreNMS cron entry is installed and running on the host.'
             : 'Last run '.$last->diffForHumans();
 
         return ['key' => $key, 'label' => $label, 'ok' => $ok, 'detail' => $detail];

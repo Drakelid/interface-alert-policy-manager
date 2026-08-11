@@ -37,6 +37,10 @@ class InstallCheckCommand extends Command
             $this->report($check['key'], $check['ok']);
             if (! $check['ok']) {
                 $this->line('  '.$check['hint']);
+                // Shell remediation lives only here; the UI renders `hint` alone.
+                if (! empty($check['cli_hint'])) {
+                    $this->line('  '.$check['cli_hint']);
+                }
             }
             $ok = $ok && $check['ok'];
         }

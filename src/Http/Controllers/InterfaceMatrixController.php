@@ -8,12 +8,14 @@ use App\Models\Location;
 use App\Models\Port;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\RebuildPolicyCacheJob;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyCacheRebuilder;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 
 class InterfaceMatrixController
@@ -41,7 +43,31 @@ class InterfaceMatrixController
             'deviceGroups' => DeviceGroup::orderBy('name')->get(['id', 'name']),
             'locations' => Location::orderBy('location')->get(['id', 'location']),
             'deviceFilterLabel' => $device ? app(EntityLookup::class)->deviceLabel($device) : '',
+            'cache' => app(PolicyCacheRebuilder::class)->state(),
         ]);
+    }
+
+    /**
+     * P1-7: the matrix used to display "Run `php artisan iapm:cache-rebuild`",
+     * which a web-only administrator cannot act on.
+     */
+    public function rebuildCache(Request $request, PolicyCacheRebuilder $rebuilder, AuditService $audit)
+    {
+        abort_unless($request->user()->can('manage iapm assignments'), 403);
+        if ($rebuilder->state()['running']) {
+            return back()->with('status', 'A cache rebuild is already running.');
+        }
+        $rebuilder->markQueued();
+        RebuildPolicyCacheJob::dispatch();
+        $audit->record($request, 'rebuilt_cache', 'interface_matrix', null);
+
+        return back()->with('status', 'Cache rebuild started. Progress appears above; you can leave this page.');
+    }
+
+    /** Polled by the matrix while a rebuild runs. */
+    public function cacheStatus(PolicyCacheRebuilder $rebuilder)
+    {
+        return response()->json($rebuilder->state());
     }
 
     public function bulk(Request $request, AuditService $audit)

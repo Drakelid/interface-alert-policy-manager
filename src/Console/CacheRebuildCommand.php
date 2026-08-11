@@ -6,6 +6,7 @@ use App\Models\Port;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyCacheRebuilder;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 
 class CacheRebuildCommand extends Command
@@ -14,7 +15,7 @@ class CacheRebuildCommand extends Command
 
     protected $description = 'Rebuild the materialized effective-policy cache for Interface Matrix filtering';
 
-    public function handle(InterfaceContextService $contexts, PolicyResolver $resolver): int
+    public function handle(InterfaceContextService $contexts, PolicyResolver $resolver, PolicyCacheRebuilder $rebuilder): int
     {
         DB::table('iapm_interface_policy_cache')->when($this->option('device'), fn ($q) => $q->whereIn('port_id', Port::where('device_id', $this->option('device'))->select('port_id')))->delete();
         $count = 0;
@@ -24,6 +25,13 @@ class CacheRebuildCommand extends Command
                 $count++;
             }$this->line("Resolved $count ports...");
         }, 'port_id');
+
+        // A whole-fleet rebuild is what the matrix's staleness banner tracks. A
+        // single-device rebuild leaves the rest of the cache as it was, so it
+        // must not clear the warning (P1-7).
+        if (! $this->option('device')) {
+            $rebuilder->markCompletedNow();
+        }
         $this->info("Policy cache rebuilt for $count ports.");
 
         return self::SUCCESS;

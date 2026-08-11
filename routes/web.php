@@ -55,6 +55,8 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::get('interface-matrix', [InterfaceMatrixController::class, 'index'])->name('matrix');
     Route::post('interface-matrix/bulk', [InterfaceMatrixController::class, 'bulk'])->name('matrix.bulk');
     Route::get('interface-matrix/export', [InterfaceMatrixController::class, 'export'])->name('matrix.export');
+    Route::post('interface-matrix/rebuild-cache', [InterfaceMatrixController::class, 'rebuildCache'])->middleware('throttle:5,1')->name('matrix.rebuild-cache');
+    Route::get('interface-matrix/cache-status', [InterfaceMatrixController::class, 'cacheStatus'])->name('matrix.cache-status');
     Route::get('policy-test', PolicyTestController::class)->name('policy-test');
     Route::get('stats', StatsController::class)->name('stats');
     // The nav labels this page "Statistics & SLA", so /statistics is the obvious

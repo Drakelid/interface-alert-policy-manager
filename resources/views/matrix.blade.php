@@ -54,6 +54,41 @@
         </div>
     </div>
 </form>
+{{-- P1-7: this was an info banner reading "Run `php artisan iapm:cache-rebuild`
+     after broad policy or assignment changes", which a web-only administrator
+     cannot act on. It is now a button, a last-rebuilt time, and a warning that
+     appears only when the configuration has actually moved since. --}}
+<div class="panel {{ $cache['stale'] ? 'panel-warning' : 'panel-default' }}" id="iapm-cache-panel">
+    <div class="panel-body">
+        <div class="iapm-toolbar" style="margin-bottom:0;">
+            <span>
+                <i class="fa fa-database"></i>
+                <strong>Policy cache</strong>
+                <span class="iapm-hint">&mdash; the policy, assignment-source and no-policy filters read it.</span>
+            </span>
+            <span class="spacer"></span>
+            <span id="iapm-cache-state">
+                @if($cache['rebuilt_at'])
+                    Last rebuilt <span title="{{ $cache['rebuilt_at'] }}">{{ $cache['rebuilt_at_human'] }}</span>.
+                @else
+                    <span class="iapm-hint">Never rebuilt.</span>
+                @endif
+            </span>
+            <form method="post" action="{{ route('iapm.matrix.rebuild-cache') }}" data-iapm-busy style="display:inline;">@csrf
+                <button class="btn btn-default btn-sm" id="iapm-cache-rebuild" data-busy="Starting…" @disabled($cache['running'])><i class="fa fa-refresh"></i> Rebuild cache</button>
+            </form>
+        </div>
+        @if($cache['stale'])
+        <div class="alert alert-warning" style="margin:10px 0 0;">
+            <i class="fa fa-exclamation-triangle"></i>
+            <span @if($cache['changed_at']) title="Most recent change: {{ $cache['changed_at'] }}" @endif>Policies or assignments changed after the last rebuild</span>, so those three filters may be out of date. Rebuild to bring them current.
+        </div>
+        @endif
+        <div id="iapm-cache-progress" class="alert alert-info" style="margin:10px 0 0;{{ $cache['running'] ? '' : 'display:none;' }}"></div>
+        @if($cache['error'])<div class="alert alert-danger" style="margin:10px 0 0;">Last rebuild failed: {{ $cache['error'] }}</div>@endif
+    </div>
+</div>
+
 @include('iapm::partials.result-count',['paginator'=>$rows,'noun'=>'interface'])
 
 <form method="post" action="{{ route('iapm.matrix.bulk') }}">@csrf
@@ -105,4 +140,62 @@
     <a class="btn btn-default btn-xs" href="{{ route('iapm.simulate',['port_id'=>$p->port_id]) }}" title="Simulate an alert for port_id {{ $p->port_id }}" aria-label="Simulate an alert for {{ $p->ifName }}"><i class="fa fa-bolt"></i></a>
     <a class="btn btn-default btn-xs" href="{{ $portUrl }}" title="Open in LibreNMS" aria-label="Open {{ $p->ifName }} in LibreNMS"><i class="fa fa-external-link"></i></a>
 </td>
-</tr>@endforeach</tbody></table></div></form>{{ $rows->links() }}</div>@endsection
+</tr>@endforeach</tbody></table></div></form>{{ $rows->links() }}
+<script>
+(function () {
+    // P1-7: poll the rebuild until it finishes so the operator gets real
+    // progress and a completion message instead of an unexplained wait.
+    var panel = document.getElementById('iapm-cache-panel');
+    if (! panel) { return; }
+    var progress = document.getElementById('iapm-cache-progress');
+    var state = document.getElementById('iapm-cache-state');
+    var button = document.getElementById('iapm-cache-rebuild');
+    var timer = null;
+
+    function render(data) {
+        if (data.status === 'stalled') {
+            progress.className = 'alert alert-danger';
+            progress.style.display = '';
+            progress.textContent = 'The rebuild was queued but nothing has picked it up. Check that the IAPM queue workers are running, or switch Delivery dispatch to Synchronous in Settings.';
+            button.disabled = false;
+            return false;
+        }
+        if (data.running) {
+            progress.className = 'alert alert-info';
+            progress.style.display = '';
+            progress.textContent = data.total
+                ? 'Rebuilding… ' + data.progress.toLocaleString() + ' of ' + data.total.toLocaleString() + ' interfaces.'
+                : 'Rebuilding…';
+            button.disabled = true;
+            return true;
+        }
+        button.disabled = false;
+        if (data.status === 'failed') {
+            progress.className = 'alert alert-danger';
+            progress.style.display = '';
+            progress.textContent = 'Rebuild failed: ' + (data.error || 'unknown error');
+            return false;
+        }
+        if (data.status === 'complete') {
+            progress.className = 'alert alert-success';
+            progress.style.display = '';
+            progress.textContent = 'Rebuild complete — ' + data.progress.toLocaleString() + ' interfaces resolved. Reload to see the refreshed filters.';
+            if (state && data.rebuilt_at_human) { state.textContent = 'Last rebuilt ' + data.rebuilt_at_human + '.'; }
+            return false;
+        }
+        progress.style.display = 'none';
+        return false;
+    }
+
+    function poll() {
+        fetch('{{ route('iapm.matrix.cache-status') }}', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { if (render(data)) { timer = setTimeout(poll, 2000); } })
+            .catch(function () { clearTimeout(timer); });
+    }
+
+    @if($cache['running'])poll();@endif
+    if (button) { button.form.addEventListener('submit', function () { setTimeout(poll, 1500); }); }
+})();
+</script>
+</div>@endsection
