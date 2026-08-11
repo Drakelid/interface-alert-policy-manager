@@ -3,6 +3,7 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\Concerns\ListsRecords;
@@ -10,6 +11,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\AuditLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LogController extends Controller
 {
@@ -41,16 +43,9 @@ class LogController extends Controller
 
     public function deliveries(Request $r)
     {
-        $status = (string) $r->query('status', '');
         $sort = $this->sort($r, self::DELIVERY_SORTABLE);
         // Newest first unless the operator picks a column.
-        $q = DeliveryLog::query()->when($sort['key'] === null, fn ($q) => $q->latest())
-            ->when($status === 'failed_any', fn ($q) => $q->whereIn('status', self::FAILED_STATUSES))
-            ->when($status !== '' && $status !== 'failed_any', fn ($q) => $q->where('status', $status))
-            ->when($r->filled('within'), fn ($q) => $q->where('created_at', '>=', now()->subHours($r->integer('within'))))
-            ->when($r->filled('phase'), fn ($q) => $q->where('phase', $r->string('phase')))
-            ->when($r->filled('incident_id'), fn ($q) => $q->where('incident_id', $r->integer('incident_id')))
-            ->when($r->filled('destination_id'), fn ($q) => $q->where('destination_id', $r->integer('destination_id')));
+        $q = $this->deliveryQuery($r)->when($sort['key'] === null, fn ($q) => $q->latest());
 
         $this->applySort($q, $sort);
         $perPage = $this->perPage($r, 100);
@@ -70,7 +65,7 @@ class LogController extends Controller
     public function audits(Request $r)
     {
         $sort = $this->sort($r, self::AUDIT_SORTABLE);
-        $q = AuditLog::query()->when($sort['key'] === null, fn ($q) => $q->latest('created_at'))->when($r->filled('action'), fn ($q) => $q->where('action', 'like', '%'.$r->string('action').'%'))->when($r->filled('object_type'), fn ($q) => $q->where('object_type', $r->string('object_type')))->when($r->filled('user_id'), fn ($q) => $q->where('user_id', $r->integer('user_id')));
+        $q = $this->auditQuery($r)->when($sort['key'] === null, fn ($q) => $q->latest('created_at'));
         $this->applySort($q, $sort);
         $perPage = $this->perPage($r, 100);
         $audits = $q->paginate($perPage)->withQueryString();
@@ -85,6 +80,93 @@ class LogController extends Controller
             'objectTypes' => AuditLog::OBJECT_TYPES,
             'userFilterLabel' => $user ? ($user->realname ? "$user->username ($user->realname)" : (string) $user->username) : '',
         ] + $this->listControls($r, self::AUDIT_SORTABLE, $sort, $perPage));
+    }
+
+    /**
+     * P2-10: the Interface Matrix and Comparison Report could export CSV but the
+     * two logs could not, which is exactly where an auditor or an incident review
+     * needs the data. Streamed so a long retention window does not buffer in
+     * memory, and filtered identically to the on-screen list.
+     */
+    public function exportDeliveries(Request $r)
+    {
+        abort_unless($r->user()->can('view iapm audit logs'), 403);
+        $destinations = Destination::pluck('name', 'id');
+
+        return $this->streamCsv('iapm-delivery-log', ['time', 'incident_id', 'destination', 'phase', 'status', 'http_status', 'error'],
+            $this->deliveryQuery($r)->latest(),
+            fn (DeliveryLog $row) => [
+                $row->created_at?->format('Y-m-d H:i:s T'),
+                $row->incident_id,
+                $destinations[$row->destination_id] ?? $row->destination_id,
+                $row->phase,
+                $row->status,
+                $row->response_status,
+                $row->error_message,
+            ]);
+    }
+
+    public function exportAudits(Request $r)
+    {
+        abort_unless($r->user()->can('view iapm audit logs'), 403);
+        $users = User::pluck('username', 'user_id');
+
+        return $this->streamCsv('iapm-audit-log', ['time', 'user', 'action', 'object_type', 'object_id', 'source_ip'],
+            $this->auditQuery($r)->latest('created_at'),
+            fn (AuditLog $row) => [
+                $row->created_at?->format('Y-m-d H:i:s T'),
+                $row->user_id ? ($users[$row->user_id] ?? 'user '.$row->user_id) : 'system',
+                $row->action,
+                $row->object_type,
+                $row->object_id,
+                $row->source_ip,
+            ]);
+    }
+
+    /** @return Builder<DeliveryLog> */
+    private function deliveryQuery(Request $r)
+    {
+        $status = (string) $r->query('status', '');
+
+        return DeliveryLog::query()
+            ->when($status === 'failed_any', fn ($q) => $q->whereIn('status', self::FAILED_STATUSES))
+            ->when($status !== '' && $status !== 'failed_any', fn ($q) => $q->where('status', $status))
+            ->when($r->filled('within'), fn ($q) => $q->where('created_at', '>=', now()->subHours($r->integer('within'))))
+            ->when($r->filled('from'), fn ($q) => $q->where('created_at', '>=', $r->date('from')))
+            ->when($r->filled('to'), fn ($q) => $q->where('created_at', '<=', $r->date('to')->endOfDay()))
+            ->when($r->filled('phase'), fn ($q) => $q->where('phase', $r->string('phase')))
+            ->when($r->filled('incident_id'), fn ($q) => $q->where('incident_id', $r->integer('incident_id')))
+            ->when($r->filled('destination_id'), fn ($q) => $q->where('destination_id', $r->integer('destination_id')));
+    }
+
+    /** @return Builder<AuditLog> */
+    private function auditQuery(Request $r)
+    {
+        return AuditLog::query()
+            ->when($r->filled('action'), fn ($q) => $q->where('action', 'like', '%'.$r->string('action').'%'))
+            ->when($r->filled('object_type'), fn ($q) => $q->where('object_type', $r->string('object_type')))
+            ->when($r->filled('user_id'), fn ($q) => $q->where('user_id', $r->integer('user_id')))
+            ->when($r->filled('from'), fn ($q) => $q->where('created_at', '>=', $r->date('from')))
+            ->when($r->filled('to'), fn ($q) => $q->where('created_at', '<=', $r->date('to')->endOfDay()));
+    }
+
+    /**
+     * @param  list<string>  $headers
+     * @param  \Illuminate\Database\Eloquent\Builder<*>  $query
+     * @param  callable(mixed): list<mixed>  $row
+     */
+    private function streamCsv(string $name, array $headers, $query, callable $row): StreamedResponse
+    {
+        return response()->streamDownload(function () use ($headers, $query, $row): void {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, $headers);
+            $query->chunk(500, function ($records) use ($out, $row): void {
+                foreach ($records as $record) {
+                    fputcsv($out, $row($record));
+                }
+            });
+            fclose($out);
+        }, $name.'-'.now()->format('Ymd-His').'.csv', ['Content-Type' => 'text/csv']);
     }
 
     private function incidentLabel(Incident $incident): string

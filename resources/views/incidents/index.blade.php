@@ -1,6 +1,36 @@
-@extends('layouts.librenmsv1') @section('title','IAPM Incidents') @section('content')
+@extends('layouts.librenmsv1')
+@php
+// P2-7: the tab said "IAPM Incidents", the heading said "Active Incidents", the
+// default filter was "Open incidents", and the list happily showed acknowledged
+// rows. All three now describe the same thing, and the heading follows whatever
+// filter is actually applied.
+$iapmState = (string) request('state', '');
+$iapmSeverity = (string) request('severity', '');
+$iapmHeading = match (true) {
+    $iapmState === 'all' => 'All incidents',
+    $iapmState !== '' => ucfirst($iapmState).' incidents',
+    default => 'Open incidents',
+};
+if ($iapmSeverity !== '') {
+    $iapmHeading .= ' — '.$iapmSeverity;
+}
+if (request('escalation') === 'pending') {
+    $iapmHeading .= ' awaiting escalation';
+}
+@endphp
+@section('title','IAPM '.$iapmHeading)
+@section('content')
 <div class="container-fluid">@include('iapm::partials.nav')
-<h2>Active Incidents</h2>
+<h1 class="iapm-page-title">{{ $iapmHeading }}</h1>
+<p class="iapm-hint">
+    @if($iapmState === '')
+        Everything not yet recovered &mdash; pending, active, acknowledged and suppressed. Choose a state below to narrow it, or <a href="{{ request()->fullUrlWithQuery(['state'=>'all','page'=>1]) }}">show recovered incidents too</a>.
+    @elseif($iapmState === 'all')
+        Every incident, including recovered ones.
+    @else
+        Filtered to <strong>{{ $iapmState }}</strong> incidents only.
+    @endif
+</p>
 
 <div class="iapm-toolbar">
     <form class="form-inline" method="get">
@@ -22,12 +52,14 @@
 
 @if($incidents->count())
 {{-- Bulk form lives outside the table; checkboxes attach via the form= attribute so per-row action forms aren't nested. --}}
-<form id="iapm-bulk-incidents" method="post" action="{{ route('iapm.incidents.bulk') }}" class="form-inline" data-iapm-busy onsubmit="return confirm('Apply to the selected incidents?')">@csrf
-    <select name="operation" class="form-control input-sm"><option value="acknowledge">Acknowledge</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select>
-    <input type="datetime-local" name="muted_until" class="form-control input-sm" title="Required when muting">
-    <button class="btn btn-warning btn-sm">Apply to selected</button>
+<form id="iapm-bulk-incidents" method="post" action="{{ route('iapm.incidents.bulk') }}" class="form-inline" data-iapm-busy data-iapm-confirm="Apply this operation to the selected incidents?">@csrf
+    <label class="sr-only" for="iapm-bulk-incident-op">Bulk operation</label>
+    <select name="operation" id="iapm-bulk-incident-op" class="form-control input-sm"><option value="acknowledge">Acknowledge</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select>
+    <label class="sr-only" for="iapm-bulk-incident-muted">Mute until</label>
+    <input type="datetime-local" name="muted_until" id="iapm-bulk-incident-muted" class="form-control input-sm" title="Required when muting">
+    <button class="btn btn-warning btn-sm" data-iapm-bulk-button="incidents" disabled>Apply to selected<span data-iapm-bulk-count></span></button>
 </form>
-<div class="iapm-table-wrap" style="margin-top:8px;"><table class="table table-hover table-condensed iapm-sticky">
+<div class="iapm-table-wrap" style="margin-top:8px;" data-iapm-bulk-scope="incidents"><table class="table table-hover table-condensed iapm-sticky">
 <thead><tr>
 <th style="width:2em;"><input type="checkbox" aria-label="Select all incidents on this page" onclick="document.querySelectorAll('.iapm-bulk').forEach(e=>e.checked=this.checked)"></th>
 @include('iapm::partials.sort-header',['column'=>'id','label'=>'ID','numeric'=>true])

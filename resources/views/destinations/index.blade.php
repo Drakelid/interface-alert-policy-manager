@@ -3,10 +3,10 @@
 <h2>Destinations <a class="btn btn-primary btn-sm" href="{{ route('iapm.destinations.create') }}"><i class="fa fa-plus"></i> Create</a></h2>
 @include('iapm::partials.step-header',['step'=>1,'total'=>4,'title'=>'Create a delivery destination','desc'=>'A destination is where notifications are sent — the SMS gateway, or a generic webhook. Create this first: policy actions send to a destination. Secrets are encrypted; you can send a test after saving.','nextRoute'=>route('iapm.policies.index'),'nextLabel'=>'Policies'])
 @if($destinations->count())
-<form id="iapm-bulk-destinations" method="post" action="{{ route('iapm.destinations.bulk-destroy') }}" onsubmit="return confirm('Delete the selected destinations? Any used by policy actions are skipped.')">@csrf @method('DELETE')
-    <button class="btn btn-danger btn-sm" style="margin-bottom:8px;"><i class="fa fa-trash"></i> Delete selected</button>
+<form id="iapm-bulk-destinations" method="post" action="{{ route('iapm.destinations.bulk-destroy') }}" data-iapm-confirm="Delete the selected destinations? Their stored credentials are erased. Any still used by policy actions are skipped.">@csrf @method('DELETE')
+    <button class="btn btn-danger btn-sm" style="margin-bottom:8px;" data-iapm-bulk-button="destinations" disabled><i class="fa fa-trash"></i> Delete selected<span data-iapm-bulk-count></span></button>
 </form>
-<div class="table-responsive"><table class="table table-hover">
+<div class="table-responsive" data-iapm-bulk-scope="destinations"><table class="table table-hover">
 <thead><tr><th style="width:2em;"><input type="checkbox" onclick="document.querySelectorAll('.iapm-bulk').forEach(e=>e.checked=this.checked)"></th><th>Name</th><th>Type</th><th>Status</th><th>Used by actions</th><th></th></tr></thead>
 <tbody>@foreach($destinations as $d)<tr>
 <td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-destinations" name="ids[]" value="{{ $d->id }}"></td>

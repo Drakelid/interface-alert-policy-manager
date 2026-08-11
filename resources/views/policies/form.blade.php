@@ -39,8 +39,17 @@ $fields = [
 <p class="help-block">When an interface cycles down/up faster than the threshold, send one "flapping" notice and dampen the rest until it stabilises. Leave threshold blank to disable.</p>
 @foreach(['flap_threshold'=>['Flap threshold (down/up cycles)',false],'flap_window_seconds'=>['Flap window (seconds)',true],'flap_settle_seconds'=>['Settle period (seconds)',true]] as $key=>$meta)<div class="form-group"><label>{{ $meta[0] }}</label><input class="form-control{{ $meta[1]?' iapm-seconds':'' }}" type="number" min="0" name="{{ $key }}" value="{{ old($key,$policy->$key) }}">@if($meta[1])<span class="help-block iapm-seconds-hint text-info" style="display:inline;margin-left:6px;"></span>@endif</div>@endforeach
 </fieldset>
-</div></div><button class="btn btn-primary">Save</button></form>
-@if($policy->exists)<hr><h3>Notification actions <a class="btn btn-primary btn-sm" href="{{ route('iapm.actions.create',$policy) }}">Add action</a></h3>
+</div></div>
+{{-- P2-4: Save used to sit at the bottom of the left column while the right
+     column ended much higher, leaving a large dead zone and obscuring that one
+     Save commits both columns. It is now a full-width footer under both. --}}
+<div class="iapm-form-footer">
+    <button class="btn btn-primary"><i class="fa fa-save"></i> Save policy</button>
+    <a class="btn btn-default" href="{{ route('iapm.policies.index') }}">Cancel</a>
+    <span class="iapm-hint">Saves every field on this page, in both columns.</span>
+</div>
+</form>
+@if($policy->exists)<hr><h2>Notification actions <a class="btn btn-primary btn-sm" href="{{ route('iapm.actions.create',$policy) }}">Add action</a></h2>
 @php($enabledActionCount = $policy->actions()->where('enabled',true)->count())
 @if($enabledActionCount===0)<div class="alert alert-warning"><i class="fa fa-bell-slash"></i> <strong>This policy won't notify anyone yet.</strong> It has no enabled notification action, so matched interfaces will trigger incidents silently. <a href="{{ route('iapm.actions.create',$policy) }}">Add an action</a> pointing at a destination (e.g. your SMS gateway).</div>@endif
 <p class="text-muted">Build an <strong>escalation chain</strong> by adding multiple <em>escalation</em> actions with increasing delays and different destinations/receivers (e.g. 10m → primary, 20m → secondary, 30m → manager). Delays are measured from when the incident triggered; acknowledging the incident stops further escalation.</p>{{-- P1-4: only the phase cell was a link, and deleting an action was reachable
@@ -58,10 +67,46 @@ $fields = [
     <form method="post" action="{{ route('iapm.actions.destroy',$action) }}" style="display:inline;" data-iapm-confirm="Delete the {{ $action->phase->value }} action sending to {{ $action->destination?->name ?? 'no destination' }}? This policy will stop notifying through it.">@csrf @method('DELETE')<button class="btn btn-danger btn-xs"><i class="fa fa-trash"></i> Delete</button></form>
 </td>
 </tr>@endforeach</tbody></table>
-<form method="post" action="{{ route('iapm.policies.clone',$policy) }}">@csrf<button class="btn btn-default">Clone policy</button></form>
-<form method="post" action="{{ route('iapm.policies.destroy',$policy) }}" onsubmit="return confirm('Delete this policy?')">@csrf @method('DELETE')
-@if(($openIncidentCount??0)>0)<div class="form-group"><label>This policy has {{ $openIncidentCount }} active incident(s). Migrate them to</label><select name="migrate_to" class="form-control" required><option value="">Select a policy…</option>@foreach($otherPolicies as $p)<option value="{{ $p->id }}">{{ $p->name }}</option>@endforeach</select></div>@endif
-<button class="btn btn-danger">Delete</button></form>@endif</div>
+<hr>
+<h2>Manage this policy</h2>
+<form method="post" action="{{ route('iapm.policies.clone',$policy) }}" style="margin-bottom:14px;">@csrf<button class="btn btn-default"><i class="fa fa-copy"></i> Clone policy</button> <span class="iapm-hint">Creates a disabled copy with the same timing and actions.</span></form>
+
+{{-- P2-4: the confirmation used to read only "Delete this policy?" — it said
+     nothing about the active incidents or whether the migration selection had
+     been applied. It now states the consequence, including where the incidents
+     go. The single-policy case is handled explicitly rather than offering a
+     dropdown with no options. --}}
+@php($iapmOpenIncidents = (int) ($openIncidentCount ?? 0))
+@php($iapmCanMigrate = $otherPolicies->isNotEmpty())
+<div class="panel panel-danger">
+    <div class="panel-heading">Delete policy</div>
+    <div class="panel-body">
+        @if($iapmOpenIncidents > 0 && ! $iapmCanMigrate)
+            <p><strong>This policy cannot be deleted yet.</strong> It has {{ $iapmOpenIncidents }} active incident(s), and there is no other policy to move them to &mdash; this is the only policy on this install.</p>
+            <p class="iapm-hint">Either <a href="{{ route('iapm.policies.create') }}">create another policy</a> to migrate them to, or wait for the incidents to recover.</p>
+            <button class="btn btn-danger" disabled>Delete policy</button>
+        @else
+            <form method="post" action="{{ route('iapm.policies.destroy',$policy) }}" id="iapm-delete-policy"
+                  data-iapm-confirm="@if($iapmOpenIncidents > 0)Delete &quot;{{ $policy->name }}&quot; and move its {{ $iapmOpenIncidents }} active incident(s) to the policy selected above? The incidents keep their history and are re-evaluated under the new policy. This cannot be undone.@else Delete &quot;{{ $policy->name }}&quot;? Its {{ $policy->actions()->count() }} notification action(s) and {{ $policy->assignments()->count() }} assignment(s) are deleted with it, and any interfaces they matched stop being covered until another assignment picks them up. This cannot be undone.@endif">
+                @csrf @method('DELETE')
+                @if($iapmOpenIncidents > 0)
+                <div class="form-group" style="max-width:420px;">
+                    <label for="iapm-migrate-to">This policy has {{ $iapmOpenIncidents }} active incident(s). Migrate them to</label>
+                    <select name="migrate_to" id="iapm-migrate-to" class="form-control" required>
+                        <option value="">Select a policy…</option>
+                        @foreach($otherPolicies as $p)<option value="{{ $p->id }}">{{ $p->name }}</option>@endforeach
+                    </select>
+                    <p class="iapm-hint">Required. The incidents are reassigned before the policy is removed.</p>
+                </div>
+                @else
+                <p class="iapm-hint">This policy has no active incidents. Its {{ $policy->actions()->count() }} action(s) and {{ $policy->assignments()->count() }} assignment(s) are deleted with it.</p>
+                @endif
+                <button class="btn btn-danger"><i class="fa fa-trash"></i> Delete policy</button>
+            </form>
+        @endif
+    </div>
+</div>
+@endif</div>
 <script>
 (function () {
     function humanize(v) {

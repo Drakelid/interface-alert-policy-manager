@@ -1,6 +1,21 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Settings') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')
-<h2>Settings</h2>
+<h1 class="iapm-page-title">Settings</h1>
+
+{{-- P2-8: this was one long single-column page with a single Save at the very
+     bottom, and the "0. Generate ingestion token" menu item dropped you at the
+     top of it. Sections now have anchors, a jump list, and the Save bar sticks
+     to the bottom of the viewport so it is reachable from any section. --}}
+<nav class="iapm-section-nav" aria-label="Settings sections">
+    <span class="iapm-hint">Jump to:</span>
+    <a href="#ingestion-token">Ingestion token</a>
+    <a href="#delivery-mode">Delivery mode</a>
+    <a href="#policy-defaults">Policy defaults</a>
+    <a href="#delivery-retention">Delivery &amp; retention</a>
+    <a href="#delivery-dispatch">Dispatch</a>
+    <a href="#storm-control">Storm control</a>
+    <a href="#root-cause">Root-cause suppression</a>
+</nav>
 
 <div class="panel {{ $values['has_token'] ? 'panel-default' : 'panel-warning' }}" id="ingestion-token">
     <div class="panel-heading"><i class="fa fa-key"></i> Ingestion token @unless($values['has_token'])<span class="label label-warning pull-right">Step 0 — start here</span>@endunless</div>
@@ -37,16 +52,28 @@
 
 <form method="post" action="{{ route('iapm.settings.update') }}" id="iapm-settings-form" data-dry-run-was="{{ $values['dry_run']?'1':'0' }}">@csrf @method('PUT')
 
-<div class="panel panel-default">
+<div class="panel panel-default" id="delivery-mode">
     <div class="panel-heading">Delivery mode</div>
     <div class="panel-body">
         <input type="hidden" name="dry_run" value="0">
-        <div class="checkbox"><label><input type="checkbox" name="dry_run" id="iapm-dry-run" value="1" @checked(old('dry_run',$values['dry_run']))> <strong>Dry-run mode</strong></label></div>
-        <p class="help-block">While enabled, IAPM records what it <em>would</em> send but never contacts the gateway. Keep this on during the shadow period, then disable it to go live.</p>
+        <div class="checkbox"><label for="iapm-dry-run"><input type="checkbox" name="dry_run" id="iapm-dry-run" value="1" @checked(old('dry_run',$values['dry_run']))> <strong>Dry-run mode</strong></label></div>
+        <p class="iapm-hint">While enabled, IAPM records what it <em>would</em> send but never contacts the gateway. Keep this on during the shadow period, then disable it to go live.</p>
+        {{-- P2-9: unticking this is the moment the plugin starts paging real
+             people, and it was a plain checkbox on a long page. The warning
+             appears the moment the box is cleared, before Save is even pressed,
+             and the confirmation names the consequence rather than asking a
+             generic "are you sure". --}}
+        <div class="alert alert-danger" id="iapm-going-live" style="display:none;margin-bottom:0;">
+            <i class="fa fa-bolt"></i> <strong>This will start sending real notifications.</strong>
+            On save, IAPM begins delivering to your gateway for every incident that matches a policy &mdash; including any that are already open. Re-tick the box to stay in dry-run.
+        </div>
+        @if(! $values['dry_run'])
+        <p class="iapm-hint"><span class="label label-success"><i class="fa fa-bolt"></i> LIVE</span> Notifications are currently being delivered.</p>
+        @endif
     </div>
 </div>
 
-<div class="panel panel-default">
+<div class="panel panel-default" id="policy-defaults">
     <div class="panel-heading">Policy defaults &amp; receivers</div>
     <div class="panel-body">
         <div class="form-group"><label>Default policy</label>
@@ -64,7 +91,7 @@
     </div>
 </div>
 
-<div class="panel panel-default">
+<div class="panel panel-default" id="delivery-retention">
     <div class="panel-heading">Delivery &amp; retention</div>
     <div class="panel-body">
         <div class="form-group"><label>Notification timeout (seconds)</label><input class="form-control" name="notification_timeout" value="{{ old('notification_timeout',$values['notification_timeout']) }}"><p class="help-block">How long to wait for the gateway before recording a failure.</p></div>
@@ -80,7 +107,7 @@
     </div>
 </div>
 
-<div class="panel panel-default">
+<div class="panel panel-default" id="delivery-dispatch">
     <div class="panel-heading">Delivery dispatch</div>
     <div class="panel-body">
         <div class="form-group"><label>Dispatch mode</label>
@@ -93,7 +120,7 @@
     </div>
 </div>
 
-<div class="panel panel-default">
+<div class="panel panel-default" id="storm-control">
     <div class="panel-heading">Storm control — device digest</div>
     <div class="panel-body">
         <div class="form-group"><label>Aggregate threshold</label>
@@ -108,7 +135,7 @@
     </div>
 </div>
 
-<div class="panel panel-default">
+<div class="panel panel-default" id="root-cause">
     <div class="panel-heading">Root-cause suppression</div>
     <div class="panel-body">
         <div class="form-group"><label>Uplink port group</label>
@@ -118,17 +145,37 @@
     </div>
 </div>
 
-<button class="btn btn-primary">Save settings</button>
+{{-- P2-8: one Save at the very bottom of a long page meant scrolling back for
+     every change. It now sticks to the bottom of the viewport. --}}
+<div class="iapm-sticky-save">
+    <button class="btn btn-primary"><i class="fa fa-save"></i> Save settings</button>
+    <span class="iapm-hint">Saves every section on this page.</span>
+</div>
 </form>
 </div>
 
 <script>
-document.getElementById('iapm-settings-form').addEventListener('submit', function (e) {
-    var form = e.currentTarget;
-    var enablingLive = form.dataset.dryRunWas === '1' && ! document.getElementById('iapm-dry-run').checked;
-    if (enablingLive && ! window.confirm('You are disabling dry-run mode. IAPM will begin sending real notifications to the SMS gateway. Continue?')) {
-        e.preventDefault();
-    }
-});
+(function () {
+    var form = document.getElementById('iapm-settings-form');
+    var dryRun = document.getElementById('iapm-dry-run');
+    var warning = document.getElementById('iapm-going-live');
+    if (! form || ! dryRun) { return; }
+
+    function goingLive() { return form.dataset.dryRunWas === '1' && ! dryRun.checked; }
+
+    // Warn while the operator is still on the page, not only at submit (P2-9).
+    dryRun.addEventListener('change', function () {
+        warning.style.display = goingLive() ? '' : 'none';
+    });
+
+    form.addEventListener('submit', function (e) {
+        if (! goingLive()) { return; }
+        var typed = window.prompt('Turning off dry-run makes IAPM send real notifications to your gateway for every matching incident, including ones already open.\n\nType GO LIVE to confirm.');
+        if ((typed || '').trim().toUpperCase() !== 'GO LIVE') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, true);
+})();
 </script>
 @endsection

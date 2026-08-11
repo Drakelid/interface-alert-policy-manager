@@ -23,11 +23,22 @@
                 <label for="iapm-f-phase">Phase</label>
                 <select class="form-control" id="iapm-f-phase" name="phase"><option value="">Any phase</option>@foreach(['trigger','escalation','reminder','recovery','acknowledged','flapping','digest','test'] as $v)<option @selected(request('phase')===$v)>{{ $v }}</option>@endforeach</select>
             </div>
+            {{-- P2-10: neither log had a date range, which is the first thing an
+                 incident review asks for. `within` stays for the Overview tiles. --}}
+            <div class="form-group">
+                <label for="iapm-f-from">From</label>
+                <input type="date" class="form-control" id="iapm-f-from" name="from" value="{{ request('from') }}">
+            </div>
+            <div class="form-group">
+                <label for="iapm-f-to">To</label>
+                <input type="date" class="form-control" id="iapm-f-to" name="to" value="{{ request('to') }}">
+            </div>
             <div class="form-group">
                 <label class="iapm-invisible-label" for="iapm-f-apply">Filter</label>
                 <span class="iapm-filter-actions" style="margin-left:0;">
                     <button class="btn btn-primary" id="iapm-f-apply"><i class="fa fa-filter"></i> Filter</button>
                     <a class="btn btn-default" href="{{ route('iapm.delivery-log') }}">Reset</a>
+                    <a class="btn btn-default" href="{{ route('iapm.delivery-log.export',request()->query()) }}"><i class="fa fa-download"></i> Export CSV</a>
                 </span>
             </div>
         </div>

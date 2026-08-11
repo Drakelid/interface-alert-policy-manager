@@ -15,11 +15,22 @@
                 <select class="form-control" id="iapm-f-objecttype" name="object_type"><option value="">Any object type</option>@foreach($objectTypes as $type)<option value="{{ $type }}" @selected(request('object_type')===$type)>{{ str_replace('_',' ',$type) }}</option>@endforeach</select>
             </div>
             @include('iapm::partials.typeahead',['name'=>'user_id','id'=>'iapm-f-user','label'=>'User','endpoint'=>route('iapm.lookup.users'),'placeholder'=>'Username…','value'=>request('user_id'),'valueLabel'=>$userFilterLabel])
+            {{-- P2-10: date range and CSV export, which the matrix already had
+                 and the logs -- where an audit actually needs them -- did not. --}}
+            <div class="form-group">
+                <label for="iapm-f-from">From</label>
+                <input type="date" class="form-control" id="iapm-f-from" name="from" value="{{ request('from') }}">
+            </div>
+            <div class="form-group">
+                <label for="iapm-f-to">To</label>
+                <input type="date" class="form-control" id="iapm-f-to" name="to" value="{{ request('to') }}">
+            </div>
             <div class="form-group">
                 <label class="iapm-invisible-label" for="iapm-f-apply">Filter</label>
                 <span class="iapm-filter-actions" style="margin-left:0;">
                     <button class="btn btn-primary" id="iapm-f-apply"><i class="fa fa-filter"></i> Filter</button>
                     <a class="btn btn-default" href="{{ route('iapm.audit-log') }}">Reset</a>
+                    <a class="btn btn-default" href="{{ route('iapm.audit-log.export',request()->query()) }}"><i class="fa fa-download"></i> Export CSV</a>
                 </span>
             </div>
         </div>

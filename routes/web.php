@@ -95,7 +95,9 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     // in the HTML of every settings/setup-helper view for anyone with `view iapm`.
     Route::get('settings/ingestion-token', [SettingsController::class, 'revealToken'])->middleware('throttle:10,1')->name('settings.reveal-token');
     Route::get('delivery-log', [LogController::class, 'deliveries'])->middleware('can:view iapm audit logs')->name('delivery-log');
+    Route::get('delivery-log/export', [LogController::class, 'exportDeliveries'])->middleware('can:view iapm audit logs')->name('delivery-log.export');
     Route::get('audit-log', [LogController::class, 'audits'])->middleware('can:view iapm audit logs')->name('audit-log');
+    Route::get('audit-log/export', [LogController::class, 'exportAudits'])->middleware('can:view iapm audit logs')->name('audit-log.export');
 
     // Must stay last: an unmatched path under the plugin prefix renders the
     // plugin's own 404 so the navigation is still reachable. Registering it as a

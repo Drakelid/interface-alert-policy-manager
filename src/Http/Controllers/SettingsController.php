@@ -21,11 +21,21 @@ class SettingsController extends Controller
     {
         abort_unless($r->user()->can('manage iapm settings'), 403);
         $d = $r->validate(['dry_run' => ['nullable', 'boolean'], 'default_policy_id' => ['nullable', 'exists:iapm_policies,id'], 'sms_default_receiver' => ['nullable', 'string', 'max:128'], 'retention_days' => ['required', 'integer', 'between:1,3650'], 'notification_timeout' => ['required', 'integer', 'between:1,300'], 'notification_retry_count' => ['required', 'integer', 'between:0,10'], 'deleted_port_behavior' => ['required', 'in:recover,retain'], 'url_base' => ['nullable', 'url:http,https', 'max:2048'], 'uplink_port_group_id' => ['nullable', 'integer', 'exists:port_groups,id'], 'aggregate_threshold' => ['required', 'integer', 'between:0,1000'], 'aggregate_window_seconds' => ['required', 'integer', 'between:30,3600'], 'dispatch_mode' => ['required', 'in:sync,queue'], 'record_unpoliced' => ['nullable', 'boolean']]);
+        $wasDryRun = (bool) $s->get('dry_run', true);
         $d['dry_run'] = $r->boolean('dry_run');
         $d['record_unpoliced'] = $r->boolean('record_unpoliced');
         foreach ($d as $k => $v) {
             $s->put($k, $v);
         }$audit->record($r, 'updated', 'settings', null, null, $d);
+
+        // P2-9: going live is the single most consequential change on this page,
+        // so say plainly that it happened rather than "Settings updated."
+        if ($wasDryRun && ! $d['dry_run']) {
+            return back()->with('status', 'Dry-run is OFF — IAPM is now delivering real notifications to your destinations. Watch the Delivery Log for the first send.');
+        }
+        if (! $wasDryRun && $d['dry_run']) {
+            return back()->with('status', 'Dry-run is ON — IAPM will record what it would send but contact no destination.');
+        }
 
         return back()->with('status', 'Settings updated.');
     }

@@ -12,7 +12,10 @@
         <li class="dropdown {{ $iapmActive('iapm.incidents.index','iapm.incidents.show','iapm.matrix','iapm.stats') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#">Monitor <span class="caret"></span></a>
             <ul class="dropdown-menu">
-                <li><a href="{{ route('iapm.incidents.index') }}">Active Incidents</a></li>
+                {{-- P2-7: this said "Active Incidents" but opens the open-incident
+                     working set, which includes pending, acknowledged and
+                     suppressed. The page heading now says the same thing. --}}
+                <li><a href="{{ route('iapm.incidents.index') }}">Incidents</a></li>
                 <li><a href="{{ route('iapm.matrix') }}">Interface Matrix</a></li>
                 <li><a href="{{ route('iapm.stats') }}">Statistics &amp; SLA</a></li>
             </ul>
@@ -21,7 +24,9 @@
             <a class="dropdown-toggle" data-toggle="dropdown" href="#">Configure <span class="caret"></span></a>
             <ul class="dropdown-menu">
                 <li class="dropdown-header">Follow in order</li>
-                <li><a href="{{ route('iapm.settings.edit') }}">0. Generate ingestion token</a></li>
+                {{-- P2-8: this used to link to /settings with no fragment, dropping
+                     the operator at the top of a long single-column page. --}}
+                <li><a href="{{ route('iapm.settings.edit') }}#ingestion-token">0. Generate ingestion token</a></li>
                 <li><a href="{{ route('iapm.destinations.index') }}">1. Destinations</a></li>
                 <li><a href="{{ route('iapm.policies.index') }}">2. Policies</a></li>
                 <li><a href="{{ route('iapm.schedules.index') }}">3. Schedules <span class="text-muted">(optional)</span></a></li>

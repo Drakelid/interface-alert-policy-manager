@@ -117,6 +117,7 @@ class DestinationController extends Controller
 
     private function config(array $d): array
     {
-        return ['url' => $d['url'], 'username' => $d['username'] ?? null, 'password' => $d['password'] ?? null, 'bearer_token' => $d['bearer_token'] ?? null, 'default_receiver' => $d['default_receiver'] ?? null, 'mode' => $d['mode'], 'connect_timeout' => $d['connect_timeout'], 'timeout' => $d['timeout'], 'retry_count' => $d['retry_count'], 'retry_delay_ms' => $d['retry_delay_ms'], 'verify_tls' => $d['verify_tls'], 'allow_private_networks' => $d['allow_private_networks'], 'headers' => json_decode($d['headers_json'] ?? '[]', true, 32, JSON_THROW_ON_ERROR)];
+        return ['url' => $d['url'], 'username' => $d['username'] ?? null, 'password' => $d['password'] ?? null, 'bearer_token' => $d['bearer_token'] ?? null, 'default_receiver' => $d['default_receiver'] ?? null, 'mode' => $d['mode'], 'connect_timeout' => $d['connect_timeout'], 'timeout' => $d['timeout'], 'retry_count' => $d['retry_count'], 'retry_delay_ms' => $d['retry_delay_ms'], 'verify_tls' => $d['verify_tls'], 'allow_private_networks' => $d['allow_private_networks'], // '{}' rather than '[]' to match the field's own label, "JSON object" (P2-3).
+            'headers' => json_decode($d['headers_json'] ?? '{}', true, 32, JSON_THROW_ON_ERROR)];
     }
 }

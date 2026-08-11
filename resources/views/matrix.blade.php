@@ -115,11 +115,11 @@
             </div>
             <div class="form-group">
                 <label class="iapm-invisible-label" for="iapm-bulk-apply">Apply</label>
-                <button class="btn btn-warning form-control" id="iapm-bulk-apply" data-iapm-confirm="Apply this operation to the selected interfaces?">Apply to selected</button>
+                <button class="btn btn-warning form-control" id="iapm-bulk-apply" data-iapm-bulk-button="matrix" disabled data-iapm-confirm="Apply this operation to the selected interfaces?">Apply to selected<span data-iapm-bulk-count></span></button>
             </div>
         </div>
     </div>
-</div><div class="iapm-table-wrap"><table class="table table-hover table-condensed iapm-sticky"><thead><tr>
+</div><div class="iapm-table-wrap" data-iapm-bulk-scope="matrix"><table class="table table-hover table-condensed iapm-sticky"><thead><tr>
 <th><input type="checkbox" aria-label="Select all interfaces on this page" onclick="document.querySelectorAll('.iapm-port').forEach(e=>e.checked=this.checked)"></th>
 @include('iapm::partials.sort-header',['column'=>'port_id','label'=>'port_id','numeric'=>true])
 @include('iapm::partials.sort-header',['column'=>'hostname','label'=>'Device'])

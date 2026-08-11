@@ -10,10 +10,12 @@
     <dt>Policy</dt><dd>@if($incident->policy)<a href="{{ route('iapm.policies.edit',$incident->policy) }}">{{ $incident->policy->name }}</a>@else<span class="text-warning">none</span>@endif</dd>
     <dt>Severity</dt><dd>{{ $incident->severity->value }}</dd>
     <dt>Suppression</dt><dd>{{ $incident->suppression_reason ?: '—' }}</dd>
-    <dt>First seen</dt><dd>{{ $incident->first_seen_at }}</dd>
-    <dt>Triggered</dt><dd>{{ $incident->triggered_at ?: '—' }}</dd>
-    <dt>Recovered</dt><dd>{{ $incident->recovered_at ?: '—' }}</dd>
-    <dt>Muted until</dt><dd>{{ $incident->muted_until ?: '—' }}</dd>
+    <dt>First seen</dt><dd>@include('iapm::partials.time',['at'=>$incident->first_seen_at])</dd>
+    {{-- P2-10: one time presentation everywhere — relative text with the exact
+         timestamp in the title, as the Overview's Recent Incidents table does. --}}
+    <dt>Triggered</dt><dd>@include('iapm::partials.time',['at'=>$incident->triggered_at])</dd>
+    <dt>Recovered</dt><dd>@include('iapm::partials.time',['at'=>$incident->recovered_at])</dd>
+    <dt>Muted until</dt><dd>@include('iapm::partials.time',['at'=>$incident->muted_until])</dd>
     <dt>Notifications</dt><dd>{{ $incident->notification_count }}</dd>
 </dl>
 </div><div class="col-md-6">
@@ -24,11 +26,16 @@
 </div></div>
 </div></div>
 
-<div class="panel panel-default"><div class="panel-heading">Actions</div><div class="panel-body form-inline">
-@if($incident->state->value!=='acknowledged'&&$incident->state->value!=='recovered')<form method="post" action="{{ route('iapm.incidents.acknowledge',$incident) }}" style="display:inline;">@csrf<button class="btn btn-primary btn-sm">Acknowledge</button></form>@elseif($incident->state->value==='acknowledged')<form method="post" action="{{ route('iapm.incidents.unacknowledge',$incident) }}" style="display:inline;">@csrf<button class="btn btn-default btn-sm">Unacknowledge</button></form>@endif
-<form method="post" action="{{ route('iapm.incidents.reconcile',$incident) }}" style="display:inline;" data-iapm-busy>@csrf<button class="btn btn-default btn-sm" data-busy="Reconciling…">Reconcile now</button></form>
-<form method="post" action="{{ route('iapm.incidents.mute',$incident) }}" style="display:inline;">@csrf<input type="datetime-local" name="muted_until" required class="form-control input-sm"><button class="btn btn-warning btn-sm">Mute</button></form>
-@if($incident->muted_until)<form method="post" action="{{ route('iapm.incidents.unmute',$incident) }}" style="display:inline;">@csrf<button class="btn btn-default btn-sm">Unmute</button></form>@endif
+{{-- P2-6: these forms were inline with no gap, so "Unacknowledge" and
+     "Reconcile now" rendered butted together. A flex row spaces them. --}}
+<div class="panel panel-default"><div class="panel-heading">Actions</div><div class="panel-body iapm-action-row">
+@if($incident->state->value!=='acknowledged'&&$incident->state->value!=='recovered')<form method="post" action="{{ route('iapm.incidents.acknowledge',$incident) }}">@csrf<button class="btn btn-primary btn-sm">Acknowledge</button></form>@elseif($incident->state->value==='acknowledged')<form method="post" action="{{ route('iapm.incidents.unacknowledge',$incident) }}">@csrf<button class="btn btn-default btn-sm">Unacknowledge</button></form>@endif
+<form method="post" action="{{ route('iapm.incidents.reconcile',$incident) }}" data-iapm-busy>@csrf<button class="btn btn-default btn-sm" data-busy="Reconciling…">Reconcile now</button></form>
+<form method="post" action="{{ route('iapm.incidents.mute',$incident) }}" class="iapm-action-row">@csrf
+    <label class="sr-only" for="iapm-mute-until">Mute until</label>
+    <input type="datetime-local" id="iapm-mute-until" name="muted_until" required class="form-control input-sm"><button class="btn btn-warning btn-sm">Mute</button>
+</form>
+@if($incident->muted_until)<form method="post" action="{{ route('iapm.incidents.unmute',$incident) }}">@csrf<button class="btn btn-default btn-sm">Unmute</button></form>@endif
 </div></div>
 
 @if($incident->policy)<div class="panel panel-default"><div class="panel-heading">Controlled resend</div><div class="panel-body">
@@ -37,7 +44,7 @@
 <button class="btn btn-warning btn-sm">Resend action</button></form>
 </div></div>@endif
 
-<h3>Timeline</h3><div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Time</th><th>Event</th><th>Message</th></tr></thead><tbody>@foreach($incident->events->sortByDesc('created_at') as $e)<tr><td style="white-space:nowrap;">{{ $e->created_at }}</td><td><span class="label label-default">{{ $e->event_type }}</span></td><td>{{ $e->event_message }}</td></tr>@endforeach</tbody></table></div>
+<h3>Timeline</h3><div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Time</th><th>Event</th><th>Message</th></tr></thead><tbody>@foreach($incident->events->sortByDesc('created_at') as $e)<tr><td style="white-space:nowrap;">@include('iapm::partials.time',['at'=>$e->created_at])</td><td><span class="label label-default">{{ $e->event_type }}</span></td><td>{{ $e->event_message }}</td></tr>@endforeach</tbody></table></div>
 
-<h3>Deliveries</h3><div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Time</th><th>Phase</th><th>Status</th><th>HTTP</th><th>Error</th></tr></thead><tbody>@forelse($incident->deliveries->sortByDesc('created_at') as $delivery)<tr><td style="white-space:nowrap;">{{ $delivery->created_at }}</td><td>{{ $delivery->phase }}</td><td>@if($delivery->status==='sent')<span class="label label-success">sent</span>@elseif($delivery->status==='dry_run')<span class="label label-info">dry-run</span>@else<span class="label label-danger">{{ $delivery->status }}</span>@endif</td><td>{{ $delivery->response_status }}</td><td>{{ $delivery->error_message }}</td></tr>@empty<tr><td colspan="5" class="text-muted">No delivery attempts.</td></tr>@endforelse</tbody></table></div>
+<h3>Deliveries</h3><div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Time</th><th>Phase</th><th>Status</th><th>HTTP</th><th>Error</th></tr></thead><tbody>@forelse($incident->deliveries->sortByDesc('created_at') as $delivery)<tr><td style="white-space:nowrap;">@include('iapm::partials.time',['at'=>$delivery->created_at])</td><td>{{ $delivery->phase }}</td><td>@if($delivery->status==='sent')<span class="label label-success">sent</span>@elseif($delivery->status==='dry_run')<span class="label label-info">dry-run</span>@else<span class="label label-danger">{{ $delivery->status }}</span>@endif</td><td>{{ $delivery->response_status }}</td><td>{{ $delivery->error_message }}</td></tr>@empty<tr><td colspan="5" class="text-muted">No delivery attempts.</td></tr>@endforelse</tbody></table></div>
 </div>@endsection

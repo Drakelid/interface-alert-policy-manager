@@ -23,6 +23,17 @@
 .iapm-invisible-label { visibility:hidden; }
 /* Number inputs used to stretch the full ~1360px page width (P2-1). */
 .iapm-narrow-field { max-width:320px; }
+/* Rows of separate action forms. Inline forms have no gap of their own, which
+   is how "Unacknowledge" and "Reconcile now" ended up touching (P2-6). */
+.iapm-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.iapm-action-row form { display:flex; align-items:center; gap:6px; margin:0; }
+/* Settings jump list and sticky save (P2-8) */
+.iapm-section-nav { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid rgba(128,128,128,.25); }
+.iapm-sticky-save { position:sticky; bottom:0; z-index:5; display:flex; gap:10px; align-items:center; padding:10px 12px; margin-top:14px;
+    background:rgba(255,255,255,.96); border-top:1px solid rgba(128,128,128,.35); box-shadow:0 -2px 6px rgba(0,0,0,.08); }
+.dark .iapm-sticky-save { background:rgba(30,34,38,.96); }
+/* Anchored sections must not land under the sticky nav bar. */
+[id]:target { scroll-margin-top:70px; }
 .iapm-chips { display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top:6px; }
 .iapm-chips .iapm-chip { font-family:monospace; font-size:11px; }
 .iapm-sms-counter { margin:4px 0 0; font-variant-numeric:tabular-nums; }
@@ -99,6 +110,32 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
             }
         }
     }, true);
+
+    // --- Bulk actions follow the selection (P2-11) ---
+    // A prominent red "Delete selected" that is enabled with nothing ticked is
+    // an invitation to click it and find out. The button stays disabled until
+    // something is selected and says how many.
+    document.querySelectorAll('[data-iapm-bulk-scope]').forEach(function (scope) {
+        var checkboxes = function () { return scope.querySelectorAll('input[type=checkbox].iapm-bulk, input[type=checkbox].iapm-port'); };
+        var buttons = document.querySelectorAll('[data-iapm-bulk-button="' + scope.dataset.iapmBulkScope + '"]');
+        if (! buttons.length) { return; }
+
+        function update() {
+            var selected = 0;
+            checkboxes().forEach(function (box) { if (box.checked) { selected++; } });
+            buttons.forEach(function (button) {
+                button.disabled = selected === 0;
+                var label = button.querySelector('[data-iapm-bulk-count]');
+                if (label) { label.textContent = selected ? ' (' + selected + ')' : ''; }
+                button.title = selected === 0 ? 'Select at least one row first' : '';
+            });
+        }
+
+        scope.addEventListener('change', function (e) {
+            if (e.target.matches('input[type=checkbox]')) { update(); }
+        });
+        update();
+    });
 
     // --- Click-to-insert placeholder chips (P2-1 / P4-4) ---
     document.querySelectorAll('[data-iapm-chip-target]').forEach(function (group) {
