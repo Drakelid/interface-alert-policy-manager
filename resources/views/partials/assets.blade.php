@@ -54,6 +54,9 @@ th a:hover .iapm-sort-idle { opacity:.7; }
 /* Pages started at h2 with no h1 (P3-3). The h1 keeps the visual weight the h2
    had rather than jumping to the browser default. */
 h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
+/* A group heading that is not a control label: using <label> for it made the
+   label point at nothing, which is worse than no label at all (P3-1). */
+.iapm-field-legend { display:block; font-weight:600; margin-bottom:3px; }
 .iapm-toolbar { margin-bottom:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .iapm-toolbar .spacer { flex:1 1 auto; }
 .iapm-num { text-align:right; font-variant-numeric:tabular-nums; }
@@ -110,6 +113,24 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
             }
         }
     }, true);
+
+    // --- Declarative replacements for inline handlers (P3-6) ---
+    // Inline onclick/onchange would require 'unsafe-inline' in a CSP.
+    document.addEventListener('change', function (e) {
+        if (e.target.matches && e.target.matches('[data-iapm-submit-on-change]') && e.target.form) {
+            e.target.form.submit();
+        }
+    });
+    document.addEventListener('click', function (e) {
+        var toggle = e.target.closest && e.target.closest('[data-iapm-toggle-all]');
+        if (! toggle) { return; }
+        var scope = toggle.closest('table') || document;
+        scope.querySelectorAll(toggle.dataset.iapmToggleAll).forEach(function (box) {
+            box.checked = toggle.checked;
+        });
+        // Let the bulk-selection watcher recount.
+        scope.dispatchEvent(new Event('change', { bubbles: true }));
+    });
 
     // --- Bulk actions follow the selection (P2-11) ---
     // A prominent red "Delete selected" that is enabled with nothing ticked is

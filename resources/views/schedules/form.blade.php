@@ -68,7 +68,7 @@
             </fieldset>
 
             <div id="iapm-day-editor" @if($iapmMode==='always') style="display:none;" @endif>
-                <label>Weekly times</label>
+                <span class="iapm-field-legend">Weekly times</span>
                 <p class="iapm-hint">Add one or more ranges per day. A range that ends before it starts (e.g. 22:00&ndash;06:00) wraps past midnight. Leave a day empty for no window that day.</p>
                 <table class="table table-condensed" id="iapm-day-table">
                     <thead><tr><th style="width:9em;">Day</th><th>Time ranges</th><th style="width:6em;"></th></tr></thead>

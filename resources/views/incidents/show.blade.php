@@ -1,7 +1,7 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Incident '.$incident->id) @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')
 @php($ctx = (array) $incident->context_json)
-<h2>Incident {{ $incident->id }} @include('iapm::partials.state-label',['state'=>$incident->state->value])</h2>
+<h1 class="iapm-page-title">Incident {{ $incident->id }} @include('iapm::partials.state-label',['state'=>$incident->state->value])</h1>
 
 <div class="row"><div class="col-md-6">
 <dl class="dl-horizontal">
@@ -39,12 +39,12 @@
 </div></div>
 
 @if($incident->policy)<div class="panel panel-default"><div class="panel-heading">Controlled resend</div><div class="panel-body">
-<form class="form-inline" method="post" action="{{ route('iapm.incidents.resend',$incident) }}" data-iapm-busy onsubmit="return confirm('Send this notification action now? Dry-run settings still apply.')">@csrf
-<select class="form-control input-sm" name="action_id">@foreach($incident->policy->actions as $action)<option value="{{ $action->id }}">{{ $action->phase->value }} — {{ $action->destination?->name }}</option>@endforeach</select>
+<form class="form-inline" method="post" action="{{ route('iapm.incidents.resend',$incident) }}" data-iapm-busy data-iapm-confirm="Send this notification action now? Dry-run settings still apply.">@csrf
+<label class="sr-only" for="iapm-resend-action">Action to resend</label><select class="form-control input-sm" id="iapm-resend-action" name="action_id">@foreach($incident->policy->actions as $action)<option value="{{ $action->id }}">{{ $action->phase->value }} — {{ $action->destination?->name }}</option>@endforeach</select>
 <button class="btn btn-warning btn-sm">Resend action</button></form>
 </div></div>@endif
 
-<h3>Timeline</h3><div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Time</th><th>Event</th><th>Message</th></tr></thead><tbody>@foreach($incident->events->sortByDesc('created_at') as $e)<tr><td style="white-space:nowrap;">@include('iapm::partials.time',['at'=>$e->created_at])</td><td><span class="label label-default">{{ $e->event_type }}</span></td><td>{{ $e->event_message }}</td></tr>@endforeach</tbody></table></div>
+<h2>Timeline</h2><div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Time</th><th>Event</th><th>Message</th></tr></thead><tbody>@foreach($incident->events->sortByDesc('created_at') as $e)<tr><td style="white-space:nowrap;">@include('iapm::partials.time',['at'=>$e->created_at])</td><td><span class="label label-default">{{ $e->event_type }}</span></td><td>{{ $e->event_message }}</td></tr>@endforeach</tbody></table></div>
 
-<h3>Deliveries</h3><div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Time</th><th>Phase</th><th>Status</th><th>HTTP</th><th>Error</th></tr></thead><tbody>@forelse($incident->deliveries->sortByDesc('created_at') as $delivery)<tr><td style="white-space:nowrap;">@include('iapm::partials.time',['at'=>$delivery->created_at])</td><td>{{ $delivery->phase }}</td><td>@if($delivery->status==='sent')<span class="label label-success">sent</span>@elseif($delivery->status==='dry_run')<span class="label label-info">dry-run</span>@else<span class="label label-danger">{{ $delivery->status }}</span>@endif</td><td>{{ $delivery->response_status }}</td><td>{{ $delivery->error_message }}</td></tr>@empty<tr><td colspan="5" class="text-muted">No delivery attempts.</td></tr>@endforelse</tbody></table></div>
+<h2>Deliveries</h2><div class="table-responsive"><table class="table table-condensed"><thead><tr><th>Time</th><th>Phase</th><th>Status</th><th>HTTP</th><th>Error</th></tr></thead><tbody>@forelse($incident->deliveries->sortByDesc('created_at') as $delivery)<tr><td style="white-space:nowrap;">@include('iapm::partials.time',['at'=>$delivery->created_at])</td><td>{{ $delivery->phase }}</td><td>@if($delivery->status==='sent')<span class="label label-success">sent</span>@elseif($delivery->status==='dry_run')<span class="label label-info">dry-run</span>@else<span class="label label-danger">{{ $delivery->status }}</span>@endif</td><td>{{ $delivery->response_status }}</td><td>{{ $delivery->error_message }}</td></tr>@empty<tr><td colspan="5" class="iapm-hint">No delivery attempts.</td></tr>@endforelse</tbody></table></div>
 </div>@endsection

@@ -1,6 +1,6 @@
 @extends('layouts.librenmsv1') @section('title',$policy->exists?'Edit IAPM Policy':'Create IAPM Policy') @section('content')
-<div class="container-fluid">@include('iapm::partials.nav')<h2>{{ $policy->exists?'Edit':'Create' }} Policy</h2>
-<p class="text-muted">Timing controls the incident lifecycle: <strong>trigger delay</strong> + <strong>down observations</strong> must both be satisfied before an incident becomes active and notifies; <strong>repeat</strong>/<strong>maximum repeats</strong> govern reminders; <strong>recovery hold-down</strong> is how long an interface must stay up before it's marked recovered. Set 0 for immediate. Detection can never be faster than your LibreNMS poll interval (300 seconds by default), so timings below that round up to the next poll. Add notification <em>actions</em> below after saving.</p>
+<div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">{{ $policy->exists?'Edit':'Create' }} Policy</h1>
+<p class="iapm-hint">Timing controls the incident lifecycle: <strong>trigger delay</strong> + <strong>down observations</strong> must both be satisfied before an incident becomes active and notifies; <strong>repeat</strong>/<strong>maximum repeats</strong> govern reminders; <strong>recovery hold-down</strong> is how long an interface must stay up before it's marked recovered. Set 0 for immediate. Detection can never be faster than your LibreNMS poll interval (300 seconds by default), so timings below that round up to the next poll. Add notification <em>actions</em> below after saving.</p>
 <form method="post" action="{{ $policy->exists?route('iapm.policies.update',$policy):route('iapm.policies.store') }}">@csrf @if($policy->exists)@method('PUT')@endif<div class="row"><div class="col-md-6">
 @php
 $fields = [
@@ -19,25 +19,28 @@ $fields = [
   'maximum_repeats'=>['label'=>'Maximum repeats','type'=>'number','min'=>0,'help'=>'Cap on reminder re-sends. Blank = unlimited. 0 = no reminders at all (the first notification is still sent). An action can override this with its own "maximum sends".'],
 ];
 @endphp
+{{-- P3-1: this form had 26 labels and not one `for` attribute, leaving most of
+     its fields with no programmatic name at all. Every control now has an id and
+     its label points at it; help text is linked with aria-describedby. --}}
 @foreach($fields as $key => $f)
 <div class="form-group">
-    <label>{{ $f['label'] }}@if(!empty($f['unit'])) <span class="text-muted">({{ $f['unit'] }})</span>@endif</label>
+    <label for="iapm-policy-{{ $key }}">{{ $f['label'] }}@if(!empty($f['unit'])) <span class="iapm-hint">({{ $f['unit'] }})</span>@endif</label>
     @if($f['type']==='textarea')
-    <textarea class="form-control" name="{{ $key }}">{{ old($key,$policy->$key) }}</textarea>
+    <textarea class="form-control" id="iapm-policy-{{ $key }}" name="{{ $key }}"@if(!empty($f['help'])) aria-describedby="iapm-policy-{{ $key }}-help"@endif>{{ old($key,$policy->$key) }}</textarea>
     @else
-    <input class="form-control {{ !empty($f['seconds'])?'iapm-seconds':'' }}" type="{{ $f['type'] }}" name="{{ $key }}" value="{{ old($key,$policy->$key) }}"{{ isset($f['min']) ? ' min='.$f['min'] : '' }}{{ !empty($f['required']) ? ' required' : '' }}>
+    <input class="form-control {{ !empty($f['seconds'])?'iapm-seconds':'' }}" id="iapm-policy-{{ $key }}" type="{{ $f['type'] }}" name="{{ $key }}" value="{{ old($key,$policy->$key) }}"{{ isset($f['min']) ? ' min='.$f['min'] : '' }}{{ !empty($f['required']) ? ' required' : '' }}@if(!empty($f['help'])) aria-describedby="iapm-policy-{{ $key }}-help"@endif>
     @if(!empty($f['seconds']))<span class="help-block iapm-seconds-hint text-info" style="display:inline;margin-left:6px;"></span>@endif
     @endif
-    @if(!empty($f['help']))<p class="help-block">{{ $f['help'] }}</p>@endif
+    @if(!empty($f['help']))<p class="iapm-hint" id="iapm-policy-{{ $key }}-help">{{ $f['help'] }}</p>@endif
 </div>
 @endforeach
-<div class="form-group"><label>Severity</label><select class="form-control" name="severity">@foreach(['info','warning','critical'] as $v)<option @selected(old('severity',$policy->severity?->value??'critical')===$v)>{{ $v }}</option>@endforeach</select></div></div><div class="col-md-6">
-@foreach(['enabled','notifications_enabled','notify_recovery','suppress_device_down','suppress_admin_down','suppress_ignored_port','suppress_disabled_port','suppress_deleted_port','suppress_maintenance','suppress_parent_down'] as $key)<input type="hidden" name="{{ $key }}" value="0"><div class="checkbox"><label><input type="checkbox" name="{{ $key }}" value="1" @checked(old($key,$policy->exists?$policy->$key:true))> {{ str_replace('_',' ',ucfirst($key)) }}</label></div>@endforeach
-<input type="hidden" name="suppress_uplink_down" value="0"><div class="checkbox"><label><input type="checkbox" name="suppress_uplink_down" value="1" @checked(old('suppress_uplink_down',$policy->exists?$policy->suppress_uplink_down:false))> Suppress when uplink down <span class="help-block" style="display:inline">(root-cause: needs an uplink port group set in Settings)</span></label></div>
-<div class="form-group"><label>Schedule</label><select class="form-control" name="business_schedule_id"><option value="">24/7</option>@foreach($schedules as $s)<option value="{{ $s->id }}" @selected(old('business_schedule_id',$policy->business_schedule_id)==$s->id)>{{ $s->name }}</option>@endforeach</select></div>
-<fieldset style="margin-top:10px;"><legend style="font-size:14px;">Flap dampening <small class="text-muted">(optional)</small></legend>
-<p class="help-block">When an interface cycles down/up faster than the threshold, send one "flapping" notice and dampen the rest until it stabilises. Leave threshold blank to disable.</p>
-@foreach(['flap_threshold'=>['Flap threshold (down/up cycles)',false],'flap_window_seconds'=>['Flap window (seconds)',true],'flap_settle_seconds'=>['Settle period (seconds)',true]] as $key=>$meta)<div class="form-group"><label>{{ $meta[0] }}</label><input class="form-control{{ $meta[1]?' iapm-seconds':'' }}" type="number" min="0" name="{{ $key }}" value="{{ old($key,$policy->$key) }}">@if($meta[1])<span class="help-block iapm-seconds-hint text-info" style="display:inline;margin-left:6px;"></span>@endif</div>@endforeach
+<div class="form-group"><label for="iapm-policy-severity">Severity</label><select class="form-control" id="iapm-policy-severity" name="severity">@foreach(['info','warning','critical'] as $v)<option @selected(old('severity',$policy->severity?->value??'critical')===$v)>{{ $v }}</option>@endforeach</select></div></div><div class="col-md-6">
+@foreach(['enabled','notifications_enabled','notify_recovery','suppress_device_down','suppress_admin_down','suppress_ignored_port','suppress_disabled_port','suppress_deleted_port','suppress_maintenance','suppress_parent_down'] as $key)<input type="hidden" name="{{ $key }}" value="0"><div class="checkbox"><label for="iapm-policy-{{ $key }}"><input type="checkbox" id="iapm-policy-{{ $key }}" name="{{ $key }}" value="1" @checked(old($key,$policy->exists?$policy->$key:true))> {{ str_replace('_',' ',ucfirst($key)) }}</label></div>@endforeach
+<input type="hidden" name="suppress_uplink_down" value="0"><div class="checkbox"><label for="iapm-policy-suppress_uplink_down"><input type="checkbox" id="iapm-policy-suppress_uplink_down" name="suppress_uplink_down" value="1" @checked(old('suppress_uplink_down',$policy->exists?$policy->suppress_uplink_down:false))> Suppress when uplink down <span class="iapm-hint">(root-cause: needs an uplink port group set in Settings)</span></label></div>
+<div class="form-group"><label for="iapm-policy-schedule">Schedule</label><select class="form-control" id="iapm-policy-schedule" name="business_schedule_id"><option value="">24/7</option>@foreach($schedules as $s)<option value="{{ $s->id }}" @selected(old('business_schedule_id',$policy->business_schedule_id)==$s->id)>{{ $s->name }}</option>@endforeach</select></div>
+<fieldset style="margin-top:10px;"><legend style="font-size:14px;">Flap dampening <small class="iapm-hint">(optional)</small></legend>
+<p class="iapm-hint">When an interface cycles down/up faster than the threshold, send one "flapping" notice and dampen the rest until it stabilises. Leave threshold blank to disable.</p>
+@foreach(['flap_threshold'=>['Flap threshold (down/up cycles)',false],'flap_window_seconds'=>['Flap window (seconds)',true],'flap_settle_seconds'=>['Settle period (seconds)',true]] as $key=>$meta)<div class="form-group"><label for="iapm-policy-{{ $key }}">{{ $meta[0] }}</label><input class="form-control{{ $meta[1]?' iapm-seconds':'' }}" id="iapm-policy-{{ $key }}" type="number" min="0" name="{{ $key }}" value="{{ old($key,$policy->$key) }}">@if($meta[1])<span class="help-block iapm-seconds-hint text-info" style="display:inline;margin-left:6px;"></span>@endif</div>@endforeach
 </fieldset>
 </div></div>
 {{-- P2-4: Save used to sit at the bottom of the left column while the right
@@ -52,7 +55,7 @@ $fields = [
 @if($policy->exists)<hr><h2>Notification actions <a class="btn btn-primary btn-sm" href="{{ route('iapm.actions.create',$policy) }}">Add action</a></h2>
 @php($enabledActionCount = $policy->actions()->where('enabled',true)->count())
 @if($enabledActionCount===0)<div class="alert alert-warning"><i class="fa fa-bell-slash"></i> <strong>This policy won't notify anyone yet.</strong> It has no enabled notification action, so matched interfaces will trigger incidents silently. <a href="{{ route('iapm.actions.create',$policy) }}">Add an action</a> pointing at a destination (e.g. your SMS gateway).</div>@endif
-<p class="text-muted">Build an <strong>escalation chain</strong> by adding multiple <em>escalation</em> actions with increasing delays and different destinations/receivers (e.g. 10m → primary, 20m → secondary, 30m → manager). Delays are measured from when the incident triggered; acknowledging the incident stops further escalation.</p>{{-- P1-4: only the phase cell was a link, and deleting an action was reachable
+<p class="iapm-hint">Build an <strong>escalation chain</strong> by adding multiple <em>escalation</em> actions with increasing delays and different destinations/receivers (e.g. 10m → primary, 20m → secondary, 30m → manager). Delays are measured from when the incident triggered; acknowledging the incident stops further escalation.</p>{{-- P1-4: only the phase cell was a link, and deleting an action was reachable
      only from inside the action editor. Both are explicit controls now. --}}
 <table class="table"><thead><tr><th>Phase</th><th>Destination</th><th>Delay</th><th>Repeat</th><th>Maximum</th><th>Status</th><th></th></tr></thead><tbody>
 @foreach($policy->actions()->with('destination')->orderBy('sort_order')->get() as $action)<tr>

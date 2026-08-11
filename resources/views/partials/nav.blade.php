@@ -29,7 +29,7 @@
                 <li><a href="{{ route('iapm.settings.edit') }}#ingestion-token">0. Generate ingestion token</a></li>
                 <li><a href="{{ route('iapm.destinations.index') }}">1. Destinations</a></li>
                 <li><a href="{{ route('iapm.policies.index') }}">2. Policies</a></li>
-                <li><a href="{{ route('iapm.schedules.index') }}">3. Schedules <span class="text-muted">(optional)</span></a></li>
+                <li><a href="{{ route('iapm.schedules.index') }}">3. Schedules <span class="iapm-hint">(optional)</span></a></li>
                 <li><a href="{{ route('iapm.assignments.index') }}">4. Assignments</a></li>
                 <li><a href="{{ route('iapm.setup-helper') }}">5. LibreNMS setup helper</a></li>
             </ul>

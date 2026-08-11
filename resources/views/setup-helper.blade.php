@@ -1,6 +1,6 @@
 @extends('layouts.librenmsv1') @section('title','IAPM LibreNMS Setup') @section('content')
-<div class="container-fluid">@include('iapm::partials.nav')<h2>LibreNMS Alert Setup</h2>
-<p class="text-muted">Configure LibreNMS to post interface alerts to IAPM. Do the three steps below in the LibreNMS alerting UI, then confirm it's working at the bottom.</p>
+<div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">LibreNMS Alert Setup</h1>
+<p class="iapm-hint">Configure LibreNMS to post interface alerts to IAPM. Do the three steps below in the LibreNMS alerting UI, then confirm it's working at the bottom.</p>
 
 @if(! $hasToken)
 <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> No ingestion token yet — <a href="{{ route('iapm.settings.edit') }}#ingestion-token">generate one first</a>; the transport below needs it.</div>
@@ -9,8 +9,8 @@
 <div class="panel panel-default">
     <div class="panel-heading"><strong>Step 1 — Alert rule</strong> <button type="button" class="btn btn-default btn-xs pull-right" data-copy="#iapm-rule"><i class="fa fa-copy"></i> Copy</button></div>
     <div class="panel-body">
-        <textarea id="iapm-rule" class="form-control" rows="4" readonly>{{ $rule }}</textarea>
-        <p class="help-block">Build this in the rule editor so LibreNMS validates it against your database. It uses the documented <code>macros.device_up</code> macro and only fires for an admin-up / oper-down interface that isn't ignored, disabled, or deleted.</p>
+        <textarea id="iapm-rule" class="form-control" rows="4" readonly aria-label="Alert rule expression">{{ $rule }}</textarea>
+        <p class="iapm-hint">Build this in the rule editor so LibreNMS validates it against your database. It uses the documented <code>macros.device_up</code> macro and only fires for an admin-up / oper-down interface that isn't ignored, disabled, or deleted.</p>
     </div>
 </div>
 
@@ -20,8 +20,8 @@
         {{-- data-literal-blade marks copy-paste content that is Blade source by design:
              this is the template the operator pastes into LibreNMS, not markup we compile.
              RouteSmokeTest strips these blocks before asserting no directive leaked. --}}
-        <textarea id="iapm-template" class="form-control" rows="20" readonly data-literal-blade="1">{{ $template }}</textarea>
-        <p class="help-block">Paste as the rule's alert template. It builds an array and applies Blade's <code>@@json</code> encoder (no manual quoting); recovery state 0 emits an empty fault array.</p>
+        <textarea id="iapm-template" class="form-control" rows="20" readonly data-literal-blade="1" aria-label="Alert template">{{ $template }}</textarea>
+        <p class="iapm-hint">Paste as the rule's alert template. It builds an array and applies Blade's <code>@@json</code> encoder (no manual quoting); recovery state 0 emits an empty fault array.</p>
     </div>
 </div>
 
@@ -43,10 +43,10 @@
                 <span class="iapm-hint">No token yet &mdash; <a href="{{ route('iapm.settings.edit') }}#ingestion-token">generate one</a> and this block becomes paste-ready.</span>
             @endif
         </div>
-        <textarea id="iapm-transport-headers" class="form-control" rows="4" readonly style="font-family:monospace;"
+        <textarea id="iapm-transport-headers" class="form-control" rows="4" readonly aria-label="Transport headers" style="font-family:monospace;"
                   data-iapm-token-template="{{ $iapmHeaderBlock }}">{{ str_replace('__TOKEN__', '<your IAPM ingestion token>', $iapmHeaderBlock) }}</textarea>
         <p>Body:</p>
-        <textarea id="iapm-transport" class="form-control" rows="1" readonly>@{{ $msg }}</textarea>
+        <textarea id="iapm-transport" class="form-control" rows="1" readonly aria-label="Transport request body">@{{ $msg }}</textarea>
         <div class="alert alert-warning" style="margin-top:10px;"><i class="fa fa-shield"></i> Do <strong>not</strong> put SMS credentials in this transport — IAPM owns downstream delivery. This transport only forwards the alert JSON.</div>
     </div>
 </div>
@@ -57,9 +57,9 @@
         @if($lastAlertAt)
             <p><i class="fa fa-check-circle text-success"></i> Last alert received <strong>@include('iapm::partials.time',['at'=>\Carbon\Carbon::parse($lastAlertAt)])</strong> — LibreNMS is posting to IAPM.</p>
         @else
-            <p><i class="fa fa-clock-o text-muted"></i> <strong>No alert received yet.</strong> After saving the rule and transport, trigger a real interface down (or use <a href="{{ route('iapm.simulate') }}">Simulate Alert</a> to exercise the pipeline). This box turns green once LibreNMS posts here.</p>
+            <p><i class="fa fa-clock-o iapm-hint"></i> <strong>No alert received yet.</strong> After saving the rule and transport, trigger a real interface down (or use <a href="{{ route('iapm.simulate') }}">Simulate Alert</a> to exercise the pipeline). This box turns green once LibreNMS posts here.</p>
         @endif
-        <p class="help-block">Also watch <code>storage/logs/iapm.log</code> for <code>Alert ingestion completed</code> lines.</p>
+        <p class="iapm-hint">Also watch <code>storage/logs/iapm.log</code> for <code>Alert ingestion completed</code> lines.</p>
     </div>
 </div>
 </div>

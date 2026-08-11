@@ -65,5 +65,5 @@
 <td>@if($d->status==='sent')<span class="label label-success">sent</span>@elseif($d->status==='dry_run')<span class="label label-info">dry-run</span>@else<span class="label label-danger">{{ $d->status }}</span>@endif</td>
 <td class="iapm-num">{{ $d->response_status }}</td>
 <td class="iapm-truncate" title="{{ $d->error_message }}">{{ $d->error_message }}</td>
-</tr>@empty<tr><td colspan="7" class="text-muted">No deliveries match.</td></tr>@endforelse
+</tr>@empty<tr><td colspan="7" class="iapm-hint">No deliveries match.</td></tr>@endforelse
 </tbody></table></div>{{ $deliveries->links() }}</div>@endsection

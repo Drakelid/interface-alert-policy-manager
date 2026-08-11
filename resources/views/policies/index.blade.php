@@ -1,15 +1,15 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Policies') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')
-<h2>Policies <a class="btn btn-primary btn-sm" href="{{ route('iapm.policies.create') }}"><i class="fa fa-plus"></i> Create</a></h2>
+<h1 class="iapm-page-title">Policies <a class="btn btn-primary btn-sm" href="{{ route('iapm.policies.create') }}"><i class="fa fa-plus"></i> Create</a></h1>
 @include('iapm::partials.step-header',['step'=>2,'total'=>4,'title'=>'Create a policy','desc'=>'A policy decides <em>when</em> an interface-down incident notifies — trigger delay, failed-poll count, repeats, escalation, and recovery. After saving, add notification <strong>actions</strong> pointing at a destination.','prevRoute'=>route('iapm.destinations.index'),'prevLabel'=>'Destinations','nextRoute'=>route('iapm.schedules.index'),'nextLabel'=>'Schedules'])
 @if($policies->count())
 <form id="iapm-bulk-policies" method="post" action="{{ route('iapm.policies.bulk-destroy') }}" data-iapm-confirm="Delete the selected policies? Any still referenced by assignments or active incidents are skipped.">@csrf @method('DELETE')
     <button class="btn btn-danger btn-sm" style="margin-bottom:8px;" data-iapm-bulk-button="policies" disabled><i class="fa fa-trash"></i> Delete selected<span data-iapm-bulk-count></span></button>
 </form>
 <div class="table-responsive" data-iapm-bulk-scope="policies"><table class="table table-hover">
-<thead><tr><th style="width:2em;"><input type="checkbox" onclick="document.querySelectorAll('.iapm-bulk').forEach(e=>e.checked=this.checked)"></th><th>Name</th><th>Severity</th><th>Priority</th><th>Status</th><th>Assignments</th><th>Actions</th><th></th></tr></thead>
+<thead><tr><th style="width:2em;"><input type="checkbox" aria-label="Select all policies on this page" data-iapm-toggle-all=".iapm-bulk"></th><th>Name</th><th>Severity</th><th>Priority</th><th>Status</th><th>Assignments</th><th>Actions</th><th></th></tr></thead>
 <tbody>@foreach($policies as $p)<tr>
-<td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-policies" name="ids[]" value="{{ $p->id }}"></td>
+<td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-policies" name="ids[]" value="{{ $p->id }}" aria-label="Select policy {{ $p->name }}"></td>
 <td><a href="{{ route('iapm.policies.edit',$p) }}">{{ $p->name }}</a></td>
 <td>{{ $p->severity->value }}</td>
 <td>{{ $p->priority }}</td>

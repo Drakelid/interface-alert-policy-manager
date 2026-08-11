@@ -1,19 +1,19 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Assignment') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')
-<h2>{{ $assignment->exists?'Edit':'Create' }} Assignment</h2>
-<p class="text-muted">Map interfaces to a policy. Choose a type below and only the relevant fields appear. Use <strong>Preview match count</strong> to see how many interfaces it currently affects before saving.</p>
+<h1 class="iapm-page-title">{{ $assignment->exists?'Edit':'Create' }} Assignment</h1>
+<p class="iapm-hint">Map interfaces to a policy. Choose a type below and only the relevant fields appear. Use <strong>Preview match count</strong> to see how many interfaces it currently affects before saving.</p>
 
 @php($selectedType = old('assignment_type',$assignment->assignment_type?->value ?? 'default'))
 @php($selectedGroups = old('device_group_ids', $assignment->deviceGroups->pluck('device_group_id')->map(fn($id)=>(string)$id)->all()))
 <form method="post" action="{{ $assignment->exists?route('iapm.assignments.update',$assignment):route('iapm.assignments.store') }}" id="iapm-assignment-form">@csrf @if($assignment->exists)@method('PUT')@endif
 
 <div class="row"><div class="col-md-7">
-<div class="form-group"><label>Policy</label>
-    <select name="policy_id" class="form-control" required>@foreach($policies as $p)<option value="{{ $p->id }}" @selected(old('policy_id',$assignment->policy_id)==$p->id)>{{ $p->name }}@unless($p->enabled) (disabled)@endunless</option>@endforeach</select>
-    <p class="help-block">The policy applied to interfaces this assignment matches.</p>
+<div class="form-group"><label for="iapm-as-policy">Policy</label>
+    <select name="policy_id" id="iapm-as-policy" class="form-control" required>@foreach($policies as $p)<option value="{{ $p->id }}" @selected(old('policy_id',$assignment->policy_id)==$p->id)>{{ $p->name }}@unless($p->enabled) (disabled)@endunless</option>@endforeach</select>
+    <p class="iapm-hint">The policy applied to interfaces this assignment matches.</p>
 </div>
 
-<div class="form-group"><label>Match by</label>
+<div class="form-group"><label for="iapm-type">Match by</label>
     <select name="assignment_type" id="iapm-type" class="form-control">
         @foreach(['default'=>'Default (everything not matched more specifically)','port'=>'Specific port','port_group'=>'Port group','device'=>'Device','device_group'=>'Device group(s)','location'=>'Location','ifalias_regex'=>'Interface description (ifAlias) regex','ifname_regex'=>'Interface name (ifName) regex','interface_type'=>'Interface type'] as $v=>$label)
         <option value="{{ $v }}" @selected($selectedType===$v)>{{ $label }}</option>@endforeach
@@ -25,21 +25,21 @@
 
 {{-- Device type-ahead (search endpoint; scales to very large device counts) --}}
 <div class="form-group iapm-field" data-types="device" style="position:relative;">
-    <label>Device</label>
-    <input type="text" class="form-control" id="iapm-dev-search" autocomplete="off" placeholder="Type a hostname to search…" value="{{ $deviceLabel }}" disabled>
+    <label for="iapm-dev-search">Device</label>
+    <input type="text" class="form-control" id="iapm-dev-search" aria-describedby="iapm-dev-help" autocomplete="off" placeholder="Type a hostname to search…" value="{{ $deviceLabel }}" disabled>
     <input type="hidden" name="assignment_reference" id="iapm-dev-id" value="{{ $selectedType==='device' ? old('assignment_reference',$assignment->assignment_reference) : '' }}" disabled>
     <div id="iapm-dev-results" class="list-group" style="display:none;position:absolute;z-index:1000;width:100%;max-height:240px;overflow:auto;margin-top:-6px;box-shadow:0 2px 6px rgba(0,0,0,.15);"></div>
-    <p class="help-block">Start typing and pick a device from the list. All interfaces on the selected device.</p>
+    <p class="iapm-hint" id="iapm-dev-help">Start typing and pick a device from the list. All interfaces on the selected device.</p>
 </div>
 
 {{-- Port group dropdown --}}
 <div class="form-group iapm-field" data-types="port_group">
-    <label>Port group</label>
-    <select name="assignment_reference" class="form-control iapm-pgsel" disabled>
+    <label for="iapm-as-portgroup">Port group</label>
+    <select name="assignment_reference" id="iapm-as-portgroup" class="form-control iapm-pgsel" disabled>
         <option value="">— select a port group —</option>
         @foreach($portGroups as $g)<option value="{{ $g->id }}" @selected(old('assignment_reference',$assignment->assignment_reference)==$g->id)>{{ $g->name }}</option>@endforeach
     </select>
-    <p class="help-block">All interfaces in this LibreNMS port group.</p>
+    <p class="iapm-hint">All interfaces in this LibreNMS port group.</p>
 </div>
 
 {{-- Specific port. There are far too many to enumerate, so this is the shared
@@ -57,40 +57,40 @@
 
 {{-- Location dropdown --}}
 <div class="form-group iapm-field" data-types="location">
-    <label>Location</label>
-    <select name="assignment_reference" class="form-control iapm-locsel" disabled>
+    <label for="iapm-as-location">Location</label>
+    <select name="assignment_reference" id="iapm-as-location" class="form-control iapm-locsel" disabled>
         <option value="">— select a location —</option>
         @foreach($locations as $loc)<option value="{{ $loc->id }}" @selected(old('assignment_reference',$assignment->assignment_reference)==$loc->id)>{{ $loc->location }}</option>@endforeach
     </select>
-    <p class="help-block">All interfaces on devices at this location.</p>
+    <p class="iapm-hint">All interfaces on devices at this location.</p>
 </div>
 
 {{-- Interface type --}}
 <div class="form-group iapm-field" data-types="interface_type">
-    <label>Interface type (ifType)</label>
-    <input name="assignment_reference" class="form-control iapm-typeval" disabled value="{{ old('assignment_reference',$assignment->assignment_reference) }}" placeholder="e.g. ethernetCsmacd, sonet, gpon">
-    <p class="help-block">Matches the SNMP <code>ifType</code> string exactly.</p>
+    <label for="iapm-as-iftype">Interface type (ifType)</label>
+    <input name="assignment_reference" id="iapm-as-iftype" class="form-control iapm-typeval" disabled value="{{ old('assignment_reference',$assignment->assignment_reference) }}" placeholder="e.g. ethernetCsmacd, sonet, gpon">
+    <p class="iapm-hint">Matches the SNMP <code>ifType</code> string exactly.</p>
 </div>
 
 {{-- Regex --}}
 <div class="form-group iapm-field" data-types="ifalias_regex,ifname_regex">
-    <label>Regular expression</label>
+    <label for="iapm-regex">Regular expression</label>
     <input name="match_expression" id="iapm-regex" class="form-control iapm-regexval" disabled value="{{ old('match_expression',$assignment->match_expression) }}" placeholder="/^CUST:/">
-    <p class="help-block">PCRE with delimiters, e.g. <code>/^xe-/</code>. Validated when you save.</p>
+    <p class="iapm-hint">PCRE with delimiters, e.g. <code>/^xe-/</code>. Validated when you save.</p>
 </div>
 
 {{-- Device groups multi-select + mode --}}
 <div class="form-group iapm-field" data-types="device_group">
-    <label>Device groups</label>
-    <select name="device_group_ids[]" class="form-control iapm-groupsel" multiple size="6" disabled>
+    <label for="iapm-as-groups">Device groups</label>
+    <select name="device_group_ids[]" id="iapm-as-groups" class="form-control iapm-groupsel" multiple size="6" disabled>
         @foreach($deviceGroups as $g)<option value="{{ $g->id }}" @selected(in_array((string)$g->id,$selectedGroups,true))>{{ $g->name }}</option>@endforeach
     </select>
-    <p class="help-block">Hold Ctrl/Cmd to select several. Mode below controls how multiple groups combine.</p>
+    <p class="iapm-hint">Hold Ctrl/Cmd to select several. Mode below controls how multiple groups combine.</p>
 </div>
 
 <div class="form-group iapm-field" data-types="device_group">
-    <label>Group match mode</label>
-    <select name="match_mode" class="form-control">
+    <label for="iapm-as-mode">Group match mode</label>
+    <select name="match_mode" id="iapm-as-mode" class="form-control">
         <option value="any" @selected(old('match_mode',$assignment->match_mode ?? 'any')==='any')>Match ANY selected group</option>
         <option value="all" @selected(old('match_mode',$assignment->match_mode)==='all')>Match ALL selected groups</option>
         <option value="exclude" @selected(old('match_mode',$assignment->match_mode)==='exclude')>EXCLUDE selected groups</option>
@@ -100,26 +100,26 @@
 <input type="hidden" name="match_mode" id="iapm-mode-fallback" value="any" disabled>
 
 <div class="form-group iapm-field" data-types="port,port_group,device,device_group,location,ifalias_regex,ifname_regex,interface_type">
-    <label>Receivers (optional, one per line)</label>
-    <textarea name="receivers_text" class="form-control" rows="2">{{ old('receivers_text',implode("\n",$assignment->metadata_json['receivers']??[])) }}</textarea>
-    <p class="help-block">Overrides the policy/destination receiver for interfaces matched here.</p>
+    <label for="iapm-as-receivers">Receivers <span class="iapm-hint">(optional, one per line)</span></label>
+    <textarea name="receivers_text" id="iapm-as-receivers" class="form-control" rows="2">{{ old('receivers_text',implode("\n",$assignment->metadata_json['receivers']??[])) }}</textarea>
+    <p class="iapm-hint">Overrides the policy/destination receiver for interfaces matched here.</p>
 </div>
 
-<div class="form-group"><label>Priority</label>
-    <input type="number" name="priority" class="form-control" value="{{ old('priority',$assignment->priority??0) }}">
-    <p class="help-block">Higher wins among assignments of the same type.</p>
+<div class="form-group"><label for="iapm-as-priority">Priority</label>
+    <input type="number" name="priority" id="iapm-as-priority" class="form-control" value="{{ old('priority',$assignment->priority??0) }}">
+    <p class="iapm-hint">Higher wins among assignments of the same type.</p>
 </div>
 
 <input type="hidden" name="enabled" value="0">
-<div class="checkbox"><label><input type="checkbox" name="enabled" value="1" @checked(old('enabled',$assignment->exists?$assignment->enabled:true))> Enabled</label></div>
+<div class="checkbox"><label for="iapm-as-enabled"><input type="checkbox" id="iapm-as-enabled" name="enabled" value="1" @checked(old('enabled',$assignment->exists?$assignment->enabled:true))> Enabled</label></div>
 
 <button class="btn btn-primary">Save</button>
 <button type="button" class="btn btn-default" id="iapm-preview-btn"><i class="fa fa-search"></i> Preview match count</button>
-<span id="iapm-preview-result" class="text-muted" style="margin-left:8px;"></span>
+<span id="iapm-preview-result" class="iapm-hint" style="margin-left:8px;"></span>
 </div></div>
 </form>
 
-@if($assignment->exists)<form method="post" action="{{ route('iapm.assignments.destroy',$assignment) }}" onsubmit="return confirm('Delete this assignment?')" style="margin-top:10px;">@csrf @method('DELETE')<button class="btn btn-danger">Delete assignment</button></form>@endif
+@if($assignment->exists)<form method="post" action="{{ route('iapm.assignments.destroy',$assignment) }}" data-iapm-confirm="Delete this assignment?" style="margin-top:10px;">@csrf @method('DELETE')<button class="btn btn-danger">Delete assignment</button></form>@endif
 </div>
 
 <script>

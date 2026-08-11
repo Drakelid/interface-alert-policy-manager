@@ -12,7 +12,7 @@
             @else
                 <p>The plugin has no page at <code>{{ $requestedPath }}</code>.</p>
             @endif
-            <p class="help-block">Use the navigation above, or jump straight to a common destination:</p>
+            <p class="iapm-hint">Use the navigation above, or jump straight to a common destination:</p>
             <p>
                 <a class="btn btn-primary" href="{{ route('iapm.overview') }}"><i class="fa fa-dashboard"></i> Overview</a>
                 <a class="btn btn-default" href="{{ route('iapm.incidents.index') }}">Incidents</a>

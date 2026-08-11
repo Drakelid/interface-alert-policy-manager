@@ -4,7 +4,7 @@ $w = (int) ($width ?? 140); $h = (int) ($height ?? 30); $n = count($iapmSpark);
 $max = $n ? max($iapmSpark) : 0;
 @endphp
 @if($n === 0)
-<span class="text-muted">no data</span>
+<span class="iapm-hint">no data</span>
 @else
 <svg class="iapm-spark" width="{{ $w }}" height="{{ $h }}" viewBox="0 0 {{ $w }} {{ $h }}" role="img" aria-label="{{ $label ?? 'trend' }}">
 @php $gap = $n > 40 ? 1 : 2; $bw = max(1, ($w - ($n - 1) * $gap) / $n); @endphp

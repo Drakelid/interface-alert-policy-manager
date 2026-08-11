@@ -1,4 +1,4 @@
-@extends('layouts.librenmsv1') @section('title','IAPM Interface Matrix') @section('content')<div class="container-fluid">@include('iapm::partials.nav')<h2>Interface Matrix</h2>
+@extends('layouts.librenmsv1') @section('title','IAPM Interface Matrix') @section('content')<div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">Interface Matrix</h1>
 {{-- P1-2: device group, device and location were free-text numeric boxes asking
      for internal primary keys. Groups and locations are small enough to
      enumerate, so they are selects; devices are not, so that one is a
@@ -120,7 +120,7 @@
         </div>
     </div>
 </div><div class="iapm-table-wrap" data-iapm-bulk-scope="matrix"><table class="table table-hover table-condensed iapm-sticky"><thead><tr>
-<th><input type="checkbox" aria-label="Select all interfaces on this page" onclick="document.querySelectorAll('.iapm-port').forEach(e=>e.checked=this.checked)"></th>
+<th><input type="checkbox" aria-label="Select all interfaces on this page" data-iapm-toggle-all=".iapm-port"></th>
 @include('iapm::partials.sort-header',['column'=>'port_id','label'=>'port_id','numeric'=>true])
 @include('iapm::partials.sort-header',['column'=>'hostname','label'=>'Device'])
 @include('iapm::partials.sort-header',['column'=>'ifName','label'=>'Interface'])

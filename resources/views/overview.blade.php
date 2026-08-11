@@ -12,9 +12,9 @@ $tile = function ($label, $value, $href, $accent = '', $hot = false) {
 <div class="container-fluid">
     @include('iapm::partials.nav')
     <div class="iapm-toolbar">
-        <h2 style="margin:0;">Interface Alert Policy Manager</h2>
+        <h1 class="iapm-page-title" style="margin:0;">Interface Alert Policy Manager</h1>
         <span class="spacer"></span>
-        <span id="iapm-autorefresh" data-interval="30"><label class="text-muted" style="font-weight:normal;"><input type="checkbox"> Auto-refresh</label> <span class="text-muted small iapm-updated"></span></span>
+        <span id="iapm-autorefresh" data-interval="30"><label class="iapm-hint" style="font-weight:normal;" for="iapm-autorefresh-box"><input type="checkbox" id="iapm-autorefresh-box"> Auto-refresh</label> <span class="iapm-hint small iapm-updated"></span></span>
     </div>
 
     @include('iapm::partials.setup-checklist')
@@ -24,7 +24,7 @@ $tile = function ($label, $value, $href, $accent = '', $hot = false) {
     <div class="panel panel-danger">
         <div class="panel-heading"><i class="fa fa-heartbeat"></i> <strong>IAPM health needs attention</strong></div>
         <div class="list-group" style="margin-bottom:0;">
-            @foreach($health as $check)<div class="list-group-item"><i class="fa fa-{{ $check['ok']?'check text-success':'times text-danger' }}" style="width:1.2em;"></i> <strong>{{ $check['label'] }}</strong> <span class="text-muted">— {{ $check['detail'] }}</span></div>@endforeach
+            @foreach($health as $check)<div class="list-group-item"><i class="fa fa-{{ $check['ok']?'check text-success':'times text-danger' }}" style="width:1.2em;"></i> <strong>{{ $check['label'] }}</strong> <span class="iapm-hint">— {{ $check['detail'] }}</span></div>@endforeach
         </div>
     </div>
     @endif
@@ -60,8 +60,8 @@ $tile = function ($label, $value, $href, $accent = '', $hot = false) {
         <td>@include('iapm::partials.state-label',['state'=>$incident->state->value])</td>
         <td>{{ $incident->severity->value }}</td>
         <td>@include('iapm::partials.time',['at'=>$incident->last_seen_at])</td>
-        <td class="iapm-actions">@if($incident->state->value!=='acknowledged' && $incident->state->value!=='recovered')<form method="post" action="{{ route('iapm.incidents.acknowledge',$incident) }}">@csrf<button class="btn btn-default btn-xs" title="Acknowledge"><i class="fa fa-check"></i></button></form>@endif</td>
-        </tr>@empty<tr><td colspan="6" class="text-muted">No incidents recorded yet. Once LibreNMS posts an alert it will appear here.</td></tr>@endforelse</tbody></table></div>
+        <td class="iapm-actions">@if($incident->state->value!=='acknowledged' && $incident->state->value!=='recovered')<form method="post" action="{{ route('iapm.incidents.acknowledge',$incident) }}">@csrf<button class="btn btn-default btn-xs" title="Acknowledge" aria-label="Acknowledge incident {{ $incident->id }}"><i class="fa fa-check"></i></button></form>@endif</td>
+        </tr>@empty<tr><td colspan="6" class="iapm-hint">No incidents recorded yet. Once LibreNMS posts an alert it will appear here.</td></tr>@endforelse</tbody></table></div>
     </div>
     {{ $incidents->links() }}
 </div>
