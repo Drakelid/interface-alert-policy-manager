@@ -8,9 +8,12 @@
     is forced to go looking for it.
 
     Expects: $value (current port_id), $valueLabel (its human label).
-    Optional: $id (field id prefix), $required.
+    Optional: $id (field id prefix), $required, $name (submitted field, default
+              port_id -- the assignment form submits the same value as
+              assignment_reference), $idLabel (label for the raw-id box).
 --}}
 @php($iapmPickerId = $id ?? 'iapm-port')
+@php($iapmPickerName = $name ?? 'port_id')
 <div class="form-group iapm-typeahead" style="position:relative;max-width:520px;"
      data-iapm-typeahead="{{ route('iapm.lookup.ports') }}">
     <label for="{{ $iapmPickerId }}-search">Interface</label>
@@ -24,8 +27,8 @@
     <p class="iapm-hint" id="{{ $iapmPickerId }}-help">Pick an interface and its <code>port_id</code> fills in below. The Interface Matrix shows and copies the same id.</p>
 </div>
 <div class="form-group" style="max-width:220px;">
-    <label for="{{ $iapmPickerId }}-id">port_id</label>
-    <input type="number" class="form-control" id="{{ $iapmPickerId }}-id" name="port_id"
+    <label for="{{ $iapmPickerId }}-id">{{ $idLabel ?? 'port_id' }}</label>
+    <input type="number" class="form-control" id="{{ $iapmPickerId }}-id" name="{{ $iapmPickerName }}"
            value="{{ $value ?? '' }}" @if($required ?? false) required @endif aria-describedby="{{ $iapmPickerId }}-id-help">
     <p class="iapm-hint" id="{{ $iapmPickerId }}-id-help">Or paste a LibreNMS <code>port_id</code> directly.</p>
 </div>

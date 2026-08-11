@@ -42,11 +42,17 @@
     <p class="help-block">All interfaces in this LibreNMS port group.</p>
 </div>
 
-{{-- Specific port (by numeric id — there can be too many to list) --}}
+{{-- Specific port. There are far too many to enumerate, so this is the shared
+     interface search; it writes the port_id into assignment_reference, and the
+     raw box stays for operators who already have the id (P1-2 / P0-6). --}}
 <div class="form-group iapm-field" data-types="port">
-    <label>Port ID</label>
-    <input name="assignment_reference" id="iapm-ref" class="form-control" value="{{ old('assignment_reference',$assignment->assignment_reference) }}" placeholder="e.g. 1143">
-    <p class="help-block">The stable LibreNMS <code>port_id</code>. Find it on the <a href="{{ route('iapm.matrix') }}" target="_blank">Interface Matrix</a>.</p>
+    @include('iapm::partials.port-picker',[
+        'id' => 'iapm-assign-port',
+        'name' => 'assignment_reference',
+        'idLabel' => 'Port ID',
+        'value' => $selectedType==='port' ? old('assignment_reference',$assignment->assignment_reference) : '',
+        'valueLabel' => $portLabel,
+    ])
 </div>
 
 {{-- Location dropdown --}}

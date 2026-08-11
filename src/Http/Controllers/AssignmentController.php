@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 use App\Models\Device;
 use App\Models\DeviceGroup;
 use App\Models\Location;
+use App\Models\Port;
 use App\Models\PortGroup;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -15,6 +16,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AssignmentMatchCounter;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 
 class AssignmentController extends Controller
 {
@@ -69,7 +71,12 @@ class AssignmentController extends Controller
             $deviceLabel = $d ? ($d->hostname.($d->sysName && $d->sysName !== $d->hostname ? ' ('.$d->sysName.')' : '')) : '';
         }
 
-        return ['assignment' => $assignment, 'policies' => Policy::orderBy('name')->get(), 'deviceGroups' => DeviceGroup::orderBy('name')->get(['id', 'name']), 'locations' => Location::orderBy('location')->get(['id', 'location']), 'portGroups' => PortGroup::orderBy('name')->get(['id', 'name']), 'deviceLabel' => $deviceLabel];
+        // The "specific port" type now uses the shared interface search, which
+        // needs the human label for whatever port is currently referenced.
+        $portRef = old('assignment_type', $assignment->assignment_type?->value) === 'port' ? old('assignment_reference', $assignment->assignment_reference) : null;
+        $port = $portRef ? Port::with('device')->find($portRef) : null;
+
+        return ['assignment' => $assignment, 'policies' => Policy::orderBy('name')->get(), 'deviceGroups' => DeviceGroup::orderBy('name')->get(['id', 'name']), 'locations' => Location::orderBy('location')->get(['id', 'location']), 'portGroups' => PortGroup::orderBy('name')->get(['id', 'name']), 'deviceLabel' => $deviceLabel, 'portLabel' => $port ? app(EntityLookup::class)->portLabel($port) : ''];
     }
 
     public function create()
