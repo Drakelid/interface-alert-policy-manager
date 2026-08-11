@@ -41,6 +41,24 @@ with the rest of the settings; nothing reads it.
 
 New optional setting: `IAPM_QUEUE_HEARTBEAT_STALE_SECONDS` (default 300).
 
+### Scheduler-managed workers now recycle every few minutes
+
+Only affects installs where the scheduler owns the workers (`IAPM_QUEUE_WORKERS`
+greater than 0); externally supervised workers are unchanged.
+
+Workers used to run with `--max-time=3600` behind a 70-minute overlap lock. A
+worker that died without releasing that lock — OOM kill, container stop, any
+`SIGKILL` — was not replaced until the lock expired, so a single kill could stop
+all IAPM delivery for over an hour. With the heartbeat above, `iapm:health` now
+reports that outage correctly, but it still had to be waited out.
+
+Workers now exit after `IAPM_QUEUE_WORKER_MAX_SECONDS` (default 240) with the
+lock sized just above that, so a killed worker is replaced within about 7
+minutes. Lifetimes are staggered per worker so they never all exit on the same
+tick. Nothing to do on upgrade; expect worker PIDs to change every few minutes,
+and treat that as normal. Raising the value lengthens the unreplaced-worker
+window by roughly the same amount.
+
 ### Schema change in this release: `failed_poll_count` → `down_observations`
 
 `iapm_policies.failed_poll_count` is renamed to `down_observations`. The field

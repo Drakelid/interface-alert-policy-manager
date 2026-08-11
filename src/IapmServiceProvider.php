@@ -34,6 +34,49 @@ class IapmServiceProvider extends ServiceProvider
 
     public const ABILITIES = ['view iapm', 'manage iapm policies', 'manage iapm assignments', 'manage iapm destinations', 'manage iapm settings', 'acknowledge iapm incidents', 'mute iapm incidents', 'test iapm destinations', 'view iapm audit logs'];
 
+    /**
+     * Offset between consecutive scheduler-managed workers' lifetimes. Without it
+     * every worker starts and exits on the same tick, so the queue is unattended
+     * until the next one. 60s is one scheduler tick, which is enough to guarantee
+     * the recycle windows never coincide.
+     */
+    private const WORKER_RECYCLE_STAGGER_SECONDS = 60;
+
+    /**
+     * Ceiling on how long a killed scheduler-managed worker may stay unreplaced:
+     * its overlap lock, plus the scheduler tick needed to notice the lock is gone.
+     */
+    private const MAX_RESPAWN_MINUTES = 9;
+
+    /**
+     * Overlap-lock window, in minutes, for a scheduler-managed queue worker.
+     *
+     * The lock must outlive the worker, or the scheduler starts a second worker
+     * under the same name on every tick after it expires and process count grows
+     * without bound. It must also not outlive it by much: a worker killed without
+     * running schedule:finish (OOM kill, container stop, SIGKILL) leaves the lock
+     * held, and nothing replaces that worker until it expires. So bound it just
+     * above the true worst-case lifetime — --max-time only stops the worker
+     * accepting new jobs, so one in-flight job may still run for the full job
+     * timeout after that — and add a minute of slack for a slow shutdown.
+     */
+    private function workerLockMinutes(int $maxSeconds, int $jobTimeout): int
+    {
+        return (int) ceil(($maxSeconds + $jobTimeout) / 60) + 1;
+    }
+
+    /**
+     * Longest worker lifetime whose lock still fits the respawn ceiling.
+     *
+     * A worker cannot be replaced faster than one job can run, so a job timeout
+     * at or above the whole budget makes the ceiling unreachable; the floor keeps
+     * the worker useful rather than pretending otherwise.
+     */
+    private function workerLifetimeCeiling(int $jobTimeout): int
+    {
+        return max(60, ((self::MAX_RESPAWN_MINUTES - 2) * 60) - $jobTimeout);
+    }
+
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/iapm.php', 'iapm');
@@ -105,10 +148,10 @@ class IapmServiceProvider extends ServiceProvider
 
             // When queued dispatch is enabled (the default), keep queue workers running
             // via the scheduler so notifications drain without requiring systemd. Each is
-            // a background, non-overlapping worker that recycles hourly (avoids leaks,
-            // picks up new code). --name makes each command distinct so N run in parallel.
-            // For heavier throughput add dedicated systemd workers (they safely share the
-            // same queue); set IAPM_QUEUE_WORKERS=0 to let the scheduler manage none.
+            // a background, non-overlapping worker that recycles every few minutes (avoids
+            // leaks, picks up new code). --name makes each command distinct so N run in
+            // parallel. For heavier throughput add dedicated systemd workers (they safely
+            // share the same queue); set IAPM_QUEUE_WORKERS=0 to let the scheduler manage none.
             try {
                 $queued = app(SettingStore::class)->get('dispatch_mode', 'queue') === 'queue';
             } catch (\Throwable) {
@@ -126,10 +169,18 @@ class IapmServiceProvider extends ServiceProvider
                 }
             })();
             if ($queued && $workers > 0 && $backendReady) {
+                $jobTimeout = max(1, (int) config('iapm.queue.timeout', 60));
+                $lifetimeCeiling = $this->workerLifetimeCeiling($jobTimeout);
+                $baseMaxSeconds = max(60, (int) config('iapm.queue.worker_max_seconds', 240));
                 for ($i = 1; $i <= $workers; $i++) {
+                    // Stagger each worker's lifetime so they do not all exit on the
+                    // same tick and leave the queue briefly unattended, but never
+                    // past the ceiling — the lock follows the lifetime, and a lock
+                    // longer than the respawn budget is the outage this avoids.
+                    $maxSeconds = min($lifetimeCeiling, $baseMaxSeconds + (($i - 1) * self::WORKER_RECYCLE_STAGGER_SECONDS));
                     $args = $conn ? [$conn] : [];
-                    $args += ['--queue' => (string) config('iapm.queue.name', 'iapm'), '--name' => 'iapm-'.$i, '--sleep' => 1, '--tries' => (int) config('iapm.queue.tries', 3), '--timeout' => (int) config('iapm.queue.timeout', 60), '--backoff' => (int) config('iapm.queue.retry_base_seconds', 15), '--max-time' => 3600];
-                    $schedule->command('queue:work', $args)->everyMinute()->withoutOverlapping(70)->runInBackground();
+                    $args += ['--queue' => (string) config('iapm.queue.name', 'iapm'), '--name' => 'iapm-'.$i, '--sleep' => 1, '--tries' => (int) config('iapm.queue.tries', 3), '--timeout' => $jobTimeout, '--backoff' => (int) config('iapm.queue.retry_base_seconds', 15), '--max-time' => $maxSeconds];
+                    $schedule->command('queue:work', $args)->everyMinute()->withoutOverlapping($this->workerLockMinutes($maxSeconds, $jobTimeout))->runInBackground();
                 }
             }
         });

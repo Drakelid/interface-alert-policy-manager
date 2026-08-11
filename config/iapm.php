@@ -94,6 +94,14 @@ return [
         // but not beyond what your SMS gateway accepts concurrently. Set 0 to let the
         // scheduler manage none (e.g. when you run dedicated systemd workers instead).
         'workers' => (int) env('IAPM_QUEUE_WORKERS', 3),
+        // How long a scheduler-managed worker runs before exiting so the next
+        // scheduler tick replaces it. This also bounds how long a worker that
+        // died without releasing its overlap lock (OOM kill, container stop,
+        // SIGKILL) stays unreplaced: the lock is derived from this value, so a
+        // long-lived worker means a long outage. Keep it small — the whole cost
+        // of a recycle is one PHP bootstrap, and a job in flight always finishes
+        // first. Workers are staggered so they never all recycle on one tick.
+        'worker_max_seconds' => (int) env('IAPM_QUEUE_WORKER_MAX_SECONDS', 240),
         // How long without a consumed heartbeat before iapm:health calls the queue
         // workers dead. The scheduler enqueues one heartbeat a minute, so this must
         // absorb a missed scheduler tick or a briefly busy worker without crying

@@ -98,6 +98,8 @@ Queued delivery is on by default and **self-provisions**: the queue tables were 
 pgrep -af 'queue:work --queue=iapm'     # workers appear within ~1 minute
 ```
 
+Each worker exits after `IAPM_QUEUE_WORKER_MAX_SECONDS` (default 240) and the next scheduler tick replaces it, so PIDs change every few minutes — that is the recycle, not a crash. Lifetimes are staggered so the workers never all exit on the same tick. The recycle also bounds recovery: a worker killed without releasing its overlap lock (OOM kill, container stop) is replaced within about 7 minutes rather than being blocked until the lock expires. Raising this value lengthens that outage proportionally.
+
 For a **production-hardened** setup (supervised, boot-persistent, auto-restarting workers), see [Rock-solid queue workers](#rock-solid-queue-workers-production) below and set `IAPM_QUEUE_WORKERS=0` so systemd owns the workers. To use synchronous delivery instead (no workers), Settings → *Delivery dispatch* → Synchronous.
 
 ### 6. Test before going live

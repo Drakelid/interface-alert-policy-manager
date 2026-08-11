@@ -179,7 +179,12 @@ class NotificationDispatcher
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             $result = $this->transports->for($outbox->destination->type)->send($configuration, (string) $outbox->receiver_encrypted, (string) $outbox->message_encrypted);
             $outbox->increment('attempt_count');
-            $this->record($outbox->incident, $outbox->destination, $outbox->action, $outbox->phase, $outbox, $result, $result->successful ? 'sent' : 'failed', $attempt);
+            // Log the outbox's cumulative attempt number, not this pass's loop
+            // counter. A row that failed here, was requeued, and later succeeded
+            // would otherwise record "attempt 1" against its final delivery,
+            // making the delivery log read as a first-try success and hiding the
+            // earlier failures from anyone reconstructing a retry history.
+            $this->record($outbox->incident, $outbox->destination, $outbox->action, $outbox->phase, $outbox, $result, $result->successful ? 'sent' : 'failed', (int) $outbox->attempt_count);
             if ($result->successful) {
                 break;
             }

@@ -75,6 +75,29 @@ class OutboxSafetyTest extends IntegrationTestCase
         self::assertSame(2, $incident->deliveries()->count());
     }
 
+    public function test_delivery_log_attempt_numbers_continue_across_requeues(): void
+    {
+        // The attempt column used to carry the per-dispatch loop counter, so a row
+        // that failed, was requeued, and then succeeded logged "attempt 1" against
+        // its final delivery — the log read as a first-try success and the earlier
+        // failure looked like it belonged to some other notification.
+        Http::fakeSequence()->push('failed', 500)->push('failed', 500)->push('ok', 200);
+        $policy = $this->policy();
+        $action = $this->triggerAction($policy, $this->smsDestination(['retry_count' => 1]));
+        $incident = $this->incident($policy, $this->downPort($this->device()));
+        $dispatcher = app(NotificationDispatcher::class);
+
+        // First pass burns two attempts (initial + one configured retry).
+        self::assertFalse($dispatcher->dispatch($incident, $action->destination, $action, 'trigger', 'noc', 'down')->successful);
+        NotificationOutbox::sole()->update(['available_at' => now()->subSecond()]);
+        self::assertTrue($dispatcher->dispatch($incident->fresh(), $action->destination, $action, 'trigger', 'noc', 'down')->successful);
+
+        $outbox = NotificationOutbox::sole();
+        self::assertSame(3, $outbox->attempt_count);
+        self::assertSame([1, 2, 3], $incident->deliveries()->orderBy('id')->pluck('attempt')->map(fn ($a) => (int) $a)->all());
+        self::assertSame(3, (int) DeliveryLog::where('status', 'sent')->sole()->attempt);
+    }
+
     public function test_rate_limit_retry_after_is_persisted_without_blocking_worker_retries(): void
     {
         Http::fake(['*' => Http::response('slow down', 429, ['Retry-After' => '120'])]);
