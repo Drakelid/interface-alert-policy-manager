@@ -36,7 +36,7 @@ class SchemaAndFillableTest extends IntegrationTestCase
             'default_receiver' => 'noc',
             'notifications_enabled' => false,
             'trigger_after_seconds' => 120,
-            'failed_poll_count' => 3,
+            'down_observations' => 3,
             'recovery_after_seconds' => 60,
             'repeat_seconds' => 900,
             'maximum_repeats' => 4,

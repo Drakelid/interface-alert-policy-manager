@@ -223,7 +223,7 @@ class IngestionController extends Controller
                     return;
                 }
                 $reason = $suppression->reason($resolution->policy, $context, ! (bool) $device->status, SuppressionService::maintenanceSuppresses($device), SuppressionService::anyParentDown($device->parents), $dependencies->uplinkDown($device, $context->portId));
-                $target = $reason ? IncidentState::Suppressed : ($resolution->policy->trigger_after_seconds === 0 && $resolution->policy->failed_poll_count <= 1 ? IncidentState::Active : IncidentState::Pending);
+                $target = $reason ? IncidentState::Suppressed : ($resolution->policy->trigger_after_seconds === 0 && $resolution->policy->down_observations <= 1 ? IncidentState::Active : IncidentState::Pending);
                 $incident ??= new Incident(['incident_key' => Incident::key($context->deviceId, $context->portId), 'first_seen_at' => now(), 'notification_count' => 0]);
                 $priorState = $incident->exists ? $incident->state : null;
                 $reopening = $incident->exists && $incident->state === IncidentState::Recovered;
@@ -233,7 +233,7 @@ class IngestionController extends Controller
                 $contextData = $this->sourceContext($contextData, $sourceEventAt, $fingerprint);
                 $contextData['assignment_receivers'] = $receivers->assignmentReceivers($resolution);
                 $contextData['assignment_source'] = $resolution->winner?->assignment_type->value ?? 'configured_default';
-                if (! $reason && $resolution->policy->failed_poll_count <= $contextData['observation_count'] && $resolution->policy->trigger_after_seconds === 0) {
+                if (! $reason && $resolution->policy->down_observations <= $contextData['observation_count'] && $resolution->policy->trigger_after_seconds === 0) {
                     $target = IncidentState::Active;
                 }
                 $episode = $reopening ? $lifecycle->beginEpisode($incident, $contextData) : [];

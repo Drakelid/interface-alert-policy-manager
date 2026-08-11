@@ -154,7 +154,7 @@ class AdminCrudTest extends IntegrationTestCase
             'default_receiver' => 'noc',
             'notifications_enabled' => '1',
             'trigger_after_seconds' => 0,
-            'failed_poll_count' => 1,
+            'down_observations' => 1,
             'recovery_after_seconds' => 0,
             'repeat_seconds' => 300,
             'maximum_repeats' => 3,

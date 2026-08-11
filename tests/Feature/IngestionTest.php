@@ -179,7 +179,7 @@ class IngestionTest extends IntegrationTestCase
 
     public function test_an_incident_stays_pending_until_the_trigger_delay_and_poll_count_are_met(): void
     {
-        $this->defaultPolicy(['trigger_after_seconds' => 300, 'failed_poll_count' => 2]);
+        $this->defaultPolicy(['trigger_after_seconds' => 300, 'down_observations' => 2]);
         $device = $this->device();
         $port = $this->downPort($device);
 

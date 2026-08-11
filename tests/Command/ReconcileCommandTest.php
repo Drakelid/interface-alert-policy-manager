@@ -96,7 +96,7 @@ class ReconcileCommandTest extends IntegrationTestCase
 
     public function test_a_pending_incident_activates_once_its_trigger_requirements_are_met(): void
     {
-        $policy = $this->defaultPolicy(['trigger_after_seconds' => 300, 'failed_poll_count' => 1]);
+        $policy = $this->defaultPolicy(['trigger_after_seconds' => 300, 'down_observations' => 1]);
         $port = $this->downPort($this->device());
         $incident = $this->incident($policy, $port, ['state' => IncidentState::Pending, 'triggered_at' => null, 'first_seen_at' => now()->subMinutes(10)]);
 
@@ -107,9 +107,9 @@ class ReconcileCommandTest extends IntegrationTestCase
         self::assertNotNull($incident->triggered_at);
     }
 
-    public function test_a_pending_incident_stays_pending_until_the_failed_poll_count_is_reached(): void
+    public function test_a_pending_incident_stays_pending_until_the_down_observations_is_reached(): void
     {
-        $policy = $this->defaultPolicy(['trigger_after_seconds' => 0, 'failed_poll_count' => 5]);
+        $policy = $this->defaultPolicy(['trigger_after_seconds' => 0, 'down_observations' => 5]);
         $port = $this->downPort($this->device());
         $incident = $this->incident($policy, $port, ['state' => IncidentState::Pending, 'triggered_at' => null]);
 
@@ -198,7 +198,7 @@ class ReconcileCommandTest extends IntegrationTestCase
 
     public function test_unchanged_active_incident_is_not_rewritten_each_minute(): void
     {
-        $policy = $this->defaultPolicy(['failed_poll_count' => 1]);
+        $policy = $this->defaultPolicy(['down_observations' => 1]);
         $incident = $this->incident($policy, $this->downPort($this->device()));
         $context = (array) $incident->context_json;
         $context['assignment_receivers'] = [];

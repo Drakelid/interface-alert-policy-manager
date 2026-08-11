@@ -6,7 +6,7 @@
     "severity": "critical",
     "notifications_enabled": true,
     "trigger_after_seconds": 120,
-    "failed_poll_count": 2,
+    "down_observations": 2,
     "recovery_after_seconds": 60,
     "repeat_seconds": 900,
     "maximum_repeats": 3,

@@ -12,7 +12,7 @@ class Policy extends Model
 {
     protected $table = 'iapm_policies';
 
-    protected $fillable = ['name', 'description', 'enabled', 'priority', 'severity', 'default_receiver', 'notifications_enabled', 'trigger_after_seconds', 'failed_poll_count', 'recovery_after_seconds', 'repeat_seconds', 'maximum_repeats', 'notify_recovery', 'suppress_device_down', 'suppress_admin_down', 'suppress_ignored_port', 'suppress_disabled_port', 'suppress_deleted_port', 'suppress_maintenance', 'suppress_parent_down', 'suppress_uplink_down', 'flap_threshold', 'flap_window_seconds', 'flap_settle_seconds', 'business_schedule_id', 'created_by', 'updated_by'];
+    protected $fillable = ['name', 'description', 'enabled', 'priority', 'severity', 'default_receiver', 'notifications_enabled', 'trigger_after_seconds', 'down_observations', 'recovery_after_seconds', 'repeat_seconds', 'maximum_repeats', 'notify_recovery', 'suppress_device_down', 'suppress_admin_down', 'suppress_ignored_port', 'suppress_disabled_port', 'suppress_deleted_port', 'suppress_maintenance', 'suppress_parent_down', 'suppress_uplink_down', 'flap_threshold', 'flap_window_seconds', 'flap_settle_seconds', 'business_schedule_id', 'created_by', 'updated_by'];
 
     /**
      * Defaults for a new policy, sized for LibreNMS's default five-minute poll
@@ -27,7 +27,7 @@ class Policy extends Model
      */
     protected $attributes = [
         'trigger_after_seconds' => 300,
-        'failed_poll_count' => 1,
+        'down_observations' => 1,
         'recovery_after_seconds' => 300,
     ];
 

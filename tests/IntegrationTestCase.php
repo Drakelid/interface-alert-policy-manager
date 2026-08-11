@@ -115,7 +115,7 @@ abstract class IntegrationTestCase extends TestCase
             'severity' => 'critical',
             'notifications_enabled' => true,
             'trigger_after_seconds' => 0,
-            'failed_poll_count' => 1,
+            'down_observations' => 1,
             'recovery_after_seconds' => 0,
             'notify_recovery' => true,
             'suppress_device_down' => true,

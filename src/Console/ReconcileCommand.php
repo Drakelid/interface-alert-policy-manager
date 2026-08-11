@@ -141,7 +141,7 @@ class ReconcileCommand extends Command
                     // Once the policy's failed-poll threshold is met, repeated down
                     // polls convey no new lifecycle information. Cap the counter and
                     // avoid rewriting identical JSON every minute.
-                    $data['observation_count'] = min((int) $policy->failed_poll_count, (int) ($data['observation_count'] ?? 0) + 1);
+                    $data['observation_count'] = min((int) $policy->down_observations, (int) ($data['observation_count'] ?? 0) + 1);
                     $data['assignment_receivers'] = $receivers->assignmentReceivers($resolution);
                     $data['assignment_source'] = $resolution->winner?->assignment_type->value ?? 'configured_default';
                     if ((int) $incident->policy_id !== (int) $policy->id && ! $this->option('dry-run')) {
@@ -201,7 +201,7 @@ class ReconcileCommand extends Command
 
     private function requirementsMet(Incident $incident, $policy, ?int $observations = null): bool
     {
-        return $incident->first_seen_at->addSeconds($policy->trigger_after_seconds)->isPast() && ($observations ?? (int) ($incident->context_json['observation_count'] ?? 1)) >= $policy->failed_poll_count;
+        return $incident->first_seen_at->addSeconds($policy->trigger_after_seconds)->isPast() && ($observations ?? (int) ($incident->context_json['observation_count'] ?? 1)) >= $policy->down_observations;
     }
 
     private function transition(Incident $incident, IncidentState $state, string $message, array $attributes = []): void

@@ -90,7 +90,7 @@ class PolicyAndDestinationAdminTest extends IntegrationTestCase
 
         self::assertSame(300, (int) $policy->trigger_after_seconds);
         self::assertSame(300, (int) $policy->recovery_after_seconds);
-        self::assertSame(1, (int) $policy->failed_poll_count);
+        self::assertSame(1, (int) $policy->down_observations);
         self::assertNull($policy->repeat_seconds, 'reminders stay opt-in');
     }
 
@@ -105,7 +105,7 @@ class PolicyAndDestinationAdminTest extends IntegrationTestCase
                 'priority' => 0,
                 'severity' => 'critical',
                 'trigger_after_seconds' => 300,
-                'failed_poll_count' => 1,
+                'down_observations' => 1,
                 'recovery_after_seconds' => 300,
                 'repeat_seconds' => 2592001,
             ])

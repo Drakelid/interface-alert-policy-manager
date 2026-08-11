@@ -216,7 +216,7 @@ class ImportPreviewAndUpdateTest extends IntegrationTestCase
             'policies' => [array_merge([
                 'name' => 'Imported policy', 'description' => null, 'enabled' => true, 'priority' => 0,
                 'severity' => 'critical', 'default_receiver' => null, 'notifications_enabled' => true,
-                'trigger_after_seconds' => 600, 'failed_poll_count' => 1, 'recovery_after_seconds' => 0,
+                'trigger_after_seconds' => 600, 'down_observations' => 1, 'recovery_after_seconds' => 0,
                 'repeat_seconds' => null, 'maximum_repeats' => null, 'notify_recovery' => true,
                 'suppress_device_down' => true, 'suppress_admin_down' => true, 'suppress_ignored_port' => true,
                 'suppress_disabled_port' => true, 'suppress_deleted_port' => true, 'suppress_maintenance' => true,

@@ -123,7 +123,7 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
 
         $this->actingAs($this->admin())->post(self::BASE.'/policies', [
             'name' => 'No auto rebuild', 'severity' => 'critical', 'priority' => 0,
-            'trigger_after_seconds' => 0, 'failed_poll_count' => 1, 'recovery_after_seconds' => 0,
+            'trigger_after_seconds' => 0, 'down_observations' => 1, 'recovery_after_seconds' => 0,
             'enabled' => '1', 'notifications_enabled' => '1',
         ])->assertRedirect();
 

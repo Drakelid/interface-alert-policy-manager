@@ -20,6 +20,7 @@ class ConfigurationImportValidator
      */
     public function validate(array $document, bool $updateExisting = false): array
     {
+        $document = self::withLegacyKeys($document);
         $validator = Validator::make($document, [
             'version' => ['required', 'integer', Rule::in([1])],
             'exported_at' => ['nullable', 'date'],
@@ -39,7 +40,7 @@ class ConfigurationImportValidator
             'policies.*.default_receiver' => ['nullable', 'string', 'max:128'],
             'policies.*.notifications_enabled' => ['required', 'boolean'],
             'policies.*.trigger_after_seconds' => ['required', 'integer', 'between:0,2592000'],
-            'policies.*.failed_poll_count' => ['required', 'integer', 'between:1,1000'],
+            'policies.*.down_observations' => ['required', 'integer', 'between:1,1000'],
             'policies.*.recovery_after_seconds' => ['required', 'integer', 'between:0,2592000'],
             'policies.*.repeat_seconds' => ['nullable', 'integer', 'between:60,2592000'],
             'policies.*.maximum_repeats' => ['nullable', 'integer', 'between:0,10000'],
@@ -158,6 +159,25 @@ class ConfigurationImportValidator
         });
         if ($validator->fails()) {
             throw new ValidationException($validator);
+        }
+
+        return $document;
+    }
+
+    /**
+     * P2-5 backward compatibility: documents exported before `failed_poll_count`
+     * was renamed to `down_observations` must still import. The new key wins if
+     * a document somehow carries both, and the old one is dropped so it cannot
+     * reach the model as an unknown attribute.
+     */
+    public static function withLegacyKeys(array $document): array
+    {
+        foreach (($document['policies'] ?? []) as $index => $policy) {
+            if (! is_array($policy) || ! array_key_exists('failed_poll_count', $policy)) {
+                continue;
+            }
+            $document['policies'][$index]['down_observations'] = $policy['down_observations'] ?? $policy['failed_poll_count'];
+            unset($document['policies'][$index]['failed_poll_count']);
         }
 
         return $document;

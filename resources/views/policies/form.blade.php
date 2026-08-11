@@ -9,7 +9,9 @@ $fields = [
   'priority'=>['label'=>'Priority','type'=>'number','help'=>'Higher wins among assignments of the same type.'],
   'default_receiver'=>['label'=>'Default receiver','type'=>'text','help'=>'Fallback receiver when nothing more specific resolves.'],
   'trigger_after_seconds'=>['label'=>'Trigger delay','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Wait this long after first seeing the interface down before it can notify. 0 = immediate, so a single poll sample notifies. Use a multiple of your LibreNMS poll interval (300 seconds by default) to require that many polls of confirmation.'],
-  'failed_poll_count'=>['label'=>'Down observations','type'=>'number','min'=>1,'help'=>'Down observations required before triggering. Reconciliation counts one every minute while the interface stays down, so this does NOT count LibreNMS polls — use the trigger delay above for poll-based confirmation.'],
+  // P2-5: this posted as failed_poll_count while its own help text said it does
+  // not count polls. Renamed to match what it actually measures.
+  'down_observations'=>['label'=>'Down observations','type'=>'number','min'=>1,'help'=>'Down observations required before triggering. Reconciliation counts one every minute while the interface stays down, so this does NOT count LibreNMS polls — use the trigger delay above for poll-based confirmation.'],
   'recovery_after_seconds'=>['label'=>'Recovery hold-down','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Interface must stay up this long before it is marked recovered. 0 = immediate. Below one poll interval (300 seconds by default) this just means "at the next poll".'],
   // P2-2: one convention across both forms — blank means unlimited, 0 means
   // none. The action form states the same thing for its own fields.

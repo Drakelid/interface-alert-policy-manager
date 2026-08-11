@@ -118,7 +118,7 @@ class ProcessActionsCommand extends Command
                         return false;
                     } // out of time budget; the next scheduled run continues the backlog
                     $lastId = (int) $incident->id;
-                    if ($incident->state === IncidentState::Pending && $incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->failed_poll_count) {
+                    if ($incident->state === IncidentState::Pending && $incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->down_observations) {
                         $incident->update(['state' => IncidentState::Active, 'triggered_at' => now()]);
                         $incident->events()->create(['event_type' => 'activated', 'event_message' => 'Trigger requirements satisfied.']);
                     }
@@ -205,7 +205,7 @@ class ProcessActionsCommand extends Command
             if (microtime(true) >= $this->deadline) {
                 return false;
             }
-            if ($incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->failed_poll_count) {
+            if ($incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->down_observations) {
                 $incident->update(['state' => IncidentState::Active, 'triggered_at' => now()]);
                 $incident->events()->create(['event_type' => 'activated', 'event_message' => 'Trigger requirements satisfied.']);
             }
