@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Artisan;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\Concerns\ListsRecords;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IncidentLifecycleService;
@@ -13,6 +14,20 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SuppressionService;
 
 class IncidentController extends Controller
 {
+    use ListsRecords;
+
+    /**
+     * Whitelisted sort columns (P1-6). Keys are the UI's, values the SQL, so a
+     * crafted `sort` parameter can never reach the query builder.
+     */
+    private const SORTABLE = [
+        'id' => 'id',
+        'state' => 'state',
+        'severity' => 'severity',
+        'first_seen_at' => 'first_seen_at',
+        'last_seen_at' => 'last_seen_at',
+    ];
+
     public function index(Request $r)
     {
         $q = Incident::with('policy');
@@ -42,16 +57,23 @@ class IncidentController extends Controller
         if ($r->filled('recovered_within')) {
             $q->where('recovered_at', '>=', now()->subHours($r->integer('recovered_within')));
         }
-        // Urgent-first: active before pending/ack/suppressed/recovered, critical
-        // before warning, then oldest first — so a triage screen surfaces what matters.
-        $q->orderByRaw("CASE state WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'acknowledged' THEN 2 WHEN 'suppressed' THEN 3 ELSE 4 END")
-            ->orderByRaw("CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END")
-            ->orderBy('first_seen_at');
+        $sort = $this->sort($r, self::SORTABLE);
+        if ($sort['key'] === null) {
+            // Default triage order: active before pending/ack/suppressed/recovered,
+            // critical before warning, then oldest first. An explicit sort replaces
+            // it entirely rather than layering on top, so the chosen column wins.
+            $q->orderByRaw("CASE state WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'acknowledged' THEN 2 WHEN 'suppressed' THEN 3 ELSE 4 END")
+                ->orderByRaw("CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END")
+                ->orderBy('first_seen_at');
+        } else {
+            $this->applySort($q, $sort);
+        }
+        $perPage = $this->perPage($r, 50);
 
         return view('iapm::incidents.index', [
-            'incidents' => $q->paginate(50)->withQueryString(),
+            'incidents' => $q->paginate($perPage)->withQueryString(),
             'suppressionReasons' => SuppressionService::REASONS,
-        ]);
+        ] + $this->listControls($r, self::SORTABLE, $sort, $perPage));
     }
 
     public function show(Incident $incident)

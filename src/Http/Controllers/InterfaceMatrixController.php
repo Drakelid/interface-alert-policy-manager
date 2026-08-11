@@ -8,6 +8,7 @@ use App\Models\Location;
 use App\Models\Port;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\Concerns\ListsRecords;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\RebuildPolicyCacheJob;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
@@ -20,9 +21,26 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 
 class InterfaceMatrixController
 {
+    use ListsRecords;
+
+    /**
+     * Whitelisted sort columns (P1-6). Hostname sorts through the devices join
+     * that query() adds on demand, so the visible column really is what orders.
+     */
+    private const SORTABLE = [
+        'port_id' => 'ports.port_id',
+        'hostname' => 'devices.hostname',
+        'ifName' => 'ports.ifName',
+        'ifAlias' => 'ports.ifAlias',
+        'admin' => 'ports.ifAdminStatus',
+        'oper' => 'ports.ifOperStatus',
+    ];
+
     public function index(Request $request, InterfaceContextService $contexts, PolicyResolver $resolver)
     {
-        $ports = $this->query($request)->paginate(50)->withQueryString();
+        $perPage = $this->perPage($request, 50);
+        $sort = $this->sort($request, self::SORTABLE);
+        $ports = $this->query($request, $sort)->paginate($perPage)->withQueryString();
         $incidentMap = Incident::whereIn('port_id', $ports->getCollection()->pluck('port_id'))->where('state', '!=', 'recovered')->get()->keyBy('port_id');
         $rows = $ports->getCollection()->map(function ($port) use ($contexts, $resolver, $incidentMap) {
             $resolution = $resolver->resolve($contexts->forPort($port));
@@ -44,7 +62,7 @@ class InterfaceMatrixController
             'locations' => Location::orderBy('location')->get(['id', 'location']),
             'deviceFilterLabel' => $device ? app(EntityLookup::class)->deviceLabel($device) : '',
             'cache' => app(PolicyCacheRebuilder::class)->state(),
-        ]);
+        ] + $this->listControls($request, self::SORTABLE, $sort, $perPage));
     }
 
     /**
@@ -110,7 +128,10 @@ class InterfaceMatrixController
         }, 'iapm-interface-matrix-'.now()->format('Ymd-His').'.csv', ['Content-Type' => 'text/csv']);
     }
 
-    private function query(Request $request)
+    /**
+     * @param  array{key: string|null, direction: string, columns: list<string>}|null  $sort
+     */
+    private function query(Request $request, ?array $sort = null)
     {
         // port_id lets the header's "Find interface…" type-ahead land on the exact
         // interface the operator picked instead of a name search that may match
@@ -118,6 +139,17 @@ class InterfaceMatrixController
         return Port::query()->select('ports.*')->leftJoin('iapm_interface_policy_cache as ipc', 'ipc.port_id', '=', 'ports.port_id')->with(['device.location', 'device.groups', 'groups'])->when($request->filled('port_id'), fn ($q) => $q->where('ports.port_id', $request->integer('port_id')))->when($request->filled('device_group_id'), fn ($q) => $q->whereHas('device.groups', fn ($g) => $g->where('device_groups.id', $request->integer('device_group_id'))))->when($request->filled('device_id'), fn ($q) => $q->where('ports.device_id', $request->integer('device_id')))->when($request->filled('location_id'), fn ($q) => $q->whereHas('device', fn ($d) => $d->where('location_id', $request->integer('location_id'))))->when($request->filled('policy_id'), fn ($q) => $q->where('ipc.policy_id', $request->integer('policy_id')))->when($request->filled('assignment_source'), fn ($q) => $q->where('ipc.assignment_source', $request->string('assignment_source')))->when($request->boolean('no_policy'), fn ($q) => $q->whereNull('ipc.policy_id'))->when($request->filled('admin'), fn ($q) => $q->where('ports.ifAdminStatus', $request->string('admin')))->when($request->filled('oper'), fn ($q) => $q->where('ports.ifOperStatus', $request->string('oper')))->when($request->filled('incident_state'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.state', $request->string('incident_state'))))->when($request->boolean('active_incident'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->whereIn('ii.state', ['pending', 'active', 'acknowledged', 'suppressed'])))->when($request->boolean('muted'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.muted_until', '>', now())))->when($request->filled('search'), function ($q) use ($request) {
             $term = '%'.str_replace(['%', '_'], ['\%', '\_'], $request->string('search')).'%';
             $q->where(fn ($s) => $s->where('ports.ifName', 'like', $term)->orWhere('ports.ifAlias', 'like', $term)->orWhere('ports.ifDescr', 'like', $term));
-        })->orderBy('ports.port_id');
+        })
+            // Sorting by hostname needs the devices table; joined only when asked
+            // for so the default listing keeps its existing plan.
+            ->when(($sort['key'] ?? null) === 'hostname', fn ($q) => $q->join('devices', 'devices.device_id', '=', 'ports.device_id'))
+            ->when(! empty($sort['columns'] ?? []), function ($q) use ($sort): void {
+                foreach ($sort['columns'] as $column) {
+                    $q->orderBy($column, $sort['direction']);
+                }
+            })
+            // port_id last as a stable tie-break: chunkById on the export path and
+            // pagination both need a deterministic total order.
+            ->orderBy('ports.port_id');
     }
 }

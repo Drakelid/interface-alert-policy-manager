@@ -12,9 +12,23 @@
     Expects: $paginator (LengthAwarePaginator), $noun (singular, e.g. 'incident').
 --}}
 @php($iapmTotal = $paginator->total())
-<p class="iapm-result-count" data-iapm-total="{{ $iapmTotal }}">
-    @if($iapmTotal > 0)
-        Showing <strong>{{ number_format($paginator->firstItem()) }}</strong>&ndash;<strong>{{ number_format($paginator->lastItem()) }}</strong>
-        of <strong>{{ number_format($iapmTotal) }}</strong> {{ \Illuminate\Support\Str::plural($noun, $iapmTotal) }}.
-    @endif
-</p>
+<div class="iapm-result-bar">
+    <p class="iapm-result-count" data-iapm-total="{{ $iapmTotal }}">
+        @if($iapmTotal > 0)
+            Showing <strong>{{ number_format($paginator->firstItem()) }}</strong>&ndash;<strong>{{ number_format($paginator->lastItem()) }}</strong>
+            of <strong>{{ number_format($iapmTotal) }}</strong> {{ \Illuminate\Support\Str::plural($noun, $iapmTotal) }}.
+        @endif
+    </p>
+    {{-- Per-page selector (P1-6). Submits by navigation so it composes with the
+         current filter and sort instead of needing its own form. --}}
+    @isset($perPageOptions)
+    <span class="iapm-per-page">
+        <label for="iapm-per-page-{{ \Illuminate\Support\Str::slug($noun) }}">Rows per page</label>
+        <select class="form-control input-sm" id="iapm-per-page-{{ \Illuminate\Support\Str::slug($noun) }}" data-iapm-navigate>
+            @foreach($perPageOptions as $option)
+            <option value="{{ request()->fullUrlWithQuery(['per_page' => $option, 'page' => 1]) }}" @selected($option === ($perPage ?? 0))>{{ $option }}</option>
+            @endforeach
+        </select>
+    </span>
+    @endisset
+</div>

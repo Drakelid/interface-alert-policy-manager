@@ -27,7 +27,13 @@
 </form>
 @include('iapm::partials.result-count',['paginator'=>$audits,'noun'=>'audit entry'])
 <div class="iapm-table-wrap"><table class="table table-condensed table-hover">
-<thead><tr><th>Time</th><th>User</th><th>Action</th><th>Object</th><th>Source IP</th></tr></thead>
+<thead><tr>
+@include('iapm::partials.sort-header',['column'=>'created_at','label'=>'Time'])
+@include('iapm::partials.sort-header',['column'=>'user_id','label'=>'User'])
+@include('iapm::partials.sort-header',['column'=>'action','label'=>'Action'])
+@include('iapm::partials.sort-header',['column'=>'object_type','label'=>'Object'])
+<th>Source IP</th>
+</tr></thead>
 <tbody>@forelse($audits as $a)<tr>
 <td>@include('iapm::partials.time',['at'=>$a->created_at])</td>
 {{-- P1-3: this column rendered the bare user_id, which defeats the point of an

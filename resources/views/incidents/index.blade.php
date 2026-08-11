@@ -28,7 +28,16 @@
     <button class="btn btn-warning btn-sm">Apply to selected</button>
 </form>
 <div class="iapm-table-wrap" style="margin-top:8px;"><table class="table table-hover table-condensed iapm-sticky">
-<thead><tr><th style="width:2em;"><input type="checkbox" onclick="document.querySelectorAll('.iapm-bulk').forEach(e=>e.checked=this.checked)"></th><th>ID</th><th>Interface</th><th>Policy</th><th>State</th><th>Severity</th><th>Down</th><th>Last seen</th><th>Actions</th></tr></thead>
+<thead><tr>
+<th style="width:2em;"><input type="checkbox" aria-label="Select all incidents on this page" onclick="document.querySelectorAll('.iapm-bulk').forEach(e=>e.checked=this.checked)"></th>
+@include('iapm::partials.sort-header',['column'=>'id','label'=>'ID','numeric'=>true])
+<th>Interface</th><th>Policy</th>
+@include('iapm::partials.sort-header',['column'=>'state','label'=>'State'])
+@include('iapm::partials.sort-header',['column'=>'severity','label'=>'Severity'])
+@include('iapm::partials.sort-header',['column'=>'first_seen_at','label'=>'Down'])
+@include('iapm::partials.sort-header',['column'=>'last_seen_at','label'=>'Last seen'])
+<th>Actions</th>
+</tr></thead>
 <tbody>@foreach($incidents as $i)@php($c=(array)$i->context_json)<tr>
 <td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-incidents" name="incident_ids[]" value="{{ $i->id }}"></td>
 <td><a href="{{ route('iapm.incidents.show',$i) }}">{{ $i->id }}</a></td>

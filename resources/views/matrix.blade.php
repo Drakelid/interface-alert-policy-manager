@@ -119,7 +119,17 @@
             </div>
         </div>
     </div>
-</div><div class="iapm-table-wrap"><table class="table table-hover table-condensed iapm-sticky"><thead><tr><th><input type="checkbox" onclick="document.querySelectorAll('.iapm-port').forEach(e=>e.checked=this.checked)"></th><th class="iapm-num">port_id</th><th>Device</th><th>Interface</th><th>Description</th><th>Location</th><th>Admin</th><th>Oper</th><th>Policy</th><th>Assignment source</th><th>Incident</th><th>Tools</th></tr></thead><tbody>
+</div><div class="iapm-table-wrap"><table class="table table-hover table-condensed iapm-sticky"><thead><tr>
+<th><input type="checkbox" aria-label="Select all interfaces on this page" onclick="document.querySelectorAll('.iapm-port').forEach(e=>e.checked=this.checked)"></th>
+@include('iapm::partials.sort-header',['column'=>'port_id','label'=>'port_id','numeric'=>true])
+@include('iapm::partials.sort-header',['column'=>'hostname','label'=>'Device'])
+@include('iapm::partials.sort-header',['column'=>'ifName','label'=>'Interface'])
+@include('iapm::partials.sort-header',['column'=>'ifAlias','label'=>'Description'])
+<th>Location</th>
+@include('iapm::partials.sort-header',['column'=>'admin','label'=>'Admin'])
+@include('iapm::partials.sort-header',['column'=>'oper','label'=>'Oper'])
+<th>Policy</th><th>Assignment source</th><th>Incident</th><th>Tools</th>
+</tr></thead><tbody>
 {{-- P1-1: port_id was previously only the invisible value of each row's
      checkbox, yet Simulate Alert, Policy Test and Template Preview all demand
      it. It is now shown, copyable, and wired into per-row shortcuts. --}}

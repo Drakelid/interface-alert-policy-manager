@@ -21,7 +21,15 @@
 .iapm-filter-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
 /* Keeps a button aligned with the inputs beside it without an empty-looking gap. */
 .iapm-invisible-label { visibility:hidden; }
-.iapm-result-count { margin:8px 0; }
+.iapm-result-count { margin:0; }
+.iapm-result-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin:8px 0; }
+.iapm-per-page { margin-left:auto; display:flex; align-items:center; gap:6px; }
+.iapm-per-page label { margin:0; font-weight:normal; font-size:12px; }
+.iapm-per-page select { width:auto; display:inline-block; }
+/* Sortable headings: the idle indicator stays faint until hover/active so a
+   dozen arrows do not compete with the data. */
+th a .iapm-sort-idle { opacity:.3; }
+th a:hover .iapm-sort-idle { opacity:.7; }
 /* Pages started at h2 with no h1 (P3-3). The h1 keeps the visual weight the h2
    had rather than jumping to the browser default. */
 h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
@@ -81,6 +89,13 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
             }
         }
     }, true);
+
+    // --- Selects that navigate to their chosen option's URL (per-page, P1-6) ---
+    document.addEventListener('change', function (e) {
+        if (e.target.matches && e.target.matches('select[data-iapm-navigate]') && e.target.value) {
+            window.location.href = e.target.value;
+        }
+    });
 
     // --- Header quick-find suggestions (P1-2) ---
     // Distinct from the field type-aheads above: this one navigates rather than

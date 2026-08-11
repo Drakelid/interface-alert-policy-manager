@@ -35,7 +35,15 @@
 </form>
 @include('iapm::partials.result-count',['paginator'=>$deliveries,'noun'=>'delivery'])
 <div class="iapm-table-wrap"><table class="table table-condensed table-hover">
-<thead><tr><th>Time</th><th>Incident</th><th>Destination</th><th>Phase</th><th>Status</th><th class="iapm-num">HTTP</th><th>Error</th></tr></thead>
+<thead><tr>
+@include('iapm::partials.sort-header',['column'=>'created_at','label'=>'Time'])
+@include('iapm::partials.sort-header',['column'=>'incident_id','label'=>'Incident'])
+@include('iapm::partials.sort-header',['column'=>'destination_id','label'=>'Destination'])
+@include('iapm::partials.sort-header',['column'=>'phase','label'=>'Phase'])
+@include('iapm::partials.sort-header',['column'=>'status','label'=>'Status'])
+@include('iapm::partials.sort-header',['column'=>'response_status','label'=>'HTTP','numeric'=>true])
+<th>Error</th>
+</tr></thead>
 <tbody>@forelse($deliveries as $d)<tr>
 <td>@include('iapm::partials.time',['at'=>$d->created_at])</td>
 <td>@if($d->incident_id)<a href="{{ route('iapm.incidents.show',$d->incident_id) }}">#{{ $d->incident_id }}</a>@else<span class="iapm-hint">&mdash;</span>@endif</td>
