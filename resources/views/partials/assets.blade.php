@@ -21,6 +21,11 @@
 .iapm-filter-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
 /* Keeps a button aligned with the inputs beside it without an empty-looking gap. */
 .iapm-invisible-label { visibility:hidden; }
+/* Number inputs used to stretch the full ~1360px page width (P2-1). */
+.iapm-narrow-field { max-width:320px; }
+.iapm-chips { display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top:6px; }
+.iapm-chips .iapm-chip { font-family:monospace; font-size:11px; }
+.iapm-sms-counter { margin:4px 0 0; font-variant-numeric:tabular-nums; }
 /* Schedule editor time ranges (P1-5) */
 .iapm-period { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
 .iapm-period input[type=time] { width:auto; }
@@ -94,6 +99,47 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
             }
         }
     }, true);
+
+    // --- Click-to-insert placeholder chips (P2-1 / P4-4) ---
+    document.querySelectorAll('[data-iapm-chip-target]').forEach(function (group) {
+        var target = document.querySelector(group.dataset.iapmChipTarget);
+        if (! target) { return; }
+        group.addEventListener('click', function (e) {
+            var chip = e.target.closest('[data-iapm-chip]');
+            if (! chip) { return; }
+            // Built from single braces on purpose: a literal '{{' in this file
+            // would be compiled by Blade as an echo rather than emitted as JS.
+            var token = '{' + '{ ' + chip.dataset.iapmChip + ' }' + '}';
+            var start = target.selectionStart || 0;
+            var end = target.selectionEnd || 0;
+            target.value = target.value.slice(0, start) + token + target.value.slice(end);
+            // Leave the caret after the inserted token so several can be added
+            // in a row without reaching for the mouse again.
+            target.selectionStart = target.selectionEnd = start + token.length;
+            target.focus();
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+    });
+
+    // --- Character and SMS-segment counter (P4-4) ---
+    // The primary destination type is an SMS gateway, so message length is
+    // operationally significant: GSM-7 fits 160 characters in one segment, and
+    // 153 per segment once a message is split.
+    document.querySelectorAll('[data-iapm-sms-counter]').forEach(function (field) {
+        var readout = document.createElement('p');
+        readout.className = 'iapm-hint iapm-sms-counter';
+        readout.setAttribute('aria-live', 'polite');
+        field.insertAdjacentElement('afterend', readout);
+        function update() {
+            var length = field.value.length;
+            if (! length) { readout.textContent = 'Empty — the built-in default for this phase is used.'; return; }
+            var segments = length <= 160 ? 1 : Math.ceil(length / 153);
+            readout.textContent = length + ' character' + (length === 1 ? '' : 's') + ' · ' + segments + ' SMS segment' + (segments === 1 ? '' : 's') +
+                (segments > 1 ? ' (each segment is billed separately)' : '');
+        }
+        field.addEventListener('input', update);
+        update();
+    });
 
     // --- Selects that navigate to their chosen option's URL (per-page, P1-6) ---
     document.addEventListener('change', function (e) {

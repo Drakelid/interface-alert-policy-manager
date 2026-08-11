@@ -11,8 +11,10 @@ $fields = [
   'trigger_after_seconds'=>['label'=>'Trigger delay','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Wait this long after first seeing the interface down before it can notify. 0 = immediate, so a single poll sample notifies. Use a multiple of your LibreNMS poll interval (300 seconds by default) to require that many polls of confirmation.'],
   'failed_poll_count'=>['label'=>'Down observations','type'=>'number','min'=>1,'help'=>'Down observations required before triggering. Reconciliation counts one every minute while the interface stays down, so this does NOT count LibreNMS polls — use the trigger delay above for poll-based confirmation.'],
   'recovery_after_seconds'=>['label'=>'Recovery hold-down','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Interface must stay up this long before it is marked recovered. 0 = immediate. Below one poll interval (300 seconds by default) this just means "at the next poll".'],
-  'repeat_seconds'=>['label'=>'Repeat every','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Re-send reminders at this interval. Blank = no repeat. Below one poll interval it re-notifies on unchanged data.'],
-  'maximum_repeats'=>['label'=>'Maximum repeats','type'=>'number','min'=>0,'help'=>'Cap on reminder re-sends. Blank = unlimited.'],
+  // P2-2: one convention across both forms — blank means unlimited, 0 means
+  // none. The action form states the same thing for its own fields.
+  'repeat_seconds'=>['label'=>'Repeat every','unit'=>'seconds','type'=>'number','min'=>0,'seconds'=>true,'help'=>'Re-send reminders at this interval. Blank = never repeat. Below one poll interval it re-notifies on unchanged data.'],
+  'maximum_repeats'=>['label'=>'Maximum repeats','type'=>'number','min'=>0,'help'=>'Cap on reminder re-sends. Blank = unlimited. 0 = no reminders at all (the first notification is still sent). An action can override this with its own "maximum sends".'],
 ];
 @endphp
 @foreach($fields as $key => $f)

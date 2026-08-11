@@ -49,6 +49,29 @@ class TemplateContextBuilder
         return $this->forPreview(new InterfaceContext(1, 2, 'core-router-01', null, 'xe-0/0/4', 'xe-0/0/4', 'CUST: Example customer', 'ethernetCsmacd', 'up', 'down', false, false, false, [], [], 'core-router-01', 'core-router-01', 'HQ'));
     }
 
+    /**
+     * The placeholder names the interface templates accept, in the order the UI
+     * lists them as click-to-insert chips (P2-1 / P4-4). Kept in step with
+     * placeholders() by TemplatePlaceholderTest, which compares this against the
+     * keys the builder actually produces — a chip that inserts an unknown
+     * placeholder would fail validation on save.
+     *
+     * @var list<string>
+     */
+    public const INTERFACE_PLACEHOLDERS = [
+        'hostname', 'sysName', 'display_name', 'ifName', 'ifDescr', 'ifAlias',
+        'ifAdminStatus', 'ifOperStatus', 'interface_type', 'location',
+        'severity', 'state', 'policy_name', 'assignment_source',
+        'first_seen_at', 'triggered_at', 'recovered_at', 'outage_duration',
+        'acknowledgement_user', 'suppression_reason',
+        'device_id', 'port_id', 'incident_id', 'device_url', 'port_url',
+    ];
+
+    /** The device-digest template's own, different set. */
+    public const DIGEST_PLACEHOLDERS = [
+        'hostname', 'device_id', 'interface_count', 'interfaces', 'severity', 'first_seen_at', 'device_url',
+    ];
+
     /** Placeholder map for the device-digest template (a different, device-level set). */
     public function digestSample(): array
     {
