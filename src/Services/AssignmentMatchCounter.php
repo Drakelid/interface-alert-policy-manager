@@ -2,8 +2,10 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
+use App\Models\Device;
 use App\Models\Port;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Estimates how many current interfaces (and how many distinct devices) a
@@ -11,11 +13,20 @@ use Illuminate\Database\Eloquent\Builder;
  * Deterministic assignment types use indexed queries; regex types use a bounded
  * scan so a preview never loads the whole port table on a large installation.
  *
- * Returns: ['count' => interfaces, 'devices' => distinct devices, 'capped' => bool, 'error' => ?string]
+ * Returns: ['count' => interfaces, 'devices' => distinct devices, 'capped' => bool,
+ *           'error' => ?string, 'samples' => list of matched interfaces]
  */
 class AssignmentMatchCounter
 {
     public const REGEX_SCAN_LIMIT = 5000;
+
+    /**
+     * P4-5: a bare "Matches 0 interface(s)" cannot be acted on — a regex that
+     * matches nothing looks identical to one that is simply wrong. A handful of
+     * matched interfaces lets the operator verify the pattern rather than trust
+     * the number.
+     */
+    public const SAMPLE_LIMIT = 10;
 
     /**
      * @param  array{assignment_type:string, assignment_reference?:string|int|null, match_expression?:string|null, match_mode?:string|null, device_group_ids?:array<int|string>}  $assignment
@@ -87,11 +98,36 @@ class AssignmentMatchCounter
 
     private function countQuery(Builder $query): array
     {
+        $samples = (clone $query)->with('device:device_id,hostname')
+            ->orderBy('ports.port_id')
+            ->limit(self::SAMPLE_LIMIT)
+            ->get(['ports.port_id', 'ports.device_id', 'ports.ifName', 'ports.ifAlias']);
+
         return [
             'count' => (clone $query)->count(),
             'devices' => (clone $query)->distinct()->count('ports.device_id'),
             'capped' => false,
             'error' => null,
+            'samples' => $samples->map(fn ($port) => $this->sample($port))->values()->all(),
+        ];
+    }
+
+    /**
+     * The queries here are built from a generic Builder, so static analysis sees
+     * Model rather than Port; the rows are always ports.
+     *
+     * @param  Model  $port
+     * @return array{port_id:int, hostname:string, ifName:string, ifAlias:string}
+     */
+    private function sample($port): array
+    {
+        $device = $port->getRelationValue('device');
+
+        return [
+            'port_id' => (int) $port->port_id,
+            'hostname' => $device instanceof Device ? (string) $device->hostname : 'device '.$port->device_id,
+            'ifName' => (string) $port->ifName,
+            'ifAlias' => (string) $port->ifAlias,
         ];
     }
 
@@ -109,20 +145,24 @@ class AssignmentMatchCounter
         $count = 0;
         $scanned = 0;
         $devices = [];
+        $samples = [];
 
-        $this->activePorts()->select(['port_id', 'device_id', $column])->orderBy('port_id')->chunkById(1000, function ($ports) use ($pattern, $column, &$count, &$scanned, &$devices): bool {
+        $this->activePorts()->with('device:device_id,hostname')->select(['port_id', 'device_id', 'ifName', 'ifAlias'])->orderBy('port_id')->chunkById(1000, function ($ports) use ($pattern, $column, &$count, &$scanned, &$devices, &$samples): bool {
             foreach ($ports as $port) {
                 $scanned++;
                 if ($this->matches($pattern, (string) $port->{$column})) {
                     $count++;
                     $devices[$port->device_id] = true;
+                    if (count($samples) < self::SAMPLE_LIMIT) {
+                        $samples[] = $this->sample($port);
+                    }
                 }
             }
 
             return $scanned < self::REGEX_SCAN_LIMIT;
         }, 'port_id');
 
-        return ['count' => $count, 'devices' => count($devices), 'capped' => $scanned >= self::REGEX_SCAN_LIMIT, 'error' => null];
+        return ['count' => $count, 'devices' => count($devices), 'capped' => $scanned >= self::REGEX_SCAN_LIMIT, 'error' => null, 'samples' => $samples];
     }
 
     private function validRegex(string $pattern): bool
@@ -150,6 +190,6 @@ class AssignmentMatchCounter
 
     private function error(string $message): array
     {
-        return ['count' => 0, 'devices' => 0, 'capped' => false, 'error' => $message];
+        return ['count' => 0, 'devices' => 0, 'capped' => false, 'error' => $message, 'samples' => []];
     }
 }

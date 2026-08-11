@@ -115,7 +115,17 @@
 
 <button class="btn btn-primary">Save</button>
 <button type="button" class="btn btn-default" id="iapm-preview-btn"><i class="fa fa-search"></i> Preview match count</button>
-<span id="iapm-preview-result" class="iapm-hint" style="margin-left:8px;"></span>
+<span id="iapm-preview-result" style="margin-left:8px;" aria-live="polite"></span>
+{{-- P4-5: the preview returned only "Matches 0 interface(s)", which cannot tell
+     a correct regex from a broken one. A sample of what matched can. --}}
+<div id="iapm-preview-samples" class="panel panel-default" style="display:none;margin-top:10px;max-width:640px;">
+    <div class="panel-heading"><i class="fa fa-list"></i> Sample of matched interfaces</div>
+    <div class="iapm-table-wrap"><table class="table table-condensed" style="margin-bottom:0;">
+        <thead><tr><th>Device</th><th>Interface</th><th>Description</th><th class="iapm-num">port_id</th></tr></thead>
+        <tbody id="iapm-preview-sample-rows"></tbody>
+    </table></div>
+    <div class="panel-body iapm-hint" id="iapm-preview-sample-note" style="padding:6px 10px;"></div>
+</div>
 </div></div>
 </form>
 
@@ -186,10 +196,36 @@
             headers: {'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
             body: body.toString()
         }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); }).then(function (res) {
+            var panel = document.getElementById('iapm-preview-samples');
+            var rows = document.getElementById('iapm-preview-sample-rows');
+            var note = document.getElementById('iapm-preview-sample-note');
+            panel.style.display = 'none';
+            rows.innerHTML = '';
+
             if (!res.ok) { result.textContent = (res.d && res.d.message) ? res.d.message : 'Preview failed (check the fields).'; return; }
             if (res.d.error) { result.textContent = res.d.error; return; }
+
             var devices = (res.d.devices || 0) + ' device(s)';
             result.textContent = 'Matches ' + res.d.count + ' interface(s) across ' + devices + (res.d.capped ? ' (sampled; real total is higher)' : '') + '.';
+            // Zero matches is exactly when the operator most needs to see that
+            // the preview ran, so keep the message and just show no table.
+            var samples = res.d.samples || [];
+            if (! samples.length) { return; }
+
+            samples.forEach(function (s) {
+                var tr = document.createElement('tr');
+                [s.hostname, s.ifName, s.ifAlias, s.port_id].forEach(function (value, index) {
+                    var td = document.createElement('td');
+                    if (index === 3) { td.className = 'iapm-num'; }
+                    td.textContent = value;
+                    tr.appendChild(td);
+                });
+                rows.appendChild(tr);
+            });
+            note.textContent = res.d.count > samples.length
+                ? 'Showing the first ' + samples.length + ' of ' + res.d.count + ' matches.'
+                : 'All ' + samples.length + ' match(es) shown.';
+            panel.style.display = '';
         }).catch(function () { result.textContent = 'Preview failed.'; });
     });
 })();

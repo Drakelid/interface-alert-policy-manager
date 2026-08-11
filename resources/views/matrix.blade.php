@@ -1,4 +1,5 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Interface Matrix') @section('content')<div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">Interface Matrix</h1>
+<p class="iapm-hint" style="max-width:70em;">Every interface LibreNMS knows about, and <strong>which policy would apply to it</strong>. Use it to find interfaces nothing covers, to bulk-assign a policy, and to look up a <code>port_id</code> for the tools that need one. Policy, assignment-source and no-policy filtering reads the materialized cache below.</p>
 {{-- P1-2: device group, device and location were free-text numeric boxes asking
      for internal primary keys. Groups and locations are small enough to
      enumerate, so they are selects; devices are not, so that one is a
@@ -150,7 +151,11 @@
     <a class="btn btn-default btn-xs" href="{{ route('iapm.simulate',['port_id'=>$p->port_id]) }}" title="Simulate an alert for port_id {{ $p->port_id }}" aria-label="Simulate an alert for {{ $p->ifName }}"><i class="fa fa-bolt"></i></a>
     <a class="btn btn-default btn-xs" href="{{ $portUrl }}" title="Open in LibreNMS" aria-label="Open {{ $p->ifName }} in LibreNMS"><i class="fa fa-external-link"></i></a>
 </td>
-</tr>@endforeach</tbody></table></div></form>{{ $rows->links() }}
+</tr>@endforeach</tbody></table></div>
+@if($rows->total() === 0)
+@include('iapm::partials.empty-state',['title'=>'No interfaces match','body'=>'Either LibreNMS has no ports matching this filter, or the policy cache has not been built yet — the policy, source and no-policy filters read it. Clear the filter to see everything.','route'=>route('iapm.matrix'),'action'=>'Clear filters','secondaryRoute'=>route('iapm.assignments.create'),'secondaryAction'=>'Create an assignment'])
+@endif
+</form>{{ $rows->links() }}
 <script>
 (function () {
     // P1-7: poll the rebuild until it finishes so the operator gets real

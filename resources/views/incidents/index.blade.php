@@ -45,7 +45,7 @@ if (request('escalation') === 'pending') {
         <button class="btn btn-default btn-sm">Filter</button>
     </form>
     <span class="spacer"></span>
-    <span id="iapm-autorefresh" data-interval="30"><label class="iapm-hint" style="font-weight:normal;" for="iapm-autorefresh-box"><input type="checkbox" id="iapm-autorefresh-box"> Auto-refresh</label> <span class="iapm-hint small iapm-updated"></span></span>
+    @include('iapm::partials.auto-refresh')
 </div>
 
 @include('iapm::partials.result-count',['paginator'=>$incidents,'noun'=>'incident'])

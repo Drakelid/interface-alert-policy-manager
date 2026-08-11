@@ -21,10 +21,17 @@
     </div>
     <div id="iapm-setup-body" class="collapse {{ $setupDone ? '' : 'in' }}">
         <div class="list-group" style="margin-bottom:0;" data-iapm-scored-steps>
+            {{-- P4-2: the rows were plain text. Every row that has a route is now
+                 a link to the page that resolves it — including completed ones,
+                 so the checklist doubles as navigation once setup is done. --}}
             @foreach($setupChecks as $check)
             <div class="list-group-item" data-iapm-scored-step>
                 <i class="fa fa-{{ $check['ok'] ? 'check text-success' : 'circle-o' }}" style="width:1.2em;"></i>
-                <strong>{{ $check['label'] }}</strong>
+                @if($check['route'])
+                    <a href="{{ route($check['route']) }}"><strong>{{ $check['label'] }}</strong></a>
+                @else
+                    <strong>{{ $check['label'] }}</strong>
+                @endif
                 @unless($check['ok'])
                     @if($check['route'])<a class="btn btn-primary btn-xs pull-right" href="{{ route($check['route']) }}">{{ $check['action'] ?? 'Fix' }} <i class="fa fa-arrow-right"></i></a>@endif
                     <div class="iapm-hint" style="margin-top:4px;">{{ $check['hint'] }}</div>
@@ -42,7 +49,7 @@
                 @foreach($infoChecks as $check)
                 <div class="list-group-item" data-iapm-info-step>
                     <i class="fa fa-{{ $check['ok'] ? 'check text-success' : 'info-circle text-info' }}" style="width:1.2em;"></i>
-                    {{ $check['label'] }}
+                    @if($check['route'])<a href="{{ route($check['route']) }}">{{ $check['label'] }}</a>@else{{ $check['label'] }}@endif
                     @unless($check['ok'])
                         @if($check['route'])<a class="btn btn-default btn-xs pull-right" href="{{ route($check['route']) }}">{{ $check['action'] ?? 'Open' }}</a>@endif
                         <span class="iapm-hint">&mdash; {{ $check['hint'] }}</span>

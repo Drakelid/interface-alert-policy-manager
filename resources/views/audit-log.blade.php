@@ -1,5 +1,6 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Audit Log') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">Audit Log</h1>
+<p class="iapm-hint" style="max-width:70em;">Every configuration change made through this plugin: who changed what, when, and from where. Incident actions (acknowledge, mute, resend) are recorded here too. This is a record of <em>changes</em> &mdash; for what was actually delivered, see the <a href="{{ route('iapm.delivery-log') }}">Delivery Log</a>.</p>
 {{-- P1-2: "User ID" was a free-text numeric box and "Object type" free text.
      Users get a type-ahead searching username/real name; object types are a
      fixed vocabulary, so they are a select. --}}
@@ -54,4 +55,8 @@
 <td>@include('iapm::partials.audit-object',['audit'=>$a])</td>
 <td>{{ $a->source_ip }}</td>
 </tr>@empty<tr><td colspan="5" class="iapm-hint">No audit entries match.</td></tr>@endforelse
-</tbody></table></div>{{ $audits->links() }}</div>@endsection
+</tbody></table></div>{{ $audits->links() }}
+@if($audits->total() === 0)
+@include('iapm::partials.empty-state',['title'=>'No audit entries yet','body'=>'Every configuration change made through this plugin is recorded here — who changed what, and when. Entries appear as soon as someone edits a policy, destination, assignment or setting.','route'=>route('iapm.policies.index'),'action'=>'Open policies','secondaryRoute'=>route('iapm.audit-log'),'secondaryAction'=>'Clear filters'])
+@endif
+</div>@endsection

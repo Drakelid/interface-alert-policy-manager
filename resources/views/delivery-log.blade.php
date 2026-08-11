@@ -1,5 +1,6 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Delivery Log') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">Delivery Log</h1>
+<p class="iapm-hint" style="max-width:70em;">Every notification attempt IAPM has made, one row per attempt. <code>dry_run</code> rows are what <em>would</em> have been sent while dry-run is on; <code>failed_configuration</code> means the attempt never left IAPM (usually no resolvable receiver). Credentials are never recorded. For who changed the configuration, see the <a href="{{ route('iapm.audit-log') }}">Audit Log</a>.</p>
 {{-- P1-2: "Incident ID" and "Destination ID" were free-text numeric boxes.
      Destinations are low-cardinality, so that one is a select; incidents are
      not, so it is a type-ahead searching by id or hostname. --}}
@@ -66,4 +67,8 @@
 <td class="iapm-num">{{ $d->response_status }}</td>
 <td class="iapm-truncate" title="{{ $d->error_message }}">{{ $d->error_message }}</td>
 </tr>@empty<tr><td colspan="7" class="iapm-hint">No deliveries match.</td></tr>@endforelse
-</tbody></table></div>{{ $deliveries->links() }}</div>@endsection
+</tbody></table></div>{{ $deliveries->links() }}
+@if($deliveries->total() === 0)
+@include('iapm::partials.empty-state',['title'=>'No deliveries yet','body'=>'Every notification attempt is recorded here, including dry-run ones. Send a test from a destination to see the first entry, or clear the filter if you expected results.','route'=>route('iapm.destinations.index'),'action'=>'Open destinations','secondaryRoute'=>route('iapm.delivery-log'),'secondaryAction'=>'Clear filters'])
+@endif
+</div>@endsection

@@ -37,6 +37,10 @@
 .iapm-chips { display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top:6px; }
 .iapm-chips .iapm-chip { font-family:monospace; font-size:11px; }
 .iapm-sms-counter { margin:4px 0 0; font-variant-numeric:tabular-nums; }
+/* P4-4: an inline <code> holding a brace-delimited placeholder has no break
+   opportunity, so it pushed past the container's right edge instead of
+   wrapping. (Spelling the token out here would be compiled as a Blade echo.) */
+.iapm-wrap-code code { white-space:normal; overflow-wrap:anywhere; }
 /* Schedule editor time ranges (P1-5) */
 .iapm-period { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
 .iapm-period input[type=time] { width:auto; }
@@ -62,6 +66,17 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
 .iapm-num { text-align:right; font-variant-numeric:tabular-nums; }
 .iapm-truncate { max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .iapm-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+/* P4-1: nine tiles on a 12-column Bootstrap grid wrapped 5-then-4, and each
+   had a large empty area to the right of its number, so nine figures consumed
+   most of the viewport. An auto-fitting grid wraps evenly at any width and the
+   tiles are tight enough to read as a strip. It also fixes the Dry-run
+   Comparison page, where the ninth card sat alone on its own row. */
+.iapm-tile-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-bottom:12px; }
+.iapm-tile-grid > a { text-decoration:none; display:block; }
+.iapm-tile-grid .panel { margin-bottom:0; height:100%; }
+.iapm-tile-grid .panel-heading { padding:5px 10px; font-size:12px; line-height:1.3; }
+.iapm-tile-grid .panel-body { padding:6px 10px 8px; }
+.iapm-tile-grid .panel-body strong { font-size:20px; line-height:1.1; }
 .iapm-tile { border-left:4px solid transparent; }
 .iapm-tile.crit { border-left-color:var(--iapm-critical); }
 .iapm-tile.warn { border-left-color:var(--iapm-warning); }
@@ -75,6 +90,10 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
 .iapm-toasts { position:fixed; top:64px; right:16px; z-index:1080; width:340px; max-width:90vw; }
 .iapm-toasts .alert { box-shadow:0 2px 8px rgba(0,0,0,.2); }
 .iapm-spark { vertical-align:middle; }
+/* P4-7: the chart inherits currentColor, so it follows the theme's text colour
+   in both light and dark rather than needing a palette of its own. */
+.iapm-chart { display:block; max-width:100%; }
+.iapm-chart-empty { text-align:center; padding:24px 16px; }
 .iapm-nav .nav-pills { margin-bottom:6px; }
 .iapm-quickfind { max-width:210px; }
 @media (max-width:768px) {
@@ -416,19 +435,61 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
     });
 
     // --- Auto-refresh (opt in with an element #iapm-autorefresh[data-interval]) ---
+    // P4-3: the checkbox gave no indication of its interval, when the page last
+    // loaded, or when the next refresh was due. All three are now shown, and the
+    // interval is selectable and remembered per page.
     var ar = document.getElementById('iapm-autorefresh');
     if (ar) {
         var key = 'iapm.autorefresh.' + location.pathname;
-        var on = localStorage.getItem(key) === '1';
-        var interval = parseInt(ar.dataset.interval || '30', 10);
+        var intervalKey = key + '.interval';
         var box = ar.querySelector('input[type=checkbox]');
+        var intervalSelect = ar.querySelector('[data-iapm-refresh-interval]');
         var stamp = ar.querySelector('.iapm-updated');
         var loadedAt = Date.now();
-        if (box) { box.checked = on; box.addEventListener('change', function () { localStorage.setItem(key, box.checked ? '1' : '0'); schedule(); }); }
-        function tick() { if (stamp) { var s = Math.round((Date.now() - loadedAt) / 1000); stamp.textContent = 'updated ' + s + 's ago'; } }
-        var timer = null, poll = setInterval(tick, 1000);
-        function schedule() { if (timer) clearTimeout(timer); if (box && box.checked) { timer = setTimeout(function () { location.reload(); }, interval * 1000); } }
+        var timer = null;
+
+        function interval() {
+            var stored = parseInt(localStorage.getItem(intervalKey) || '', 10);
+            var chosen = intervalSelect ? parseInt(intervalSelect.value, 10) : stored;
+            return chosen || stored || parseInt(ar.dataset.interval || '30', 10);
+        }
+
+        if (intervalSelect) {
+            var stored = localStorage.getItem(intervalKey);
+            if (stored) { intervalSelect.value = stored; }
+            intervalSelect.addEventListener('change', function () {
+                localStorage.setItem(intervalKey, intervalSelect.value);
+                schedule(); tick();
+            });
+        }
+        if (box) {
+            box.checked = localStorage.getItem(key) === '1';
+            box.addEventListener('change', function () {
+                localStorage.setItem(key, box.checked ? '1' : '0');
+                schedule(); tick();
+            });
+        }
+
+        function tick() {
+            if (! stamp) { return; }
+            var age = Math.round((Date.now() - loadedAt) / 1000);
+            var text = 'loaded ' + age + 's ago';
+            if (box && box.checked) {
+                text += ' · next refresh in ' + Math.max(0, interval() - age) + 's';
+            } else {
+                text += ' · auto-refresh off';
+            }
+            stamp.textContent = text;
+        }
+
+        function schedule() {
+            if (timer) { clearTimeout(timer); timer = null; }
+            if (box && box.checked) { timer = setTimeout(function () { location.reload(); }, interval() * 1000); }
+        }
+
+        setInterval(tick, 1000);
         schedule();
+        tick();
     }
 })();
 </script>
