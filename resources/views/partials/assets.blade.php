@@ -21,6 +21,11 @@
 .iapm-filter-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
 /* Keeps a button aligned with the inputs beside it without an empty-looking gap. */
 .iapm-invisible-label { visibility:hidden; }
+/* Schedule editor time ranges (P1-5) */
+.iapm-period { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+.iapm-period input[type=time] { width:auto; }
+/* Save belongs to the whole form, not the bottom of one column (P2-4). */
+.iapm-form-footer { margin-top:16px; padding-top:12px; border-top:1px solid rgba(128,128,128,.25); display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .iapm-result-count { margin:0; }
 .iapm-result-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin:8px 0; }
 .iapm-per-page { margin-left:auto; display:flex; align-items:center; gap:6px; }

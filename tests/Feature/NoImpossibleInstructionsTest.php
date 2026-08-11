@@ -25,7 +25,9 @@ class NoImpossibleInstructionsTest extends IntegrationTestCase
 
         $matrix = (string) $this->actingAs($this->admin())->get(self::BASE.'/interface-matrix')->assertOk()->getContent();
 
-        self::assertStringContainsString('>port_id<', $matrix, 'The matrix has no port_id column.');
+        // The heading is a sort link since P1-6, so match the column rather than
+        // an exact tag pairing.
+        self::assertMatchesRegularExpression('#<th[^>]*>\s*<a[^>]*>\s*port_id#', $matrix, 'The matrix has no port_id column.');
         self::assertStringContainsString('<code>'.$port->port_id.'</code>', $matrix);
     }
 
