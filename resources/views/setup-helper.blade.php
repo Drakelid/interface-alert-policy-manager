@@ -47,7 +47,11 @@
                   data-iapm-token-template="{{ $iapmHeaderBlock }}">{{ str_replace('__TOKEN__', '<your IAPM ingestion token>', $iapmHeaderBlock) }}</textarea>
         <p>Body:</p>
         <textarea id="iapm-transport" class="form-control" rows="1" readonly aria-label="Transport request body">@{{ $msg }}</textarea>
+        <p class="iapm-hint">Put those three lines in <strong>API Headers</strong> and leave <strong>API Options</strong> empty — options are sent as query-string parameters, not headers.</p>
         <div class="alert alert-warning" style="margin-top:10px;"><i class="fa fa-shield"></i> Do <strong>not</strong> put SMS credentials in this transport — IAPM owns downstream delivery. This transport only forwards the alert JSON.</div>
+        {{-- LibreNMS 26.x resolves transports through alert operations; a rule with no
+             operation is muted before any transport runs, so IAPM never sees the alert. --}}
+        <div class="alert alert-info" style="margin-top:10px;"><i class="fa fa-info-circle"></i> On LibreNMS 26.x, attach the rule to an <strong>alert operation</strong> and map this transport to that operation's <em>problem</em> segment. A rule with no operation is muted before any transport runs — <code>alerts.php</code> prints <code>Muted Alert-UID #n</code> and nothing reaches IAPM.</div>
     </div>
 </div>
 

@@ -16,6 +16,27 @@ Large active payloads and all whole-device recoveries return HTTP 202 only after
 
 Successful ingestion logs are sampled and heartbeat writes are throttled. Authentication and validation rejection logs are rate-limited per source IP; use web-server/firewall counters for volumetric abuse.
 
+## LibreNMS alert operations (26.x)
+
+LibreNMS 26.x resolves transports through **alert operations**, not through `alert_transport_map`. A rule whose `alert_operation_id` is `NULL` is muted before any transport runs, so IAPM receives nothing and its ingestion heartbeat never advances. The signature in `php /opt/librenms/alerts.php` output is:
+
+```
+RunAlerts():
+Muted Alert-UID #1
+```
+
+with no `Issuing Alert-UID` line. `LibreNMS\Alert\AlertUtil::mergeProblemPhaseTimingFromOperations()` sets `mute` when the rule has no operation, and `getAlertTransports()` returns an empty list for the same reason — even when `alert_transport_map` contains a row.
+
+To fix: open the rule in the LibreNMS rule editor, attach an alert operation, and map the IAPM API transport to that operation's **problem** segment. All alert states currently map to the problem phase, so one segment covers both trigger and recovery notifications. Rules created through the editor get this wiring automatically; rules inserted directly into `alert_rules` (imports, provisioning scripts, restored backups) do not.
+
+Verify with:
+
+```bash
+php artisan tinker --execute="var_dump(LibreNMS\Alert\AlertUtil::getAlertTransports(<alert_id>));"
+```
+
+An empty array means the operation or its transport mapping is missing.
+
 ## Missed recovery or stuck pending
 
 Run `iapm:reconcile --dry-run`, inspect the port in LibreNMS, then run reconciliation normally. For one incident use `--incident=ID`; for an outage scope use `--device=ID`. Confirm polling is current before forcing state.

@@ -86,6 +86,8 @@ Open **Tools → Setup Helper**. Copy the three blocks into LibreNMS alerting:
 2. **Alert template** — paste as the rule's template.
 3. **API transport** — an *API* transport (POST, "send as form" OFF) to the ingestion URL with the `Authorization: Bearer <token>` header; route the rule to it.
 
+On LibreNMS 26.x the rule must also be attached to an **alert operation**, and the transport must be mapped to one of that operation's segments — that is where modern LibreNMS resolves transports from. A rule with no operation is silently muted (`Muted Alert-UID #<n>` in `alerts.php` output) and IAPM never receives anything. Building the rule in the rule editor sets this up for you; a rule inserted straight into `alert_rules` does not. See [docs/OPERATIONS.md](docs/OPERATIONS.md#librenms-alert-operations-26x).
+
 The Setup Helper's **"Confirm it's working"** panel turns green once LibreNMS posts its first alert.
 
 ### 5. Delivery workers (queued dispatch is the default)
