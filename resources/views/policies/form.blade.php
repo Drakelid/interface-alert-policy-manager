@@ -39,7 +39,21 @@ $fields = [
 @if($policy->exists)<hr><h3>Notification actions <a class="btn btn-primary btn-sm" href="{{ route('iapm.actions.create',$policy) }}">Add action</a></h3>
 @php($enabledActionCount = $policy->actions()->where('enabled',true)->count())
 @if($enabledActionCount===0)<div class="alert alert-warning"><i class="fa fa-bell-slash"></i> <strong>This policy won't notify anyone yet.</strong> It has no enabled notification action, so matched interfaces will trigger incidents silently. <a href="{{ route('iapm.actions.create',$policy) }}">Add an action</a> pointing at a destination (e.g. your SMS gateway).</div>@endif
-<p class="text-muted">Build an <strong>escalation chain</strong> by adding multiple <em>escalation</em> actions with increasing delays and different destinations/receivers (e.g. 10m → primary, 20m → secondary, 30m → manager). Delays are measured from when the incident triggered; acknowledging the incident stops further escalation.</p><table class="table"><thead><tr><th>Phase</th><th>Destination</th><th>Delay</th><th>Repeat</th><th>Maximum</th><th>Status</th></tr></thead><tbody>@foreach($policy->actions()->with('destination')->orderBy('sort_order')->get() as $action)<tr><td><a href="{{ route('iapm.actions.edit',$action) }}">{{ $action->phase->value }}</a></td><td>{{ $action->destination?->name }}</td><td>{{ $action->delay_seconds }}</td><td>{{ $action->repeat_seconds }}</td><td>{{ $action->maximum_sends }}</td><td>{{ $action->enabled?'Enabled':'Disabled' }}</td></tr>@endforeach</tbody></table>
+<p class="text-muted">Build an <strong>escalation chain</strong> by adding multiple <em>escalation</em> actions with increasing delays and different destinations/receivers (e.g. 10m → primary, 20m → secondary, 30m → manager). Delays are measured from when the incident triggered; acknowledging the incident stops further escalation.</p>{{-- P1-4: only the phase cell was a link, and deleting an action was reachable
+     only from inside the action editor. Both are explicit controls now. --}}
+<table class="table"><thead><tr><th>Phase</th><th>Destination</th><th>Delay</th><th>Repeat</th><th>Maximum</th><th>Status</th><th></th></tr></thead><tbody>
+@foreach($policy->actions()->with('destination')->orderBy('sort_order')->get() as $action)<tr>
+<td><a href="{{ route('iapm.actions.edit',$action) }}">{{ $action->phase->value }}</a></td>
+<td>@if($action->destination)<a href="{{ route('iapm.destinations.edit',$action->destination) }}">{{ $action->destination->name }}</a>@else<span class="text-warning">none</span>@endif</td>
+<td>{{ $action->delay_seconds }}</td>
+<td>{{ $action->repeat_seconds ?? '—' }}</td>
+<td>{{ $action->maximum_sends ?? '—' }}</td>
+<td>@if($action->enabled)<span class="label label-success">Enabled</span>@else<span class="label label-default">Disabled</span>@endif</td>
+<td class="iapm-actions" style="white-space:nowrap;">
+    <a class="btn btn-default btn-xs" href="{{ route('iapm.actions.edit',$action) }}"><i class="fa fa-pencil"></i> Edit</a>
+    <form method="post" action="{{ route('iapm.actions.destroy',$action) }}" style="display:inline;" data-iapm-confirm="Delete the {{ $action->phase->value }} action sending to {{ $action->destination?->name ?? 'no destination' }}? This policy will stop notifying through it.">@csrf @method('DELETE')<button class="btn btn-danger btn-xs"><i class="fa fa-trash"></i> Delete</button></form>
+</td>
+</tr>@endforeach</tbody></table>
 <form method="post" action="{{ route('iapm.policies.clone',$policy) }}">@csrf<button class="btn btn-default">Clone policy</button></form>
 <form method="post" action="{{ route('iapm.policies.destroy',$policy) }}" onsubmit="return confirm('Delete this policy?')">@csrf @method('DELETE')
 @if(($openIncidentCount??0)>0)<div class="form-group"><label>This policy has {{ $openIncidentCount }} active incident(s). Migrate them to</label><select name="migrate_to" class="form-control" required><option value="">Select a policy…</option>@foreach($otherPolicies as $p)<option value="{{ $p->id }}">{{ $p->name }}</option>@endforeach</select></div>@endif

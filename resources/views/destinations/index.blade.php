@@ -14,7 +14,12 @@
 <td>{{ $d->type === 'sms_gateway' ? 'SMS gateway' : 'Generic webhook' }}</td>
 <td>@if($d->enabled)<span class="label label-success">Enabled</span>@else<span class="label label-default">Disabled</span>@endif</td>
 <td>{{ $d->actions_count }}</td>
-<td><a class="btn btn-default btn-xs" href="{{ route('iapm.destinations.edit',$d) }}#test">Test</a> <form method="post" action="{{ route('iapm.destinations.clone',$d) }}" style="display:inline;">@csrf<button class="btn btn-default btn-xs">Clone</button></form></td>
+{{-- P1-4: Test and Clone were buttons but editing was only the row name. --}}
+<td class="iapm-actions" style="white-space:nowrap;">
+    <a class="btn btn-default btn-xs" href="{{ route('iapm.destinations.edit',$d) }}"><i class="fa fa-pencil"></i> Edit</a>
+    <a class="btn btn-default btn-xs" href="{{ route('iapm.destinations.edit',$d) }}#test"><i class="fa fa-paper-plane"></i> Test</a>
+    <form method="post" action="{{ route('iapm.destinations.clone',$d) }}" style="display:inline;">@csrf<button class="btn btn-default btn-xs"><i class="fa fa-copy"></i> Clone</button></form>
+</td>
 </tr>@endforeach</tbody></table></div>
 {{ $destinations->links() }}
 @else
