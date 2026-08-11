@@ -94,6 +94,12 @@ return [
         // but not beyond what your SMS gateway accepts concurrently. Set 0 to let the
         // scheduler manage none (e.g. when you run dedicated systemd workers instead).
         'workers' => (int) env('IAPM_QUEUE_WORKERS', 3),
+        // How long without a consumed heartbeat before iapm:health calls the queue
+        // workers dead. The scheduler enqueues one heartbeat a minute, so this must
+        // absorb a missed scheduler tick or a briefly busy worker without crying
+        // wolf: 300s tolerates four consecutive misses. Worker liveness is proven by
+        // a heartbeat actually being consumed, never by the queue merely being empty.
+        'heartbeat_stale_seconds' => (int) env('IAPM_QUEUE_HEARTBEAT_STALE_SECONDS', 300),
     ],
     'sms' => [
         'gateway_url' => env('IAPM_SMS_GATEWAY_URL'),

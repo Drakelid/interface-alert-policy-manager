@@ -9,6 +9,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\SendNotificationJob;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\QueueHeartbeat;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
@@ -83,7 +84,9 @@ class QueueDispatchTest extends IntegrationTestCase
         self::assertSame('sent', $outbox->fresh()->status);
         self::assertSame(1, DeliveryLog::where('status', 'sent')->count());
         self::assertSame(1, (int) $incident->fresh()->notification_count);
-        self::assertNotNull($this->settings->get('last_queue_worker_at'));
+        // Renamed from last_queue_worker_at: this records notification traffic,
+        // not worker liveness. iapm:health proves liveness with QueueHeartbeat.
+        self::assertNotNull($this->settings->get(QueueHeartbeat::DELIVERY_KEY));
     }
 
     public function test_a_broken_queue_backend_leaves_durable_work_pending_without_synchronous_fallback(): void

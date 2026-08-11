@@ -19,6 +19,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\DrainOutboxCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\HealthCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\InstallCheckCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ProcessActionsCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\QueueHeartbeatCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ReconcileCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestDestinationCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestPolicyCommand;
@@ -75,7 +76,7 @@ class IapmServiceProvider extends ServiceProvider
         // CommandNotFoundException in the browser. Registration is lazy — the
         // command classes are only resolved when one is actually run — so there
         // is no cost to an ordinary web request.
-        $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, DrainIngestionCommand::class, DrainOutboxCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
+        $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, DrainIngestionCommand::class, DrainOutboxCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, QueueHeartbeatCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
 
         // The scheduler is resolved during app boot, when the plugins table may
         // not exist yet on a fresh install. So entries are always registered and
@@ -93,6 +94,14 @@ class IapmServiceProvider extends ServiceProvider
                 $schedule->command("iapm:drain-ingestion --worker={$i} --limit={$inboxBatch}")->everyMinute()->withoutOverlapping(20)->runInBackground();
             }
             $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping(10);
+
+            // Worker-liveness heartbeat. Registered unconditionally and gated
+            // inside the command, so it covers both scheduler-managed workers and
+            // externally supervised ones (IAPM_QUEUE_WORKERS=0), and follows a
+            // change of Delivery dispatch without needing a restart. It enqueues
+            // at most one outstanding job, so a stopped worker cannot make it
+            // accumulate.
+            $schedule->command('iapm:queue-heartbeat')->everyMinute()->withoutOverlapping(5);
 
             // When queued dispatch is enabled (the default), keep queue workers running
             // via the scheduler so notifications drain without requiring systemd. Each is

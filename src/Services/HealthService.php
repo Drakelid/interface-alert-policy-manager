@@ -32,7 +32,10 @@ class HealthService
      */
     public const ABANDONED_ALERT_SECONDS = 86400;
 
-    public function __construct(private readonly SettingStore $settings) {}
+    public function __construct(
+        private readonly SettingStore $settings,
+        private readonly QueueHeartbeat $heartbeat,
+    ) {}
 
     /** @return list<array{key:string,label:string,ok:bool,detail:string}> */
     public function checks(): array
@@ -46,7 +49,8 @@ class HealthService
         ];
 
         // Only relevant when queued delivery is enabled: a worker must be draining
-        // the queue, or notifications pile up undelivered.
+        // the queue, or notifications pile up undelivered. Synchronous delivery
+        // needs no worker, so the heartbeat says nothing useful there.
         if ($this->settings->get('dispatch_mode', 'queue') === 'queue') {
             $checks[] = $this->queueWorkerCheck();
         }
@@ -54,28 +58,26 @@ class HealthService
         return $checks;
     }
 
+    /**
+     * Worker liveness only.
+     *
+     * This used to read `last_queue_worker_at`, which only a real notification
+     * wrote, and to fold the stale-outbox count into the same verdict. Both were
+     * wrong: ten quiet minutes turned a healthy six-worker install red, and a
+     * genuine backlog was reported as "no worker is draining the queue" even when
+     * the workers were fine. Liveness is now proven by a heartbeat a worker
+     * actually executed (QueueHeartbeat), and the backlog is reported separately
+     * by backlogCheck() where it belongs.
+     */
     private function queueWorkerCheck(): array
     {
-        $last = $this->timestamp('last_queue_worker_at');
-        try {
-            $pending = $this->staleOutboxQuery(self::STALE_AFTER_SECONDS)->count();
-        } catch (\Throwable $exception) {
-            Log::channel('iapm')->error('Queue health query failed.', ['error' => $exception->getMessage()]);
-
-            return ['key' => 'queue_worker', 'label' => 'Queue worker delivering', 'ok' => false, 'detail' => 'Queue health query failed: '.$exception->getMessage()];
-        }
-        $ok = $pending === 0 && ($last === null || $last->addSeconds(self::STALE_AFTER_SECONDS)->isFuture());
+        $status = $this->heartbeat->status();
 
         return [
             'key' => 'queue_worker',
             'label' => 'Queue worker delivering',
-            'ok' => $ok,
-            // Names the condition and the remedy the operator can actually reach
-            // from here, rather than a shell command a web-only administrator
-            // cannot run (P1-7). Host-level worker setup is in the README.
-            'detail' => $ok
-                ? ($last ? 'Last worker activity '.$last->diffForHumans() : 'Queued mode enabled; no traffic yet.')
-                : "Queued delivery is enabled but no worker is draining the queue ({$pending} notification(s) stuck). Either start the IAPM queue workers on the LibreNMS host, or switch Delivery dispatch to Synchronous in Settings to send inline instead.",
+            'ok' => $status['ok'],
+            'detail' => $status['detail'],
         ];
     }
 

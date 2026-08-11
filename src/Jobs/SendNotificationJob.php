@@ -9,6 +9,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\QueueHeartbeat;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 
 /** The serialized job contains only this non-sensitive database identifier. */
@@ -34,7 +35,12 @@ class SendNotificationJob implements ShouldQueue
 
     public function handle(NotificationDispatcher $dispatcher, SettingStore $settings): void
     {
-        $settings->putThrottled('last_queue_worker_at', now()->toIso8601String(), 30);
+        // Traffic visibility, not worker liveness. This was `last_queue_worker_at`
+        // and iapm:health read it as proof a worker was alive — which meant ten
+        // minutes without a notification looked identical to six dead workers.
+        // Liveness now comes from QueueHeartbeat; this records only when a real
+        // notification last went through, which is a genuinely different question.
+        $settings->putThrottled(QueueHeartbeat::DELIVERY_KEY, now()->toIso8601String(), 30);
         $dispatcher->deliverOutbox($this->outboxId);
     }
 

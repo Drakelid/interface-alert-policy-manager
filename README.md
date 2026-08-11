@@ -119,6 +119,31 @@ sudo -u librenms php artisan iapm:health   # exits 0 when scheduler, gateway, ba
 
 Point external monitoring at `iapm:health` as a dead-man's switch.
 
+#### How queue-worker health is decided
+
+When delivery is queued, `iapm:health` proves a worker is alive rather than
+inferring it. The scheduler enqueues a tiny **heartbeat job** on the same
+connection and `iapm` queue as real notifications once a minute, and a worker has
+to actually execute it to move the timestamp — so the check exercises settings →
+connection → queue → worker → execution end to end.
+
+This matters in both directions. A quiet network is not evidence of a problem:
+health stays green for hours or days without a single notification, as long as
+heartbeats keep being consumed. And an empty queue is not evidence of health:
+with every worker stopped the queue is empty too, and the check still goes red
+within `IAPM_QUEUE_HEARTBEAT_STALE_SECONDS` (default 300).
+
+Worker liveness and notification backlog are reported separately — `Queue worker
+delivering` covers the worker, `No stuck notifications` covers the outbox — so a
+backlog is never misreported as a dead worker.
+
+At most one heartbeat is outstanding at a time, so stopped workers cannot make
+jobs pile up; a heartbeat that is somehow lost rather than merely waiting is
+replaced after ten minutes so health can recover on its own. It works the same
+whether workers are scheduler-managed (`IAPM_QUEUE_WORKERS=3`) or externally
+supervised (`IAPM_QUEUE_WORKERS=0` with systemd or Supervisor), and on both the
+`database` and `redis` queue connections.
+
 ---
 
 ### Rock-solid queue workers (production)
@@ -209,6 +234,26 @@ Check the delivery mode and workers. `iapm:install-check` prints `delivery=queue
 - `delivery=sync` — sent inline by the scheduler; no workers needed. Fine, but no parallelism.
 - `delivery=queue` — requires running workers. Confirm with `pgrep -af 'queue:work --queue=iapm'`. If nothing is draining, jobs pile up in the `jobs` table. Either start workers (scheduler-managed needs `IAPM_QUEUE_WORKERS>0`; or the systemd units above) or switch to sync: Settings → *Delivery dispatch*.
 
+**`iapm:health` reports `[FAIL] Queue worker delivering` while workers are running.**
+The check reports a worker dead only when no heartbeat has been *consumed* within
+`IAPM_QUEUE_HEARTBEAT_STALE_SECONDS`. A quiet network does not cause this. Work through:
+
+1. Are the workers listening on the right queue and connection? The failure message
+   names both. A worker started without `--queue=iapm`, or against a different
+   connection than `IAPM_QUEUE_CONNECTION`, will never see the heartbeat.
+   `systemctl status 'iapm-worker@*'` shows the actual `ExecStart`.
+2. Is the LibreNMS scheduler running? If the message says *no new heartbeat is
+   queued*, nothing is enqueueing them — the `Reconciliation running` and
+   `Action processing running` checks will be red too.
+3. Did the workers load current code? After an upgrade, restart them:
+   `sudo systemctl restart 'iapm-worker@*'`.
+4. Enqueue one by hand to watch it move: `sudo -u librenms php artisan iapm:queue-heartbeat`,
+   then re-run `iapm:health`.
+
+Do **not** start an extra `php artisan queue:work` by hand to clear this. If systemd
+or Supervisor already owns the workers, a stray one masks the real fault and is lost
+on the next reboot.
+
 To read or change the mode from the CLI:
 ```bash
 sudo -u librenms php artisan tinker --execute="\$s=app(LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore::class); echo \$s->get('dispatch_mode','queue').PHP_EOL;"
@@ -279,6 +324,7 @@ php artisan iapm:test-destination --destination=ID --receiver=VALUE [--force]
 php artisan iapm:cleanup [--force]
 php artisan iapm:cache-clear
 php artisan iapm:cache-rebuild [--device=DEVICE_ID]
+php artisan iapm:queue-heartbeat   # scheduler runs this every minute; safe to run by hand
 php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external monitoring)
 ```
 
@@ -290,7 +336,7 @@ php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external m
 - **Escalation chains.** Add multiple `escalation` actions with increasing delays and different destinations/receivers; acknowledging the incident stops further escalation.
 - **Queued dispatch (default, self-provisioning).** A durable encrypted outbox is committed before a queue job containing only the outbox ID is published. Its unique episode/action/phase/destination/receiver key prevents scheduler overlap and worker retry from creating another logical notification. Workers atomically claim rows; a crash leaves a reclaimable row, and `iapm:health` reports stale claims and overdue pending work. Publication failure leaves the row pending—never synchronous—and `iapm:drain-outbox` republishes due rows. HTTP 429 honors `Retry-After`; other failures use exponential backoff with jitter. Tune `IAPM_QUEUE_WORKERS` (default 3) to gateway capacity, or use Redis via `IAPM_QUEUE_CONNECTION=redis`. Switch to **Synchronous** in Settings only for small installations; both modes use the same outbox.
 - **Durable storm ingestion.** Webhooks with at least `IAPM_INGEST_ASYNC_THRESHOLD` faults (default 1,000), plus whole-device recovery webhooks, are encrypted into `iapm_ingestion_inbox` and receive HTTP 202 only after commit. Scheduler-managed inbox workers replay them idempotently. `IAPM_INGEST_MAX_PENDING` provides explicit HTTP 503/`Retry-After` backpressure instead of dropping accepted alerts. Tune worker count first; `IAPM_INGEST_BATCH_PER_WORKER` (default 1, maximum 100) is available only after staging proves that processing multiple payloads per pass leaves database headroom.
-- **Self-monitoring.** The Overview shows an IAPM health panel, and `iapm:health` exits non-zero when the scheduler has stalled, the gateway is failing, or notifications are stuck — point your own monitoring at it as a dead-man's switch.
+- **Self-monitoring.** The Overview shows an IAPM health panel, and `iapm:health` exits non-zero when the scheduler has stalled, the gateway is failing, notifications are stuck, or no queue worker has consumed the once-a-minute liveness heartbeat — point your own monitoring at it as a dead-man's switch.
 - **Statistics & SLA** (Monitor → Statistics): MTTA/MTTR, longest outage, notifications, flapping outages, noisiest interfaces, per-policy breakdown, and delivery success rate, computed from an append-only `iapm_outages` record.
 - **Simulate alert** (Tools): fire a synthetic alert for one interface through the real pipeline to validate policy/assignment/suppression behaviour without curl (respects dry-run).
 - **Import / Export** (Tools): back up or promote schedules, policies, actions, and assignments as JSON between installs. Destinations are excluded (they hold secrets); actions are matched to destinations by name on import.

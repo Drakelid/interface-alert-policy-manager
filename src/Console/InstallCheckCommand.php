@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Console\Scheduling\Schedule;
 use LibreNMS\Interfaces\Plugins\PluginManagerInterface;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\IapmServiceProvider;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\QueueHeartbeat;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReadinessService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 
@@ -57,6 +58,14 @@ class InstallCheckCommand extends Command
         $this->line('[INFO] delivery='.$dispatchMode.($dispatchMode === 'queue'
             ? ' (IAPM queue connection='.$queueConnection.'; '.$workerMode.'; queue='.config('iapm.queue.name', 'iapm').')'
             : ' (synchronous, sent inside the scheduled run)'));
+        if ($dispatchMode === 'queue') {
+            // Worker liveness is proven by a consumed heartbeat, not by the queue
+            // being empty, so point at the check that actually answers the question.
+            $heartbeat = app(QueueHeartbeat::class);
+            $consumed = $heartbeat->consumedAt();
+            $this->line('[INFO] queue worker heartbeat='.($consumed ? 'last consumed '.$consumed->diffForHumans() : 'none consumed yet')
+                .' (stale after '.$heartbeat->staleAfterSeconds().'s; run iapm:health for the verdict)');
+        }
         $this->line('[INFO] dry_run='.($readiness->dryRun() ? 'enabled (no external delivery)' : 'disabled (live delivery)'));
 
         if ($this->option('gateway')) {

@@ -14,6 +14,33 @@ php artisan iapm:cache-rebuild
 php artisan iapm:health
 ```
 
+### Queue-worker health now uses a heartbeat (no schema change)
+
+`iapm:health` used to infer queue-worker liveness from the timestamp
+`SendNotificationJob` wrote, so an install with healthy workers, an empty queue
+and no failed jobs reported `[FAIL] Queue worker delivering` after ten quiet
+minutes. Liveness is now proven by a heartbeat job the scheduler enqueues every
+minute and a worker must execute.
+
+Nothing to migrate — the state lives in `iapm_settings`. Two things to be aware
+of on upgrade:
+
+- **Restart the workers.** They must load the code containing
+  `QueueHeartbeatJob`, or every heartbeat fails to deserialise and the check
+  stays red: `sudo systemctl restart 'iapm-worker@*'` (or your supervisor's
+  equivalent). This is the one required action.
+- **Expect up to a minute of red.** The first heartbeat is enqueued on the next
+  scheduler tick. Before that the check reports "the first heartbeat has not been
+  enqueued yet" and stays green; once enqueued and consumed it turns green for
+  good.
+
+`last_queue_worker_at` is no longer written. It is replaced by
+`last_queue_heartbeat_at` (worker liveness) and `last_queue_delivery_at` (last
+real notification). The stale row from the old key is harmless and is cleaned up
+with the rest of the settings; nothing reads it.
+
+New optional setting: `IAPM_QUEUE_HEARTBEAT_STALE_SECONDS` (default 300).
+
 ### Schema change in this release: `failed_poll_count` → `down_observations`
 
 `iapm_policies.failed_poll_count` is renamed to `down_observations`. The field
