@@ -33,7 +33,7 @@
 
 <div class="iapm-form-footer">
     <button class="btn btn-primary"><i class="fa fa-save"></i> Save templates</button>
-    <span class="iapm-hint">Respects the configured SMS length limit; long messages are truncated but keep the incident id.</span>
+    <span class="iapm-hint">SMS delivery is capped at one carrier segment; long rendered messages are truncated but keep the incident id.</span>
 </div>
 </form>
 </div>@endsection

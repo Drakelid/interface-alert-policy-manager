@@ -8,6 +8,11 @@ class SafeTemplateRenderer
 {
     private const MAX_CONDITIONAL_DEPTH = 10;
 
+    /** GSM 03.38 default and extension alphabets. Extension characters use two septets. */
+    private const GSM_BASIC = "@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ\x1BÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+
+    private const GSM_EXTENSION = "^{}\\[~]|€\f";
+
     public function render(string $template, array $values, ?int $limit = null): string
     {
         $tokens = preg_split('/(\{\{.*?\}\})/s', $template, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
@@ -30,6 +35,47 @@ class SafeTemplateRenderer
         }
 
         return $rendered;
+    }
+
+    /** Render and guarantee that an SMS gateway receives at most one SMS segment. */
+    public function renderSingleSms(string $template, array $values): string
+    {
+        return $this->limitToSingleSms($this->render($template, $values), $values['incident_id'] ?? null);
+    }
+
+    /** @return array{encoding: string, units: int, segments: int, single_limit: int} */
+    public function smsMetrics(string $message): array
+    {
+        $gsmUnits = $this->gsmUnits($message);
+        $encoding = $gsmUnits === null ? 'Unicode' : 'GSM-7';
+        $units = $gsmUnits ?? $this->unicodeUnits($message);
+        $singleLimit = $gsmUnits === null ? 70 : 160;
+        $multipartLimit = $gsmUnits === null ? 67 : 153;
+
+        return [
+            'encoding' => $encoding,
+            'units' => $units,
+            'segments' => $units <= $singleLimit ? 1 : (int) ceil($units / $multipartLimit),
+            'single_limit' => $singleLimit,
+        ];
+    }
+
+    public function limitToSingleSms(string $message, string|int|null $incidentId = null): string
+    {
+        if ($this->smsMetrics($message)['segments'] === 1) {
+            return $message;
+        }
+
+        $suffix = $incidentId === null || $incidentId === '' ? '...' : "...\nIncident: $incidentId";
+        $result = '';
+        foreach ($this->characters($message) as $character) {
+            if ($this->smsMetrics($result.$character.$suffix)['segments'] > 1) {
+                break;
+            }
+            $result .= $character;
+        }
+
+        return rtrim($result).$suffix;
     }
 
     /**
@@ -148,5 +194,32 @@ class SafeTemplateRenderer
         }
 
         return $rendered;
+    }
+
+    private function gsmUnits(string $message): ?int
+    {
+        $units = 0;
+        foreach ($this->characters($message) as $character) {
+            if (str_contains(self::GSM_BASIC, $character)) {
+                $units++;
+            } elseif (str_contains(self::GSM_EXTENSION, $character)) {
+                $units += 2;
+            } else {
+                return null;
+            }
+        }
+
+        return $units;
+    }
+
+    private function unicodeUnits(string $message): int
+    {
+        return (int) (strlen(mb_convert_encoding($message, 'UTF-16BE', 'UTF-8')) / 2);
+    }
+
+    /** @return list<string> */
+    private function characters(string $message): array
+    {
+        return preg_split('//u', $message, -1, PREG_SPLIT_NO_EMPTY) ?: [];
     }
 }

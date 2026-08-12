@@ -114,6 +114,10 @@ return [
         'username' => env('IAPM_SMS_GATEWAY_USERNAME'),
         'password' => env('IAPM_SMS_GATEWAY_PASSWORD'),
         'default_receiver' => env('IAPM_SMS_DEFAULT_RECEIVER'),
+        // Guarantee one carrier-billed SMS: 160 GSM-7 septets or 70 Unicode
+        // UTF-16 units. Messages are truncated after rendering and retain the
+        // incident id. Set false only when concatenated SMS is intentional.
+        'single_segment' => (bool) env('IAPM_SMS_SINGLE_SEGMENT', true),
         'message_length' => 480,
     ],
 ];

@@ -23,12 +23,19 @@ class TemplatePreviewController extends Controller
             $data = $request->validate(['port_id' => ['required', 'integer', 'exists:ports,port_id'], 'template' => ['required', 'string', 'max:10000']]);
             $port = Port::with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']);
             $values = $placeholders->forPreview($contexts->forPort($port));
-            $limit = (int) config('iapm.sms.message_length', 480);
-
             try {
                 $full = $renderer->render($data['template'], $values);
-                $warning = mb_strlen($full) > $limit ? 'Rendered message is '.mb_strlen($full)." characters; it will be deterministically truncated to $limit." : null;
-                $rendered = $renderer->render($data['template'], $values, $limit);
+                if ((bool) config('iapm.sms.single_segment', true)) {
+                    $metrics = $renderer->smsMetrics($full);
+                    $warning = $metrics['segments'] > 1
+                        ? "The rendered {$metrics['encoding']} message would use {$metrics['segments']} SMS segments, so it was truncated to one {$metrics['single_limit']}-unit segment."
+                        : "The rendered message fits in one {$metrics['encoding']} SMS segment.";
+                    $rendered = $renderer->limitToSingleSms($full, $values['incident_id'] ?? null);
+                } else {
+                    $limit = (int) config('iapm.sms.message_length', 480);
+                    $warning = mb_strlen($full) > $limit ? 'Rendered message is '.mb_strlen($full)." characters; it will be deterministically truncated to $limit." : null;
+                    $rendered = $renderer->render($data['template'], $values, $limit);
+                }
             } catch (\Throwable $e) {
                 $warning = $e->getMessage();
             }
