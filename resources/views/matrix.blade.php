@@ -158,14 +158,18 @@
 </form>{{ $rows->links() }}
 <script>
 (function () {
-    // P1-7: poll the rebuild until it finishes so the operator gets real
-    // progress and a completion message instead of an unexplained wait.
+    // Watch for both UI-triggered and hourly scheduled rebuilds. When a new
+    // rebuilt_at value appears, reload this same URL so the table and active
+    // filters immediately read the newly materialized cache.
     var panel = document.getElementById('iapm-cache-panel');
     if (! panel) { return; }
     var progress = document.getElementById('iapm-cache-progress');
     var state = document.getElementById('iapm-cache-state');
     var button = document.getElementById('iapm-cache-rebuild');
     var timer = null;
+    var observedRebuiltAt = @json($cache['rebuilt_at']);
+    var activePollMilliseconds = 2000;
+    var idlePollMilliseconds = 30000;
 
     function render(data) {
         if (data.status === 'stalled') {
@@ -173,7 +177,7 @@
             progress.style.display = '';
             progress.textContent = 'The rebuild was queued but nothing has picked it up. Check that the IAPM queue workers are running, or switch Delivery dispatch to Synchronous in Settings.';
             button.disabled = false;
-            return false;
+            return idlePollMilliseconds;
         }
         if (data.running) {
             progress.className = 'alert alert-info';
@@ -182,35 +186,53 @@
                 ? 'Rebuilding… ' + data.progress.toLocaleString() + ' of ' + data.total.toLocaleString() + ' interfaces.'
                 : 'Rebuilding…';
             button.disabled = true;
-            return true;
+            return activePollMilliseconds;
         }
         button.disabled = false;
         if (data.status === 'failed') {
             progress.className = 'alert alert-danger';
             progress.style.display = '';
             progress.textContent = 'Rebuild failed: ' + (data.error || 'unknown error');
-            return false;
+            return idlePollMilliseconds;
         }
         if (data.status === 'complete') {
+            if (data.rebuilt_at && observedRebuiltAt && data.rebuilt_at !== observedRebuiltAt) {
+                progress.className = 'alert alert-success';
+                progress.style.display = '';
+                progress.textContent = 'Rebuild complete. Refreshing the matrix…';
+                window.setTimeout(function () { window.location.reload(); }, 600);
+                return null;
+            }
+            if (data.rebuilt_at && ! observedRebuiltAt) {
+                window.location.reload();
+                return null;
+            }
             progress.className = 'alert alert-success';
-            progress.style.display = '';
-            progress.textContent = 'Rebuild complete — ' + data.progress.toLocaleString() + ' interfaces resolved. Reload to see the refreshed filters.';
+            progress.style.display = 'none';
             if (state && data.rebuilt_at_human) { state.textContent = 'Last rebuilt ' + data.rebuilt_at_human + '.'; }
-            return false;
+            return idlePollMilliseconds;
         }
         progress.style.display = 'none';
-        return false;
+        return idlePollMilliseconds;
     }
 
     function poll() {
         fetch('{{ route('iapm.matrix.cache-status') }}', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
-            .then(function (data) { if (render(data)) { timer = setTimeout(poll, 2000); } })
-            .catch(function () { clearTimeout(timer); });
+            .then(function (data) {
+                var delay = render(data);
+                if (delay !== null) { timer = window.setTimeout(poll, delay); }
+            })
+            .catch(function () { timer = window.setTimeout(poll, idlePollMilliseconds); });
     }
 
-    @if($cache['running'])poll();@endif
-    if (button) { button.form.addEventListener('submit', function () { setTimeout(poll, 1500); }); }
+    timer = window.setTimeout(poll, {{ $cache['running'] ? 1000 : 30000 }});
+    if (button) {
+        button.form.addEventListener('submit', function () {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(poll, 1500);
+        });
+    }
 })();
 </script>
 </div>@endsection

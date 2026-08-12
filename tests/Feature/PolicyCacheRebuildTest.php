@@ -99,6 +99,19 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
             ->assertJsonStructure(['status', 'progress', 'total', 'rebuilt_at', 'stale', 'running']);
     }
 
+    public function test_the_matrix_reloads_itself_after_detecting_a_completed_rebuild(): void
+    {
+        $body = (string) $this->actingAs($this->admin())
+            ->get(self::BASE.'/interface-matrix')
+            ->assertOk()
+            ->getContent();
+
+        self::assertStringContainsString('observedRebuiltAt', $body);
+        self::assertStringContainsString('data.rebuilt_at !== observedRebuiltAt', $body);
+        self::assertStringContainsString('window.location.reload()', $body);
+        self::assertStringContainsString('idlePollMilliseconds = 30000', $body);
+    }
+
     /** The staleness warning is the reason the button exists. */
     public function test_the_matrix_warns_when_policies_changed_after_the_last_rebuild(): void
     {
