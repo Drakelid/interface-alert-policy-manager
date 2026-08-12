@@ -142,6 +142,11 @@ class IapmServiceProvider extends ServiceProvider
             }
             $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping(10);
 
+            // Refresh the Interface Matrix's materialized policy resolution once
+            // per hour. A long rebuild cannot overlap the next scheduled run,
+            // and the command also yields to a rebuild started from the UI.
+            $schedule->command('iapm:cache-rebuild')->hourly()->withoutOverlapping(180)->runInBackground();
+
             // Worker-liveness heartbeat. Registered unconditionally and gated
             // inside the command, so it covers both scheduler-managed workers and
             // externally supervised ones (IAPM_QUEUE_WORKERS=0), and follows a

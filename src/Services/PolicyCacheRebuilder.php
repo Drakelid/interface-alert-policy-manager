@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\DB;
  * wraps it so both the console command and a queued job share one implementation
  * and one notion of "when was this last rebuilt".
  *
- * Rebuilding stays an explicit action. It is O(every port), so triggering it
- * automatically on each policy or assignment save would re-resolve the whole
- * fleet on every edit; instead the UI shows a staleness warning and a button.
+ * Rebuilding is O(every port), so edits only mark the cache stale instead of
+ * rebuilding immediately. The scheduler refreshes it hourly and the UI offers
+ * an on-demand rebuild when an operator needs the new result sooner.
  */
 class PolicyCacheRebuilder
 {
@@ -30,6 +30,8 @@ class PolicyCacheRebuilder
     public const TOTAL = 'cache_rebuild_total';
 
     public const STARTED_AT = 'cache_rebuild_started_at';
+
+    public const ACTIVITY_AT = 'cache_rebuild_activity_at';
 
     public const ERROR = 'cache_rebuild_error';
 
@@ -47,7 +49,9 @@ class PolicyCacheRebuilder
         $this->settings->put(self::STATUS, 'queued');
         $this->settings->put(self::PROGRESS, 0);
         $this->settings->put(self::TOTAL, Port::count());
-        $this->settings->put(self::STARTED_AT, now()->toIso8601String());
+        $now = now()->toIso8601String();
+        $this->settings->put(self::STARTED_AT, $now);
+        $this->settings->put(self::ACTIVITY_AT, $now);
         $this->settings->put(self::ERROR, null);
     }
 
@@ -55,6 +59,15 @@ class PolicyCacheRebuilder
     {
         $this->settings->put(self::STATUS, 'failed');
         $this->settings->put(self::ERROR, $message);
+        $this->settings->put(self::ACTIVITY_AT, now()->toIso8601String());
+    }
+
+    /** Mark a synchronous rebuild as active and expose its progress to the UI. */
+    public function markRunning(int $progress = 0): void
+    {
+        $this->settings->put(self::STATUS, 'running');
+        $this->settings->put(self::PROGRESS, $progress);
+        $this->settings->put(self::ACTIVITY_AT, now()->toIso8601String());
     }
 
     /**
@@ -68,7 +81,7 @@ class PolicyCacheRebuilder
      */
     public function runBatch(?int $afterPortId, int $limit): array
     {
-        $this->settings->put(self::STATUS, 'running');
+        $this->markRunning((int) $this->settings->get(self::PROGRESS, 0));
 
         // First batch clears the whole table: a partial rebuild that only
         // overwrites the ports it visits would leave rows for deleted ports.
@@ -87,7 +100,7 @@ class PolicyCacheRebuilder
         }
 
         $processed = $ports->count();
-        $this->settings->put(self::PROGRESS, (int) $this->settings->get(self::PROGRESS, 0) + $processed);
+        $this->markRunning((int) $this->settings->get(self::PROGRESS, 0) + $processed);
         $done = $processed < $limit;
         if ($done) {
             $this->settings->put(self::STATUS, 'complete');
@@ -103,6 +116,7 @@ class PolicyCacheRebuilder
         $this->settings->put(self::STATUS, 'complete');
         $this->settings->put(self::REBUILT_AT, now()->toIso8601String());
         $this->settings->put(self::ERROR, null);
+        $this->settings->put(self::ACTIVITY_AT, now()->toIso8601String());
     }
 
     public function rebuiltAt(): ?CarbonImmutable
@@ -146,15 +160,14 @@ class PolicyCacheRebuilder
     public function state(): array
     {
         $status = (string) ($this->settings->get(self::STATUS) ?? 'idle');
-        $startedAt = $this->settings->get(self::STARTED_AT);
+        $activityAt = $this->settings->get(self::ACTIVITY_AT) ?? $this->settings->get(self::STARTED_AT);
         $progress = (int) $this->settings->get(self::PROGRESS, 0);
 
         // A rebuild that was queued but never picked up means no worker is
         // draining the queue; say so rather than spinning forever.
         $stalled = in_array($status, ['queued', 'running'], true)
-            && $startedAt !== null
-            && CarbonImmutable::parse($startedAt)->addSeconds(self::STALLED_AFTER_SECONDS)->isPast()
-            && $progress === 0;
+            && $activityAt !== null
+            && CarbonImmutable::parse($activityAt)->addSeconds(self::STALLED_AFTER_SECONDS)->isPast();
 
         return [
             'status' => $stalled ? 'stalled' : $status,

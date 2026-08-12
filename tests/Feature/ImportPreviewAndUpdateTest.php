@@ -173,6 +173,17 @@ class ImportPreviewAndUpdateTest extends IntegrationTestCase
             ->assertSessionHasErrors();
     }
 
+    public function test_an_imported_action_with_an_invalid_template_fails_at_preview(): void
+    {
+        $document = json_decode($this->document(), true);
+        $document['policies'][0]['actions'][0]['message_template'] = '{{#if missing}}broken{{/if}}';
+
+        $this->actingAs($this->admin())
+            ->post(self::BASE.'/import', ['document' => json_encode($document), 'action' => 'preview'])
+            ->assertRedirect()
+            ->assertSessionHasErrors('policies.0.actions.0.message_template');
+    }
+
     public function test_the_report_names_every_item_and_what_happened_to_it(): void
     {
         $body = (string) $this->actingAs($this->admin())

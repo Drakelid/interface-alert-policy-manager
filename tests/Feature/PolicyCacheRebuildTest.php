@@ -3,6 +3,7 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Console\Scheduling\Schedule as ConsoleSchedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\RebuildPolicyCacheJob;
@@ -159,6 +160,16 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
         $this->artisan('iapm:cache-rebuild')->assertSuccessful();
 
         self::assertNotNull(app(PolicyCacheRebuilder::class)->rebuiltAt());
+    }
+
+    public function test_a_full_cache_rebuild_is_scheduled_every_hour(): void
+    {
+        $event = collect(app(ConsoleSchedule::class)->events())
+            ->first(fn ($event) => str_contains((string) ($event->command ?? ''), 'iapm:cache-rebuild'));
+
+        self::assertNotNull($event, 'The scheduler did not register iapm:cache-rebuild.');
+        self::assertSame('0 * * * *', $event->expression);
+        self::assertTrue($event->runInBackground);
     }
 
     /** @return list<string> */

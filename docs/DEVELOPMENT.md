@@ -15,7 +15,7 @@ Never make route or migration registration depend on database state read at boot
 
 Add a transport by implementing `NotificationTransport`, registering it in `TransportManager`, providing encrypted configuration validation, SSRF restrictions, HTTP fakes, and redaction tests. Add an assignment type by extending `AssignmentType`, its specificity, resolver matching, request validation, preview query, and precedence tests. Never reorder existing migration history; add a new reversible migration.
 
-Message placeholders come from `TemplateContextBuilder`. `SafeTemplateRenderer` throws on unknown placeholders, so a new placeholder must be added to the builder (both `forIncident()` and `forPreview()` go through the same map) and to the README list. `TemplateRenderingTest` asserts that every documented placeholder resolves.
+Message placeholders come from `TemplateContextBuilder`. `SafeTemplateRenderer` supports substitutions plus its own constrained `{{#if placeholder}}`, `{{else}}`, `{{/if}}`, `==`, and `!=` grammar; it never evaluates PHP or Blade. It throws on unknown placeholders even in an unselected branch, so a new placeholder must be added to the builder (both `forIncident()` and `forPreview()` go through the same map) and to the README list. `TemplateRenderingTest` asserts that every documented placeholder resolves.
 
 ## Tests
 

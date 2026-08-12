@@ -23,6 +23,13 @@
 .iapm-invisible-label { visibility:hidden; }
 /* Number inputs used to stretch the full ~1360px page width (P2-1). */
 .iapm-narrow-field { max-width:320px; }
+.iapm-editor-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; align-items:start; }
+.iapm-editor-grid .panel { margin-bottom:0; }
+.iapm-editor-grid .panel-heading { font-weight:600; }
+.iapm-editor-grid .panel-body > :last-child { margin-bottom:0; }
+.iapm-compact-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:0 14px; }
+.iapm-compact-grid .iapm-narrow-field { max-width:none; }
+.iapm-code-example { display:block; padding:7px 9px; margin:6px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
 /* Rows of separate action forms. Inline forms have no gap of their own, which
    is how "Unacknowledge" and "Reconcile now" ended up touching (P2-6). */
 .iapm-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }

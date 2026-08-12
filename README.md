@@ -354,7 +354,7 @@ IAPM starts in dry-run mode. Private/reserved destination addresses are blocked 
 
 SMS destination fields: URL, username, password, default receiver, JSON/form mode, connection/request timeouts, retries, retry delay, TLS verification, optional safe headers, and `allow_private_networks`. JSON mode is the default and sends `{"receiver":"...","message":"..."}`. Basic credentials are never written to delivery logs.
 
-Receiver precedence is policy-action override, metadata on the single winning assignment, policy default, destination default/list, then global default. Losing assignments never contribute receivers. Device digests union the per-incident result of that same resolver, so policy and assignment overrides survive aggregation. No delivery occurs without a valid receiver. Templates support only explicit `{{ placeholder }}` substitutions; unknown placeholders fail validation and no PHP/Blade is executed.
+Receiver precedence is policy-action override, metadata on the single winning assignment, policy default, destination default/list, then global default. Losing assignments never contribute receivers. Device digests union the per-incident result of that same resolver, so policy and assignment overrides survive aggregation. No delivery occurs without a valid receiver. Templates support explicit `{{ placeholder }}` substitutions and safe conditional blocks: `{{#if ifAlias}}...{{else}}...{{/if}}`, `{{#if severity == "critical"}}...{{/if}}`, and `!=` comparisons. Conditions may be nested up to 10 levels. Unknown placeholders and invalid syntax fail validation; no PHP or Blade is executed.
 
 The available placeholders are `incident_id`, `severity`, `state`, `hostname`, `sysName`, `display_name`, `device_id`, `port_id`, `ifName`, `ifDescr`, `ifAlias`, `ifAdminStatus`, `ifOperStatus`, `interface_type`, `location`, `policy_name`, `assignment_source`, `first_seen_at`, `triggered_at`, `recovered_at`, `outage_duration`, `device_url`, `port_url`, `acknowledgement_user`, and `suppression_reason`. `device_url` and `port_url` are built from the `url_base` setting, which defaults to the application URL. Template preview and real delivery use the same placeholder map, so a template that previews cleanly renders identically when it is sent.
 
@@ -408,7 +408,7 @@ php artisan iapm:queue-heartbeat   # scheduler runs this every minute; safe to r
 php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external monitoring)
 ```
 
-`reconcile`, `process-actions`, `drain-outbox`, `drain-ingestion`, `queue-heartbeat`, and the nightly `cleanup --force` all run from the LibreNMS scheduler already; the entries above are for manual inspection and troubleshooting.
+`reconcile`, `process-actions`, `drain-outbox`, `drain-ingestion`, `queue-heartbeat`, the hourly `cache-rebuild`, and the nightly `cleanup --force` all run from the LibreNMS scheduler already; the entries above are for manual inspection and troubleshooting.
 
 ## Noise control, monitoring, and tooling
 
@@ -450,7 +450,7 @@ IAPM is built to scale to very large fleets, but a few things must be configured
 - **Set a default assignment/policy _or_ turn off "Record alerts for interfaces with no policy"** (Settings). Otherwise every alerting interface without a matching policy is stored as a suppressed `no_policy` incident — at hundreds of thousands of interfaces that is a lot of rows. Scope IAPM to the interfaces you care about, then disable `record_unpoliced` so the rest are ignored.
 - **Tune the ingestion rate limit.** `iapm.ingestion.rate_limit` (env `IAPM_INGEST_RATE`, default `20000,1`) caps all of LibreNMS's alert POSTs together. A 429 is explicitly retryable but LibreNMS must be configured to retry it; firewall the endpoint to the LibreNMS host and size the limit to the fleet's burst rate.
 - **Enable the device digest** (`aggregate_threshold`) so a device dropping many interfaces sends one message instead of hundreds, and consider **queued dispatch** for very wide simultaneous events.
-- **Rebuild the policy cache after broad changes** if you rely on the Interface Matrix policy/source/no-policy filters. The per-request/reconcile cache writes were removed to keep the hot paths write-light. The matrix has a **Rebuild cache** button (queued, with progress) and shows the last-rebuilt time plus a warning when policies or assignments have changed since; `iapm:cache-rebuild` does the same from the CLI and can be scheduled (e.g. hourly) if you prefer. Rebuilding is never automatic on save — it is O(every port).
+- **Policy cache refreshes automatically every hour** for the Interface Matrix policy/source/no-policy filters. The per-request/reconcile cache writes remain disabled to keep the hot paths write-light. The matrix also has a **Rebuild cache** button (queued, with progress) for changes you need reflected immediately, and `iapm:cache-rebuild` does the same from the CLI. Rebuilding is not automatic on each save because it is O(every port).
 - Recovered incidents are retained (`retention_days`, default 365) and cleaned up in batches nightly; process-actions only re-scans recoveries from the last 48h, so old history doesn't slow the every-minute run.
 
 ### Known limitations

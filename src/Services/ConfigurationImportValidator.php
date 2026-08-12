@@ -11,7 +11,11 @@ class ConfigurationImportValidator
 {
     public const MAX_RECORDS = 20000;
 
-    public function __construct(private readonly ScheduleEvaluator $schedules) {}
+    public function __construct(
+        private readonly ScheduleEvaluator $schedules,
+        private readonly SafeTemplateRenderer $templates,
+        private readonly TemplateContextBuilder $templateContext,
+    ) {}
 
     /**
      * @param  bool  $updateExisting  when true the import also writes assignments
@@ -130,6 +134,13 @@ class ConfigurationImportValidator
                 foreach (($policy['actions'] ?? []) as $actionIndex => $action) {
                     if (! $destinations->contains($action['destination'] ?? null)) {
                         $validator->errors()->add("policies.{$policyIndex}.actions.{$actionIndex}.destination", 'The referenced destination does not exist.');
+                    }
+                    if (filled($action['message_template'] ?? null)) {
+                        try {
+                            $this->templates->render((string) $action['message_template'], $this->templateContext->sample());
+                        } catch (\Throwable $exception) {
+                            $validator->errors()->add("policies.{$policyIndex}.actions.{$actionIndex}.message_template", $exception->getMessage());
+                        }
                     }
                 }
                 foreach (($policy['assignments'] ?? []) as $assignmentIndex => $assignment) {

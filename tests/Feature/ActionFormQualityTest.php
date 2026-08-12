@@ -70,6 +70,28 @@ class ActionFormQualityTest extends IntegrationTestCase
         self::assertStringContainsString(route('iapm.template-preview'), $body);
         self::assertStringContainsString('data-iapm-chip="hostname"', $body);
         self::assertStringContainsString('data-iapm-chip="outage_duration"', $body);
+        self::assertStringContainsString('{{#if ifAlias}}', $body);
+        self::assertStringContainsString('{{else}}', $body);
+    }
+
+    public function test_an_invalid_action_template_is_rejected_before_it_is_saved(): void
+    {
+        $policy = $this->policy();
+        $destination = $this->smsDestination();
+
+        $this->actingAs($this->admin())->post(self::BASE."/policies/{$policy->id}/actions", [
+            'destination_id' => $destination->id,
+            'phase' => 'trigger',
+            'delay_seconds' => 0,
+            'repeat_seconds' => null,
+            'maximum_sends' => null,
+            'receivers_text' => '',
+            'message_template' => '{{#if missing}}broken{{/if}}',
+            'enabled' => 1,
+            'sort_order' => 0,
+        ])->assertSessionHasErrors('message_template');
+
+        self::assertSame(0, $policy->actions()->count());
     }
 
     /**

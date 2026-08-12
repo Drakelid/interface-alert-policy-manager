@@ -20,6 +20,36 @@ class SafeTemplateRendererTest extends TestCase
         (new SafeTemplateRenderer)->render('{{ missing }}', []);
     }
 
+    public function test_truthy_conditions_and_else_branches_render(): void
+    {
+        $renderer = new SafeTemplateRenderer;
+        $template = '{{#if ifAlias}}Circuit {{ ifAlias }}{{else}}Port {{ ifName }}{{/if}}';
+
+        self::assertSame('Circuit Customer A', $renderer->render($template, ['ifAlias' => 'Customer A', 'ifName' => 'Gi0/1']));
+        self::assertSame('Port Gi0/1', $renderer->render($template, ['ifAlias' => '', 'ifName' => 'Gi0/1']));
+    }
+
+    public function test_string_comparisons_and_nested_conditions_render(): void
+    {
+        $template = '{{#if severity == "critical"}}URGENT {{#if location != "HQ"}}{{ location }} {{/if}}{{/if}}{{ ifName }}';
+
+        self::assertSame('URGENT Branch Gi0/1', (new SafeTemplateRenderer)->render($template, [
+            'severity' => 'critical', 'location' => 'Branch', 'ifName' => 'Gi0/1',
+        ]));
+    }
+
+    public function test_unknown_placeholder_in_an_unselected_branch_is_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        (new SafeTemplateRenderer)->render('{{#if enabled}}ok{{else}}{{ missing }}{{/if}}', ['enabled' => true]);
+    }
+
+    public function test_unclosed_condition_is_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        (new SafeTemplateRenderer)->render('{{#if ifAlias}}Alias', ['ifAlias' => 'Customer A']);
+    }
+
     public function test_truncation_preserves_incident_identifier(): void
     {
         $v = (new SafeTemplateRenderer)->render(str_repeat('x', 100), ['incident_id' => 42], 30);
