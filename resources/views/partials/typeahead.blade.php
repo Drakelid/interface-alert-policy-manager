@@ -21,7 +21,6 @@
            data-iapm-typeahead-input
            @isset($help) aria-describedby="{{ $iapmFieldId }}-help" @endisset>
     <input type="hidden" name="{{ $name }}" value="{{ $value ?? '' }}" data-iapm-typeahead-value>
-    <div id="{{ $iapmFieldId }}-results" class="list-group" role="listbox" data-iapm-typeahead-results
-         style="display:none;position:absolute;z-index:1000;width:100%;max-height:240px;overflow:auto;margin-top:-6px;box-shadow:0 2px 6px rgba(0,0,0,.15);"></div>
+    <div id="{{ $iapmFieldId }}-results" class="list-group iapm-typeahead-results" role="listbox" data-iapm-typeahead-results></div>
     @isset($help)<p class="iapm-hint" id="{{ $iapmFieldId }}-help">{{ $help }}</p>@endisset
 </div>

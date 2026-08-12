@@ -61,6 +61,13 @@ class ResponsiveAndThemeTest extends TestCase
         }
     }
 
+    public function test_typeahead_results_use_a_tall_viewport_aware_scroll_panel(): void
+    {
+        $css = $this->stylesheet();
+
+        self::assertMatchesRegularExpression('/\.iapm-typeahead-results \{[^}]*max-height:min\(60vh,520px\)[^}]*overflow-y:auto/', $css);
+    }
+
     /**
      * LibreNMS toggles dark mode with a .dark class on <html>. Any colour the
      * plugin hard-codes must therefore have a dark counterpart, or it will be

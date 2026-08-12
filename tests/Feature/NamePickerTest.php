@@ -70,6 +70,27 @@ class NamePickerTest extends IntegrationTestCase
         }
     }
 
+    public function test_the_port_lookup_pages_through_every_matching_interface(): void
+    {
+        $device = $this->device(['hostname' => 'dense-access-switch']);
+        foreach (range(1, 55) as $index) {
+            $this->downPort($device, ['ifName' => sprintf('Gi1/0/%02d', $index), 'ifAlias' => 'bulk-match']);
+        }
+
+        $first = $this->actingAs($this->admin())
+            ->getJson(self::BASE.'/lookup/ports?q=bulk-match')
+            ->assertOk()
+            ->assertJsonPath('has_more', true)
+            ->assertJsonCount(50, 'items');
+
+        $offset = $first->json('next_offset');
+        $this->actingAs($this->admin())
+            ->getJson(self::BASE.'/lookup/ports?q=bulk-match&offset='.$offset)
+            ->assertOk()
+            ->assertJsonPath('has_more', false)
+            ->assertJsonCount(5, 'items');
+    }
+
     /** An empty term must not turn the picker into an unbounded table scan. */
     public function test_lookups_return_nothing_for_an_empty_term(): void
     {

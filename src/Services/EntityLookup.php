@@ -37,8 +37,11 @@ class EntityLookup
     }
 
     /** @return list<array{id:int,label:string}> */
-    public function ports(string $term, ?int $deviceId = null): array
+    public function ports(string $term, ?int $deviceId = null, int $limit = self::LIMIT, int $offset = 0): array
     {
+        $limit = max(1, min(101, $limit));
+        $offset = max(0, $offset);
+
         return Port::query()
             ->with('device:device_id,hostname')
             ->when($deviceId, fn ($q) => $q->where('ports.device_id', $deviceId))
@@ -50,7 +53,8 @@ class EntityLookup
             })
             ->orderBy('ports.device_id')
             ->orderBy('ifName')
-            ->limit(self::LIMIT)
+            ->offset($offset)
+            ->limit($limit)
             ->get(['port_id', 'device_id', 'ifName', 'ifAlias'])
             ->map(fn ($p) => ['id' => (int) $p->port_id, 'label' => $this->portLabel($p)])
             ->all();

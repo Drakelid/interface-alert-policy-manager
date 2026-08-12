@@ -18,6 +18,8 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
  */
 class LookupController extends Controller
 {
+    private const PORT_PAGE_SIZE = 50;
+
     public function __construct(private readonly EntityLookup $lookup) {}
 
     public function devices(Request $request): JsonResponse
@@ -27,9 +29,24 @@ class LookupController extends Controller
 
     public function ports(Request $request): JsonResponse
     {
-        $deviceId = $request->filled('device_id') ? $request->integer('device_id') : null;
+        $term = trim((string) $request->query('q', ''));
+        if ($term === '') {
+            return response()->json([]);
+        }
 
-        return $this->respond($request, fn (string $term) => $this->lookup->ports($term, $deviceId));
+        $deviceId = $request->filled('device_id') ? $request->integer('device_id') : null;
+        $offset = max(0, $request->integer('offset'));
+        $items = $this->lookup->ports($term, $deviceId, self::PORT_PAGE_SIZE + 1, $offset);
+        $hasMore = count($items) > self::PORT_PAGE_SIZE;
+        if ($hasMore) {
+            array_pop($items);
+        }
+
+        return response()->json([
+            'items' => $items,
+            'has_more' => $hasMore,
+            'next_offset' => $offset + count($items),
+        ]);
     }
 
     public function incidents(Request $request): JsonResponse

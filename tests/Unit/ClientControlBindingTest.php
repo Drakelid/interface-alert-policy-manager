@@ -23,4 +23,13 @@ class ClientControlBindingTest extends TestCase
         self::assertStringContainsString('navigator.clipboard && navigator.clipboard.writeText', $assets);
         self::assertStringContainsString("document.execCommand('copy')", $assets);
     }
+
+    public function test_interface_typeahead_can_load_additional_result_pages(): void
+    {
+        $assets = (string) file_get_contents(dirname(__DIR__, 2).'/resources/views/partials/assets.blade.php');
+
+        self::assertStringContainsString("more.textContent = 'Load more interfaces'", $assets);
+        self::assertStringContainsString("'&offset=' + encodeURIComponent(offset)", $assets);
+        self::assertStringContainsString("results.addEventListener('scroll'", $assets);
+    }
 }

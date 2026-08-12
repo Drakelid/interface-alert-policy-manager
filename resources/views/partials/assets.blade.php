@@ -44,6 +44,8 @@
 .iapm-chips { display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top:6px; }
 .iapm-chips .iapm-chip { font-family:monospace; font-size:11px; }
 .iapm-sms-counter { margin:4px 0 0; font-variant-numeric:tabular-nums; }
+.iapm-typeahead-results { display:none; position:absolute; z-index:1000; width:100%; max-height:min(60vh,520px); overflow-y:auto; overscroll-behavior:contain; margin-top:-6px; box-shadow:0 2px 6px rgba(0,0,0,.15); }
+.iapm-typeahead-more { text-align:center; font-weight:600; }
 /* P4-4: an inline <code> holding a brace-delimited placeholder has no break
    opportunity, so it pushed past the container's right edge instead of
    wrapping. (Spelling the token out here would be compiled as a Blade echo.) */
@@ -296,8 +298,61 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
         var endpoint = root.dataset.iapmTypeahead;
         var dependsOn = root.dataset.iapmTypeaheadDepends;
         var timer = null;
+        var requestSerial = 0;
+        var loadingMore = false;
 
         function close() { results.style.display = 'none'; results.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); }
+
+        function addResult(item) {
+            var a = document.createElement('a');
+            a.href = '#';
+            a.className = 'list-group-item';
+            a.setAttribute('role', 'option');
+            a.textContent = item.label;
+            a.addEventListener('click', function (e) { e.preventDefault(); choose(item); });
+            results.appendChild(a);
+        }
+
+        function load(term, offset, append, serial) {
+            if (append && loadingMore) { return; }
+            if (append) { loadingMore = true; }
+            var url = endpoint + '?q=' + encodeURIComponent(term) + (offset ? '&offset=' + encodeURIComponent(offset) : '');
+            if (dependsOn) {
+                var dep = document.getElementById(dependsOn);
+                if (dep && dep.value) { url += '&device_id=' + encodeURIComponent(dep.value); }
+            }
+            fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+                .then(function (r) { return r.ok ? r.json() : []; })
+                .then(function (payload) {
+                    if (serial !== requestSerial) { return; }
+                    var list = Array.isArray(payload) ? payload : (payload.items || []);
+                    var hasMore = ! Array.isArray(payload) && !! payload.has_more;
+                    var nextOffset = ! Array.isArray(payload) ? payload.next_offset : 0;
+                    if (! append) { results.innerHTML = ''; }
+                    var oldMore = results.querySelector('[data-iapm-typeahead-more]');
+                    if (oldMore) { oldMore.remove(); }
+                    if (! list.length && ! append) {
+                        var none = document.createElement('span');
+                        none.className = 'list-group-item iapm-hint';
+                        none.textContent = 'No matches';
+                        results.appendChild(none);
+                    }
+                    list.forEach(addResult);
+                    if (hasMore) {
+                        var more = document.createElement('button');
+                        more.type = 'button';
+                        more.className = 'list-group-item iapm-typeahead-more';
+                        more.dataset.iapmTypeaheadMore = '1';
+                        more.textContent = 'Load more interfaces';
+                        more.addEventListener('click', function () { load(term, nextOffset, true, serial); });
+                        results.appendChild(more);
+                    }
+                    results.style.display = 'block';
+                    input.setAttribute('aria-expanded', 'true');
+                })
+                .catch(function () { if (serial === requestSerial) { close(); } })
+                .finally(function () { if (append) { loadingMore = false; } });
+        }
 
         // The port picker keeps a visible raw-id box alongside the search, for
         // operators who already have the number. data-iapm-mirror keeps the two
@@ -305,6 +360,7 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
         var mirror = hidden.dataset.iapmMirror ? document.querySelector(hidden.dataset.iapmMirror) : null;
 
         function choose(item) {
+            requestSerial++;
             input.value = item.label;
             hidden.value = item.id;
             if (mirror) { mirror.value = item.id; }
@@ -326,37 +382,19 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
             hidden.value = '';
             var term = input.value.trim();
             clearTimeout(timer);
+            requestSerial++;
+            var serial = requestSerial;
             if (term === '') { close(); return; }
             timer = setTimeout(function () {
-                var url = endpoint + '?q=' + encodeURIComponent(term);
-                if (dependsOn) {
-                    var dep = document.getElementById(dependsOn);
-                    if (dep && dep.value) { url += '&device_id=' + encodeURIComponent(dep.value); }
-                }
-                fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
-                    .then(function (r) { return r.ok ? r.json() : []; })
-                    .then(function (list) {
-                        results.innerHTML = '';
-                        if (! list.length) {
-                            var none = document.createElement('span');
-                            none.className = 'list-group-item iapm-hint';
-                            none.textContent = 'No matches';
-                            results.appendChild(none);
-                        }
-                        list.forEach(function (item) {
-                            var a = document.createElement('a');
-                            a.href = '#';
-                            a.className = 'list-group-item';
-                            a.setAttribute('role', 'option');
-                            a.textContent = item.label;
-                            a.addEventListener('click', function (e) { e.preventDefault(); choose(item); });
-                            results.appendChild(a);
-                        });
-                        results.style.display = 'block';
-                        input.setAttribute('aria-expanded', 'true');
-                    })
-                    .catch(close);
+                load(term, 0, false, serial);
             }, 200);
+        });
+
+        results.addEventListener('scroll', function () {
+            if (results.scrollTop + results.clientHeight >= results.scrollHeight - 40) {
+                var more = results.querySelector('[data-iapm-typeahead-more]');
+                if (more) { more.click(); }
+            }
         });
 
         input.addEventListener('keydown', function (e) {
