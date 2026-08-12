@@ -36,7 +36,10 @@ class SimulationController extends Controller
         $port = Port::with('device')->findOrFail($data['port_id']);
         $down = $data['state'] === 'down';
         $payload = [
-            'alert_uid' => 'sim-'.$port->port_id.'-'.now()->timestamp,
+            // Stable for this interface so a later Up simulation correlates with
+            // the Down simulation and recovers the same incident. The event
+            // timestamp still makes distinct observations independently unique.
+            'alert_uid' => 'iapm-sim-port-'.$port->port_id,
             'device_id' => (int) $port->device_id,
             'hostname' => (string) $port->device?->hostname,
             'state' => $down ? 1 : 0,

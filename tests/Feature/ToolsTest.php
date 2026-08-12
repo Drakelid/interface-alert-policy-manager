@@ -25,6 +25,28 @@ class ToolsTest extends IntegrationTestCase
         self::assertSame((int) $port->port_id, (int) Incident::first()->port_id);
     }
 
+    public function test_simulated_up_recovers_the_same_incident_created_by_down(): void
+    {
+        $this->defaultPolicy(['trigger_after_seconds' => 0, 'down_observations' => 1, 'recovery_after_seconds' => 0]);
+        $port = $this->downPort($this->device());
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
+            ->post('/plugin/interface-alert-policy-manager/tools/simulate', ['port_id' => $port->port_id, 'state' => 'down'])
+            ->assertOk();
+
+        $incident = Incident::firstOrFail();
+        self::assertSame('iapm-sim-port-'.$port->port_id, $incident->source_alert_uid);
+
+        $this->actingAs($admin)
+            ->post('/plugin/interface-alert-policy-manager/tools/simulate', ['port_id' => $port->port_id, 'state' => 'up'])
+            ->assertOk()
+            ->assertSee('recovered');
+
+        self::assertSame('recovered', $incident->fresh()->state->value);
+        self::assertSame(1, Incident::count(), 'Recovery must update the existing simulation incident, not create another one.');
+    }
+
     public function test_simulate_requires_the_manage_ability(): void
     {
         $port = $this->downPort($this->device());
