@@ -380,58 +380,93 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
             if ('value' in slot && slot.tagName !== 'DIV') { slot.value = text; } else { slot.textContent = text; }
         });
     }
-    document.querySelectorAll('[data-iapm-reveal-token]').forEach(function (btn) {
-        var mask = btn.dataset.iapmTokenMask || '••••••••••••••••';
-        btn.addEventListener('click', function () {
-            if (btn.dataset.shown === '1') {
-                paintToken(mask);
-                btn.dataset.shown = '0';
-                btn.innerHTML = '<i class="fa fa-eye"></i> Reveal';
-                return;
-            }
-            btn.disabled = true;
-            fetch(btn.dataset.iapmRevealToken, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
-                .then(function (r) { if (! r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
-                .then(function (data) {
-                    paintToken(data.token);
-                    btn.dataset.shown = '1';
-                    btn.innerHTML = '<i class="fa fa-eye-slash"></i> Hide';
-                })
-                .catch(function (err) {
-                    btn.innerHTML = '<i class="fa fa-exclamation-triangle"></i> Unavailable';
-                    btn.title = 'Could not read the token (' + err.message + '). You may not have permission to manage IAPM settings.';
-                })
-                .finally(function () { btn.disabled = false; });
-        });
-    });
-
-    // Copy a literal value (per-row ids in tables, where a selector would need
-    // a unique element id for every row).
+    // The assets partial is rendered from the navigation, before the rest of
+    // the page markup. Delegate clicks so controls appearing later in the DOM
+    // (including the Settings token controls) are still wired up.
     document.addEventListener('click', function (e) {
-        var btn = e.target.closest && e.target.closest('[data-iapm-copy-text]');
+        var btn = e.target.closest && e.target.closest('[data-iapm-reveal-token]');
         if (! btn) { return; }
         e.preventDefault();
-        navigator.clipboard.writeText(btn.dataset.iapmCopyText).then(function () {
-            var original = btn.innerHTML;
-            btn.innerHTML = '<i class="fa fa-check"></i>';
-            setTimeout(function () { btn.innerHTML = original; }, 1200);
-        });
+        var mask = btn.dataset.iapmTokenMask || '••••••••••••••••';
+        if (btn.dataset.shown === '1') {
+            paintToken(mask);
+            btn.dataset.shown = '0';
+            btn.innerHTML = '<i class="fa fa-eye"></i> Reveal';
+            return;
+        }
+        btn.disabled = true;
+        fetch(btn.dataset.iapmRevealToken, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+            .then(function (r) { if (! r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
+            .then(function (data) {
+                paintToken(data.token);
+                btn.dataset.shown = '1';
+                btn.innerHTML = '<i class="fa fa-eye-slash"></i> Hide';
+                btn.title = '';
+            })
+            .catch(function (err) {
+                btn.innerHTML = '<i class="fa fa-exclamation-triangle"></i> Unavailable';
+                btn.title = 'Could not read the token (' + err.message + '). You may not have permission to manage IAPM settings.';
+            })
+            .finally(function () { btn.disabled = false; });
     });
 
-    // Copy the live contents of the element named by data-copy.
-    document.querySelectorAll('[data-copy]').forEach(function (btn) {
-        if (btn.dataset.iapmCopyBound === '1') { return; }
-        btn.dataset.iapmCopyBound = '1';
-        btn.addEventListener('click', function () {
+    // navigator.clipboard is unavailable on plain HTTP and can be rejected by
+    // browser permissions. Keep copy functional on those LibreNMS installs by
+    // falling back to the long-supported selection API.
+    function legacyCopy(text) {
+        return new Promise(function (resolve, reject) {
+            var area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            area.setSelectionRange(0, area.value.length);
+            try {
+                if (document.execCommand('copy')) { resolve(); } else { reject(new Error('Copy command was rejected')); }
+            } catch (err) {
+                reject(err);
+            } finally {
+                document.body.removeChild(area);
+            }
+        });
+    }
+    function copyText(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text).catch(function () { return legacyCopy(text); });
+        }
+
+        return legacyCopy(text);
+    }
+    function showCopied(btn, includeLabel) {
+        var original = btn.innerHTML;
+        btn.innerHTML = '<i class="fa fa-check"></i>' + (includeLabel ? ' Copied' : '');
+        setTimeout(function () { btn.innerHTML = original; }, includeLabel ? 1500 : 1200);
+    }
+    function showCopyFailure(btn, err) {
+        btn.title = 'Could not copy automatically (' + err.message + '). Select the value and copy it manually.';
+    }
+
+    // Delegation is required here for the same reason as token reveal: most
+    // copy buttons are parsed after this shared partial runs.
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('[data-iapm-copy-text], [data-copy]');
+        if (! btn) { return; }
+        e.preventDefault();
+        var text;
+        var includeLabel = false;
+        if (btn.hasAttribute('data-iapm-copy-text')) {
+            text = btn.dataset.iapmCopyText;
+        } else {
             var el = document.querySelector(btn.dataset.copy);
             if (! el) { return; }
-            var text = ('value' in el && el.tagName !== 'DIV') ? el.value : el.textContent;
-            navigator.clipboard.writeText(text).then(function () {
-                var original = btn.innerHTML;
-                btn.innerHTML = '<i class="fa fa-check"></i> Copied';
-                setTimeout(function () { btn.innerHTML = original; }, 1500);
-            });
-        });
+            text = ('value' in el && el.tagName !== 'DIV') ? el.value : el.textContent;
+            includeLabel = true;
+        }
+        copyText(text)
+            .then(function () { btn.title = ''; showCopied(btn, includeLabel); })
+            .catch(function (err) { showCopyFailure(btn, err); });
     });
 
     // --- Auto-refresh (opt in with an element #iapm-autorefresh[data-interval]) ---
