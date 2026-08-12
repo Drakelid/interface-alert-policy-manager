@@ -28,7 +28,7 @@ Perform this on a staging LibreNMS clone with dry-run enabled until step 26. Rec
 24. Simulate a missed webhook by changing port state and run reconciliation; confirm activation/recovery.
 25. Review the Comparison report for would-send, suppression, missing-policy, missing-receiver, and failure counts.
 26. Preview trigger and recovery templates against real ports and resolve length warnings.
-27. Open **Tools → Real Simulation**, select an isolated healthy test interface, choose a duration long enough for its policy/action delays, type `SEND REAL ALERTS`, and start it.
+27. Open **Tools → Real Simulation**, select an isolated healthy test interface, choose a duration long enough for its policy/action delays, and start it. Accept the browser confirmation that the test may send an external notification.
 28. Verify the run shows an active incident and a successful trigger delivery; use **Recover now** and verify the exact original port state is restored and the recovery action is delivered.
 29. Disable dry-run mode with an approved change window.
 30. Generate one controlled physical interface failure and verify exactly one real trigger SMS. This is the test that covers SNMP polling and the LibreNMS alert transport, which the database-backed Real Simulation intentionally cannot exercise.

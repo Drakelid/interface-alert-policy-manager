@@ -46,7 +46,6 @@ class RealSimulationController extends Controller
         $data = $request->validate([
             'port_id' => ['required', 'integer', 'exists:ports,port_id'],
             'duration_seconds' => ['required', 'integer', 'between:60,86400'],
-            'confirmation' => ['required', 'in:SEND REAL ALERTS'],
         ]);
 
         try {

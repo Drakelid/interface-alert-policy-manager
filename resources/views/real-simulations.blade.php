@@ -12,7 +12,7 @@
         <div class="panel panel-danger">
             <div class="panel-heading"><strong><i class="fa fa-flask"></i> Start end-to-end test</strong></div>
             <div class="panel-body">
-                <form method="post" action="{{ route('iapm.real-simulations.store') }}" data-iapm-busy>@csrf
+                <form method="post" action="{{ route('iapm.real-simulations.store') }}" data-iapm-busy data-iapm-confirm="Start this real simulation? It will create a real incident and may send an external notification.">@csrf
                     @include('iapm::partials.port-picker',['id'=>'iapm-real-sim','value'=>old('port_id', request('port_id')),'valueLabel'=>$portLabel,'required'=>true])
                     <p class="iapm-hint">Safety checks require the port to be admin up, oper up, enabled, not ignored, covered by an enabled policy, and free of another open IAPM incident.</p>
 
@@ -22,10 +22,6 @@
                         <p class="iapm-hint">Choose enough time for the policy's trigger delay, required observations, and action delay. The scheduler restores the exact original state at the deadline.</p>
                     </div>
 
-                    <div class="form-group iapm-narrow-field">
-                        <label for="iapm-real-confirmation">Type <code>SEND REAL ALERTS</code></label>
-                        <input type="text" class="form-control" id="iapm-real-confirmation" name="confirmation" autocomplete="off" required pattern="SEND REAL ALERTS">
-                    </div>
                     <button class="btn btn-danger" data-busy="Starting real simulation…"><i class="fa fa-bolt"></i> Start real simulation</button>
                 </form>
             </div>

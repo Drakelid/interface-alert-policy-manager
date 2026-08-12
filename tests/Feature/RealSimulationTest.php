@@ -22,7 +22,7 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->get(self::BASE)
             ->assertOk()
             ->assertSee('This sends real notifications')
-            ->assertSee('SEND REAL ALERTS')
+            ->assertDontSee('SEND REAL ALERTS')
             ->assertSee('Automatic recovery');
     }
 
@@ -34,7 +34,6 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
-            'confirmation' => 'SEND REAL ALERTS',
         ])->assertRedirect(self::BASE);
 
         $simulation = Simulation::firstOrFail();
@@ -56,7 +55,6 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($admin)->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
-            'confirmation' => 'SEND REAL ALERTS',
         ]);
         $simulation = Simulation::firstOrFail();
 
@@ -77,7 +75,6 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 60,
-            'confirmation' => 'SEND REAL ALERTS',
         ]);
 
         $this->travel(61)->seconds();
@@ -94,7 +91,6 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
-            'confirmation' => 'SEND REAL ALERTS',
         ]);
         $port->update(['ifOperStatus' => 'up']); // emulate a physical poll
 
@@ -111,7 +107,6 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->from(self::BASE)->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
-            'confirmation' => 'SEND REAL ALERTS',
         ])->assertRedirect(self::BASE)->assertSessionHas('error');
 
         self::assertSame(0, Simulation::count());
@@ -128,11 +123,22 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($viewer)->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
-            'confirmation' => 'SEND REAL ALERTS',
         ])->assertForbidden();
 
         self::assertSame(0, Simulation::count());
         self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
+    }
+
+    public function test_repeated_start_requests_do_not_hit_a_shared_rate_limit(): void
+    {
+        $admin = $this->admin();
+
+        for ($attempt = 0; $attempt < 6; $attempt++) {
+            $this->actingAs($admin)
+                ->post(self::BASE, [])
+                ->assertRedirect()
+                ->assertSessionHasErrors(['port_id', 'duration_seconds']);
+        }
     }
 
     private function upPortWithNotifyingPolicy(bool $withRecovery = false): Port

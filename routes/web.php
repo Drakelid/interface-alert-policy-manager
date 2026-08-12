@@ -66,7 +66,11 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::get('tools/simulate', [SimulationController::class, 'form'])->name('simulate');
     Route::post('tools/simulate', [SimulationController::class, 'run'])->name('simulate.run');
     Route::get('tools/real-simulations', [RealSimulationController::class, 'index'])->name('real-simulations.index');
-    Route::post('tools/real-simulations', [RealSimulationController::class, 'store'])->middleware('throttle:5,1')->name('real-simulations.store');
+    // Starting is already permission-gated, submission-locked in the UI, and
+    // transactionally rejected for unsafe/duplicate ports by the service. An
+    // unnamed throttle bucket was shared with other plugin actions and could
+    // therefore return a surprise 429 on the user's first simulation attempt.
+    Route::post('tools/real-simulations', [RealSimulationController::class, 'store'])->name('real-simulations.store');
     Route::post('tools/real-simulations/{simulation}/recover', [RealSimulationController::class, 'recover'])->name('real-simulations.recover');
     Route::get('export', [ImportExportController::class, 'export'])->name('export');
     Route::get('import', [ImportExportController::class, 'importForm'])->name('import.form');
