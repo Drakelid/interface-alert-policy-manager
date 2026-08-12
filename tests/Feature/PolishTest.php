@@ -145,7 +145,6 @@ class PolishTest extends IntegrationTestCase
             '/policies' => 'No policies yet',
             '/destinations' => 'No destinations yet',
             '/assignments' => 'No assignments yet',
-            '/schedules' => 'No schedules yet',
             '/interface-matrix' => 'No interfaces match',
             '/delivery-log' => 'No deliveries yet',
             '/audit-log' => 'No audit entries yet',

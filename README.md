@@ -389,7 +389,7 @@ Use `samples/librenms-alert-template.blade.php`; it constructs an array from the
 
 ## Policies and lifecycle
 
-Administration forms take names, not internal ids: low-cardinality sets (destinations, device groups, locations, port groups, schedules) are selects, and devices, interfaces, incidents and users are debounced type-aheads that submit the id while displaying the name. The Interface Matrix shows and copies each `port_id` and links each row to Policy Test, Simulate Alert and the LibreNMS port page, for the tools that still accept a raw id.
+Administration forms take names, not internal ids: low-cardinality sets (destinations, device groups, locations and port groups) are selects, and devices, interfaces, incidents and users are debounced type-aheads that submit the id while displaying the name. The Interface Matrix shows and copies each `port_id` and links each row to Policy Test, Simulate Alert and the LibreNMS port page, for the tools that still accept a raw id.
 
 Assignment precedence is port, port group, device, device group, location, ifAlias regex, ifName regex, interface type, default. Ties use assignment priority, policy priority, then newest assignment. Device-group assignments support `any`, `all`, and `exclude`. Incidents begin pending, become active when delay/poll requirements pass, may be suppressed or acknowledged, and finally recover. The stable key is `interface-down:{device_id}:{port_id}`.
 
@@ -424,7 +424,7 @@ php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external m
 - **Statistics & SLA** (Monitor → Statistics): MTTA/MTTR, longest outage, notifications, flapping outages, noisiest interfaces, per-policy breakdown, and delivery success rate, computed from an append-only `iapm_outages` record.
 - **Synthetic Simulation** (Tools): inject an observation without changing LibreNMS port state; useful for fast policy/assignment/suppression checks (respects dry-run).
 - **Real Simulation** (Tools): temporarily overlays one healthy test interface as down in LibreNMS, creates a real IAPM incident, runs real actions/queue/gateway delivery, and automatically restores the original state and sends recovery. It uses a single browser confirmation, refuses ports that are not healthy or already have an incident, persists every run, and provides an emergency **Recover now** action. Use only an isolated test interface. This validates IAPM end to end after ingestion; because it does not physically shut a switch port, SNMP polling and LibreNMS's alert transport still require one final hardware test.
-- **Import / Export** (Tools): back up or promote schedules, policies, actions, and assignments as JSON between installs. Destinations are excluded (they hold secrets); actions are matched to destinations by name on import.
+- **Import / Export** (Tools): back up or promote policies, actions, and assignments as JSON between installs. Destinations are excluded (they hold secrets); actions are matched to destinations by name on import. Version 1 exports from older releases remain accepted, but their retired custom-schedule data is ignored.
 - **Comparison report** gains a per-policy breakdown and CSV export.
 
 The provider schedules reconciliation and action processing every minute and cleanup daily. Ensure `php artisan schedule:run` is executed every minute by the normal LibreNMS scheduler. While the plugin is disabled, its routes return `404` and the scheduled commands exit without acting, so disabling the plugin is a safe way to stop IAPM without removing it.

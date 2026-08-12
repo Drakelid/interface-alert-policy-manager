@@ -1,7 +1,7 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Policies') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')
 <h1 class="iapm-page-title">Policies <a class="btn btn-primary btn-sm" href="{{ route('iapm.policies.create') }}"><i class="fa fa-plus"></i> Create</a></h1>
-@include('iapm::partials.step-header',['step'=>2,'total'=>4,'title'=>'Create a policy','desc'=>'A policy decides <em>when</em> an interface-down incident notifies — trigger delay, failed-poll count, repeats, escalation, and recovery. After saving, add notification <strong>actions</strong> pointing at a destination.','prevRoute'=>route('iapm.destinations.index'),'prevLabel'=>'Destinations','nextRoute'=>route('iapm.schedules.index'),'nextLabel'=>'Schedules'])
+@include('iapm::partials.step-header',['step'=>2,'total'=>3,'title'=>'Create a policy','desc'=>'A policy decides <em>when</em> an interface-down incident notifies — trigger delay, failed-poll count, repeats, escalation, and recovery. After saving, add notification <strong>actions</strong> pointing at a destination.','prevRoute'=>route('iapm.destinations.index'),'prevLabel'=>'Destinations','nextRoute'=>route('iapm.assignments.index'),'nextLabel'=>'Assignments'])
 @if($policies->count())
 <form id="iapm-bulk-policies" method="post" action="{{ route('iapm.policies.bulk-destroy') }}" data-iapm-confirm="Delete the selected policies? Any still referenced by assignments or active incidents are skipped.">@csrf @method('DELETE')
     <button class="btn btn-danger btn-sm" style="margin-bottom:8px;" data-iapm-bulk-button="policies" disabled><i class="fa fa-trash"></i> Delete selected<span data-iapm-bulk-count></span></button>

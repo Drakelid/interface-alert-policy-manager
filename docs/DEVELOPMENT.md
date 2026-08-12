@@ -28,7 +28,7 @@ Two suites, one PHPUnit configuration:
 | `unit` | `tests/Unit` | no |
 | `integration` | `tests/Feature`, `tests/Command` | yes |
 
-The `unit` suite covers pure services (policy precedence helpers, receiver resolution, schedule evaluation, suppression, safe template rendering, redaction, URL guarding) and runs against the package's own dependencies:
+The `unit` suite covers pure services (policy precedence helpers, receiver resolution, suppression, safe template rendering, redaction, URL guarding) and runs against the package's own dependencies:
 
 ```sh
 composer install

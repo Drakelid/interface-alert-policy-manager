@@ -3,20 +3,14 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 
 use App\Models\Device;
-use App\Models\DeviceGroup;
-use App\Models\Location;
-use App\Models\Port;
-use App\Models\PortGroup;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\Concerns\BulkDeletes;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests\AssignmentRequest;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AssignmentMatchCounter;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 
 class AssignmentController extends Controller
 {
@@ -24,7 +18,7 @@ class AssignmentController extends Controller
 
     public function index()
     {
-        return view('iapm::assignments.index', ['assignments' => Assignment::with(['policy', 'deviceGroups'])->orderByDesc('priority')->paginate(50)]);
+        return redirect()->route('iapm.policies.index');
     }
 
     public function preview(AssignmentRequest $request, AssignmentMatchCounter $counter)
@@ -59,29 +53,23 @@ class AssignmentController extends Controller
         });
         $audit->record($r, 'bulk_deleted', 'assignment', null, null, ['ids' => $ids, 'deleted' => $deleted]);
 
-        return redirect()->route('iapm.assignments.index')->with('status', "Deleted {$deleted} assignment(s).");
+        $policyId = $r->integer('policy_id');
+
+        return $policyId
+            ? redirect()->to(route('iapm.policies.edit', ['policy' => $policyId]).'#assignments')->with('status', "Deleted {$deleted} assignment(s).")
+            : redirect()->route('iapm.policies.index')->with('status', "Deleted {$deleted} assignment(s).");
     }
 
-    private function formData(Assignment $assignment): array
+    public function create(Request $request)
     {
-        $deviceRef = old('assignment_type', $assignment->assignment_type?->value) === 'device' ? old('assignment_reference', $assignment->assignment_reference) : null;
-        $deviceLabel = '';
-        if ($deviceRef) {
-            $d = Device::find($deviceRef);
-            $deviceLabel = $d ? ($d->hostname.($d->sysName && $d->sysName !== $d->hostname ? ' ('.$d->sysName.')' : '')) : '';
+        if ($request->filled('policy_id')) {
+            return redirect()->to(route('iapm.policies.edit', [
+                'policy' => $request->integer('policy_id'),
+                'assignment' => 'new',
+            ]).'#assignments');
         }
 
-        // The "specific port" type now uses the shared interface search, which
-        // needs the human label for whatever port is currently referenced.
-        $portRef = old('assignment_type', $assignment->assignment_type?->value) === 'port' ? old('assignment_reference', $assignment->assignment_reference) : null;
-        $port = $portRef ? Port::with('device')->find($portRef) : null;
-
-        return ['assignment' => $assignment, 'policies' => Policy::orderBy('name')->get(), 'deviceGroups' => DeviceGroup::orderBy('name')->get(['id', 'name']), 'locations' => Location::orderBy('location')->get(['id', 'location']), 'portGroups' => PortGroup::orderBy('name')->get(['id', 'name']), 'deviceLabel' => $deviceLabel, 'portLabel' => $port ? app(EntityLookup::class)->portLabel($port) : ''];
-    }
-
-    public function create()
-    {
-        return view('iapm::assignments.form', $this->formData(new Assignment));
+        return redirect()->route('iapm.policies.index')->with('error', 'Choose a policy before adding an assignment.');
     }
 
     public function store(AssignmentRequest $r, AuditService $audit)
@@ -98,14 +86,15 @@ class AssignmentController extends Controller
         });
         $audit->record($r, 'created', 'assignment', $a, null, $a->toArray());
 
-        return redirect()->route('iapm.assignments.index')->with('status', 'Assignment created.');
+        return redirect()->to(route('iapm.policies.edit', ['policy' => $a->policy_id]).'#assignments')->with('status', 'Assignment created.');
     }
 
     public function edit(Assignment $assignment)
     {
-        $assignment->load('deviceGroups');
-
-        return view('iapm::assignments.form', $this->formData($assignment));
+        return redirect()->to(route('iapm.policies.edit', [
+            'policy' => $assignment->policy_id,
+            'assignment' => $assignment->id,
+        ]).'#assignments');
     }
 
     public function update(AssignmentRequest $r, Assignment $assignment, AuditService $audit)
@@ -122,7 +111,10 @@ class AssignmentController extends Controller
         });
         $audit->record($r, 'updated', 'assignment', $assignment, $before, $assignment->fresh()->toArray());
 
-        return back()->with('status', 'Assignment updated.');
+        return redirect()->to(route('iapm.policies.edit', [
+            'policy' => $assignment->policy_id,
+            'assignment' => $assignment->id,
+        ]).'#assignments')->with('status', 'Assignment updated.');
     }
 
     public function destroy(Request $r, Assignment $assignment, AuditService $audit)
@@ -132,6 +124,6 @@ class AssignmentController extends Controller
         $assignment->delete();
         $audit->record($r, 'deleted', 'assignment', $assignment->id, $before, null);
 
-        return redirect()->route('iapm.assignments.index');
+        return redirect()->to(route('iapm.policies.edit', ['policy' => $assignment->policy_id]).'#assignments')->with('status', 'Assignment deleted.');
     }
 }

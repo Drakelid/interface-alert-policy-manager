@@ -37,7 +37,6 @@ $fields = [
 <div class="form-group"><label for="iapm-policy-severity">Severity</label><select class="form-control" id="iapm-policy-severity" name="severity">@foreach(['info','warning','critical'] as $v)<option @selected(old('severity',$policy->severity?->value??'critical')===$v)>{{ $v }}</option>@endforeach</select></div></div><div class="col-md-6">
 @foreach(['enabled','notifications_enabled','notify_recovery','suppress_device_down','suppress_admin_down','suppress_ignored_port','suppress_disabled_port','suppress_deleted_port','suppress_maintenance','suppress_parent_down'] as $key)<input type="hidden" name="{{ $key }}" value="0"><div class="checkbox"><label for="iapm-policy-{{ $key }}"><input type="checkbox" id="iapm-policy-{{ $key }}" name="{{ $key }}" value="1" @checked(old($key,$policy->exists?$policy->$key:true))> {{ str_replace('_',' ',ucfirst($key)) }}</label></div>@endforeach
 <input type="hidden" name="suppress_uplink_down" value="0"><div class="checkbox"><label for="iapm-policy-suppress_uplink_down"><input type="checkbox" id="iapm-policy-suppress_uplink_down" name="suppress_uplink_down" value="1" @checked(old('suppress_uplink_down',$policy->exists?$policy->suppress_uplink_down:false))> Suppress when uplink down <span class="iapm-hint">(root-cause: needs an uplink port group set in Settings)</span></label></div>
-<div class="form-group"><label for="iapm-policy-schedule">Schedule</label><select class="form-control" id="iapm-policy-schedule" name="business_schedule_id"><option value="">24/7</option>@foreach($schedules as $s)<option value="{{ $s->id }}" @selected(old('business_schedule_id',$policy->business_schedule_id)==$s->id)>{{ $s->name }}</option>@endforeach</select></div>
 <fieldset style="margin-top:10px;"><legend style="font-size:14px;">Flap dampening <small class="iapm-hint">(optional)</small></legend>
 <p class="iapm-hint">When an interface cycles down/up faster than the threshold, send one "flapping" notice and dampen the rest until it stabilises. Leave threshold blank to disable.</p>
 @foreach(['flap_threshold'=>['Flap threshold (down/up cycles)',false],'flap_window_seconds'=>['Flap window (seconds)',true],'flap_settle_seconds'=>['Settle period (seconds)',true]] as $key=>$meta)<div class="form-group"><label for="iapm-policy-{{ $key }}">{{ $meta[0] }}</label><input class="form-control{{ $meta[1]?' iapm-seconds':'' }}" id="iapm-policy-{{ $key }}" type="number" min="0" name="{{ $key }}" value="{{ old($key,$policy->$key) }}">@if($meta[1])<span class="help-block iapm-seconds-hint text-info" style="display:inline;margin-left:6px;"></span>@endif</div>@endforeach
@@ -70,6 +69,38 @@ $fields = [
     <form method="post" action="{{ route('iapm.actions.destroy',$action) }}" style="display:inline;" data-iapm-confirm="Delete the {{ $action->phase->value }} action sending to {{ $action->destination?->name ?? 'no destination' }}? This policy will stop notifying through it.">@csrf @method('DELETE')<button class="btn btn-danger btn-xs"><i class="fa fa-trash"></i> Delete</button></form>
 </td>
 </tr>@endforeach</tbody></table></div>
+<hr>
+<section id="assignments">
+<h2>Interface assignments
+    <a class="btn btn-primary btn-sm" href="{{ route('iapm.policies.edit',['policy'=>$policy,'assignment'=>'new']) }}#assignments"><i class="fa fa-plus"></i> Add assignment</a>
+</h2>
+<p class="iapm-hint">Assignments define which interfaces use this policy. Specific matches take precedence over broad ones: port, port group, device, device group, location, regex, interface type, then default.</p>
+@if($policy->assignments->isNotEmpty())
+<form id="iapm-bulk-assignments" method="post" action="{{ route('iapm.assignments.bulk-destroy') }}" data-iapm-confirm="Delete the selected assignments? Interfaces they matched stop using this policy unless another assignment covers them.">@csrf @method('DELETE')
+    <input type="hidden" name="policy_id" value="{{ $policy->id }}">
+    <button class="btn btn-danger btn-sm" style="margin-bottom:8px;" data-iapm-bulk-button="assignments" disabled><i class="fa fa-trash"></i> Delete selected<span data-iapm-bulk-count></span></button>
+</form>
+<div class="table-responsive" data-iapm-bulk-scope="assignments"><table class="table table-hover">
+<thead><tr><th style="width:2em;"><input type="checkbox" aria-label="Select all assignments for this policy" data-iapm-toggle-all=".iapm-assignment-bulk"></th><th>Type</th><th>Reference / expression</th><th>Mode</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+<tbody>@foreach($policy->assignments->sortByDesc('priority') as $a)<tr>
+<td><input class="iapm-assignment-bulk" type="checkbox" form="iapm-bulk-assignments" name="ids[]" value="{{ $a->id }}" aria-label="Select assignment {{ $a->id }}"></td>
+<td>{{ str_replace('_',' ',$a->assignment_type->value) }}</td>
+<td>{{ $a->assignment_reference ?: $a->match_expression ?: ($a->deviceGroups->count() ? $a->deviceGroups->count().' device group(s)' : '—') }}</td>
+<td>{{ $a->match_mode }}</td><td>{{ $a->priority }}</td>
+<td>@if($a->enabled)<span class="label label-success">Enabled</span>@else<span class="label label-default">Disabled</span>@endif</td>
+<td><a class="btn btn-default btn-xs" href="{{ route('iapm.policies.edit',['policy'=>$policy,'assignment'=>$a->id]) }}#assignments"><i class="fa fa-pencil"></i> Edit</a></td>
+</tr>@endforeach</tbody></table></div>
+@else
+<div class="alert alert-warning"><strong>No interfaces use this policy yet.</strong> Add an assignment, usually a default assignment for the catch-all policy.</div>
+@endif
+
+@if($assignmentEditor)
+<div class="panel panel-default" style="margin-top:14px;">
+    <div class="panel-heading"><strong>{{ $assignmentEditor->exists ? 'Edit assignment #'.$assignmentEditor->id : 'Add assignment' }}</strong></div>
+    <div class="panel-body">@include('iapm::assignments.form',$assignmentFormData)</div>
+</div>
+@endif
+</section>
 <hr>
 <h2>Manage this policy</h2>
 <form method="post" action="{{ route('iapm.policies.clone',$policy) }}" style="margin-bottom:14px;">@csrf<button class="btn btn-default"><i class="fa fa-copy"></i> Clone policy</button> <span class="iapm-hint">Creates a disabled copy with the same timing and actions.</span></form>

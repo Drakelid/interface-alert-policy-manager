@@ -6,7 +6,6 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 
 /**
  * Works out what an import would do, so the operator can see it before anything
@@ -36,14 +35,6 @@ class ConfigurationImportPlanner
     public function plan(array $document, bool $updateExisting): array
     {
         $items = [];
-        $existingSchedules = Schedule::pluck('id', 'name');
-
-        foreach ((array) ($document['schedules'] ?? []) as $schedule) {
-            $name = (string) ($schedule['name'] ?? '');
-            $exists = $existingSchedules->has($name);
-            $items[] = $this->decide('schedule', $name, $exists, $updateExisting);
-        }
-
         foreach ((array) ($document['policies'] ?? []) as $policy) {
             $name = (string) ($policy['name'] ?? '');
             $existing = Policy::where('name', $name)->first();
@@ -94,16 +85,6 @@ class ConfigurationImportPlanner
         $plan = $this->plan($document, $updateExisting);
         $destinations = Destination::pluck('id', 'name');
 
-        foreach ((array) ($document['schedules'] ?? []) as $schedule) {
-            $name = (string) ($schedule['name'] ?? '');
-            $existing = Schedule::where('name', $name)->first();
-            if ($existing === null) {
-                Schedule::create($this->fillable($schedule, new Schedule));
-            } elseif ($updateExisting) {
-                $existing->update($this->fillable($schedule, new Schedule));
-            }
-        }
-
         foreach ((array) ($document['policies'] ?? []) as $policy) {
             $name = (string) ($policy['name'] ?? '');
             $existing = Policy::where('name', $name)->first();
@@ -112,7 +93,6 @@ class ConfigurationImportPlanner
             }
 
             $attributes = $this->fillable($policy, new Policy) + [
-                'business_schedule_id' => isset($policy['schedule']) ? Schedule::where('name', $policy['schedule'])->value('id') : null,
                 'updated_by' => $userId,
             ];
 

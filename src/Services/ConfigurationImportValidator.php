@@ -12,7 +12,6 @@ class ConfigurationImportValidator
     public const MAX_RECORDS = 20000;
 
     public function __construct(
-        private readonly ScheduleEvaluator $schedules,
         private readonly SafeTemplateRenderer $templates,
         private readonly TemplateContextBuilder $templateContext,
     ) {}
@@ -28,12 +27,6 @@ class ConfigurationImportValidator
         $validator = Validator::make($document, [
             'version' => ['required', 'integer', Rule::in([1])],
             'exported_at' => ['nullable', 'date'],
-            'schedules' => ['present', 'array', 'max:200'],
-            'schedules.*' => ['required', 'array'],
-            'schedules.*.name' => ['required', 'string', 'max:255', 'distinct'],
-            'schedules.*.timezone' => ['required', 'string', 'max:64', 'timezone:all'],
-            'schedules.*.enabled' => ['required', 'boolean'],
-            'schedules.*.schedule_json' => ['required', 'array'],
             'policies' => ['present', 'array', 'max:1000'],
             'policies.*' => ['required', 'array'],
             'policies.*.name' => ['required', 'string', 'max:255', 'distinct'],
@@ -60,7 +53,6 @@ class ConfigurationImportValidator
             'policies.*.flap_threshold' => ['nullable', 'integer', 'between:2,1000'],
             'policies.*.flap_window_seconds' => ['nullable', 'integer', 'between:30,86400'],
             'policies.*.flap_settle_seconds' => ['nullable', 'integer', 'between:0,86400'],
-            'policies.*.schedule' => ['nullable', 'string', 'max:255'],
             'policies.*.actions' => ['present', 'array', 'max:100'],
             'policies.*.actions.*.destination' => ['required', 'string', 'max:255'],
             'policies.*.actions.*.phase' => ['required', Rule::in(['trigger', 'escalation', 'reminder', 'recovery', 'acknowledged'])],
@@ -86,8 +78,7 @@ class ConfigurationImportValidator
             'policies.*.assignments.*.device_group_ids.*' => ['integer'],
         ]);
         $validator->after(function ($validator) use ($document, $updateExisting): void {
-            $records = count($document['schedules'] ?? []) + count($document['policies'] ?? []);
-            $importedSchedules = collect($document['schedules'] ?? [])->pluck('name');
+            $records = count($document['policies'] ?? []);
             $policies = collect($document['policies'] ?? []);
             $assignments = $policies->flatMap(fn (array $policy) => $policy['assignments'] ?? []);
             $existingPolicyNames = $this->existing('iapm_policies', 'name', $policies->pluck('name')->filter()->all());
@@ -104,10 +95,8 @@ class ConfigurationImportValidator
                     $validator->errors()->add('policies', "The import exceeds the configured {$regexType} safety limit of {$regexLimit}.");
                 }
             }
-            $scheduleNames = $policies->pluck('schedule')->filter()->unique()->values()->all();
             $destinationNames = $policies->flatMap(fn (array $policy) => collect($policy['actions'] ?? [])->pluck('destination'))->filter()->unique()->values()->all();
             $groupIds = $assignments->flatMap(fn (array $assignment) => $assignment['device_group_ids'] ?? [])->map(fn ($id) => (int) $id)->unique()->values()->all();
-            $knownSchedules = $this->existing('iapm_schedules', 'name', $scheduleNames)->merge($importedSchedules)->unique();
             $destinations = $this->existing('iapm_destinations', 'name', $destinationNames);
             $knownGroups = $this->existing('device_groups', 'id', $groupIds)->map(fn ($id) => (int) $id);
             // Resolve only identifiers referenced by this bounded document. Loading
@@ -119,18 +108,8 @@ class ConfigurationImportValidator
                 'device' => $this->existingReferences($assignments, 'device', 'devices', 'device_id'),
                 'location' => $this->existingReferences($assignments, 'location', 'locations', 'id'),
             ];
-            foreach (($document['schedules'] ?? []) as $index => $schedule) {
-                try {
-                    $this->schedules->validate((array) ($schedule['schedule_json'] ?? []));
-                } catch (\InvalidArgumentException $exception) {
-                    $validator->errors()->add("schedules.{$index}.schedule_json", $exception->getMessage());
-                }
-            }
             foreach (($document['policies'] ?? []) as $policyIndex => $policy) {
                 $records += count($policy['actions'] ?? []) + count($policy['assignments'] ?? []);
-                if (filled($policy['schedule'] ?? null) && ! $knownSchedules->contains($policy['schedule'])) {
-                    $validator->errors()->add("policies.{$policyIndex}.schedule", 'The referenced schedule does not exist.');
-                }
                 foreach (($policy['actions'] ?? []) as $actionIndex => $action) {
                     if (! $destinations->contains($action['destination'] ?? null)) {
                         $validator->errors()->add("policies.{$policyIndex}.actions.{$actionIndex}.destination", 'The referenced destination does not exist.');
@@ -183,12 +162,20 @@ class ConfigurationImportValidator
      */
     public static function withLegacyKeys(array $document): array
     {
+        // Version 1 exports from older releases may contain the retired custom
+        // schedules feature. Keep those documents usable, but do not recreate
+        // schedules or attach them to policies.
+        unset($document['schedules']);
+
         foreach (($document['policies'] ?? []) as $index => $policy) {
-            if (! is_array($policy) || ! array_key_exists('failed_poll_count', $policy)) {
+            if (! is_array($policy)) {
                 continue;
             }
-            $document['policies'][$index]['down_observations'] = $policy['down_observations'] ?? $policy['failed_poll_count'];
-            unset($document['policies'][$index]['failed_poll_count']);
+            unset($document['policies'][$index]['schedule'], $document['policies'][$index]['business_schedule_id']);
+            if (array_key_exists('failed_poll_count', $policy)) {
+                $document['policies'][$index]['down_observations'] = $policy['down_observations'] ?? $policy['failed_poll_count'];
+                unset($document['policies'][$index]['failed_poll_count']);
+            }
         }
 
         return $document;

@@ -6,7 +6,6 @@ use App\Models\AlertSchedule;
 use LibreNMS\Enum\MaintenanceBehavior;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class SuppressionTest extends IntegrationTestCase
@@ -85,22 +84,6 @@ class SuppressionTest extends IntegrationTestCase
         $this->ingest($this->alertPayload($device, [$this->fault($port)]))->assertOk();
 
         self::assertSame('parent_down', Incident::sole()->suppression_reason);
-    }
-
-    public function test_a_policy_outside_its_schedule_is_suppressed(): void
-    {
-        $schedule = Schedule::create([
-            'name' => 'Never',
-            'timezone' => 'UTC',
-            'enabled' => true,
-            'schedule_json' => ['mode' => 'custom', 'days' => []],
-        ]);
-        $this->defaultPolicy(['business_schedule_id' => $schedule->id]);
-        $device = $this->device();
-
-        $this->ingest($this->alertPayload($device, [$this->fault($this->downPort($device))]))->assertOk();
-
-        self::assertSame('outside_schedule', Incident::sole()->suppression_reason);
     }
 
     public function test_suppression_checks_can_be_disabled_per_policy(): void

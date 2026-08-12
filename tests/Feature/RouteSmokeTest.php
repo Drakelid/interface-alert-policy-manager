@@ -2,11 +2,12 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class RouteSmokeTest extends IntegrationTestCase
 {
+    private const BASE = '/plugin/interface-alert-policy-manager';
+
     /**
      * Control-flow directives that must never survive into a response body.
      * Kept in sync with BladeDirectiveSyntaxTest, which guards the source.
@@ -102,6 +103,19 @@ class RouteSmokeTest extends IntegrationTestCase
         self::assertStringNotContainsString('@else', $body);
     }
 
+    public function test_the_retired_schedules_pages_are_not_routable_or_linked(): void
+    {
+        $admin = $this->admin();
+
+        foreach (['/schedules', '/schedules/create', '/schedules/123/edit'] as $path) {
+            $this->actingAs($admin)->get(self::BASE.$path)->assertNotFound();
+        }
+
+        $body = (string) $this->actingAs($admin)->get(self::BASE)->assertOk()->getContent();
+        self::assertStringNotContainsString('iapm.schedules', $body);
+        self::assertStringNotContainsString('>Schedules<', $body);
+    }
+
     /** Every GET route in the plugin, with fixtures materialised on demand. */
     private function paths(): array
     {
@@ -109,12 +123,6 @@ class RouteSmokeTest extends IntegrationTestCase
         $assignment = $policy->assignments()->firstOrFail();
         $destination = $this->smsDestination();
         $action = $this->triggerAction($policy, $destination);
-        $schedule = Schedule::create([
-            'name' => 'Always',
-            'timezone' => 'UTC',
-            'enabled' => true,
-            'schedule_json' => ['mode' => 'always', 'periods' => []],
-        ]);
         $port = $this->downPort($this->device());
         $incident = $this->incident($policy, $port);
         $base = '/plugin/interface-alert-policy-manager';
@@ -139,9 +147,6 @@ class RouteSmokeTest extends IntegrationTestCase
             "$base/setup-helper",
             "$base/template-preview",
             "$base/message-templates",
-            "$base/schedules",
-            "$base/schedules/create",
-            "$base/schedules/{$schedule->id}/edit",
             "$base/destinations",
             "$base/destinations/create",
             "$base/destinations/{$destination->id}/edit",

@@ -7,7 +7,6 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class SchemaAndFillableTest extends IntegrationTestCase
@@ -21,12 +20,12 @@ class SchemaAndFillableTest extends IntegrationTestCase
         self::assertTrue(Schema::hasColumn('iapm_policies', 'default_receiver'));
         self::assertTrue(Schema::hasColumn('iapm_policy_actions', 'receivers_json'));
         self::assertTrue(Schema::hasTable('iapm_interface_policy_cache'));
+        self::assertTrue(Schema::hasTable('iapm_schedules'));
+        self::assertTrue(Schema::hasColumn('iapm_policies', 'business_schedule_id'));
     }
 
     public function test_a_policy_round_trips_every_mass_assignable_field(): void
     {
-        $schedule = Schedule::create(['name' => 'Biz', 'timezone' => 'UTC', 'enabled' => true, 'schedule_json' => ['mode' => 'always']]);
-
         $attributes = [
             'name' => 'Round trip',
             'description' => 'desc',
@@ -48,7 +47,6 @@ class SchemaAndFillableTest extends IntegrationTestCase
             'suppress_deleted_port' => false,
             'suppress_maintenance' => false,
             'suppress_parent_down' => false,
-            'business_schedule_id' => $schedule->id,
             'created_by' => 11,
             'updated_by' => 12,
         ];
@@ -76,8 +74,10 @@ class SchemaAndFillableTest extends IntegrationTestCase
         $action = PolicyAction::create(['policy_id' => $policy->id, 'destination_id' => $destination->id, 'phase' => 'reminder', 'delay_seconds' => 30, 'repeat_seconds' => 600, 'maximum_sends' => 2, 'receivers_json' => ['a'], 'message_template' => 'hi', 'enabled' => true, 'sort_order' => 5]);
         self::assertSame(600, (int) $action->fresh()->repeat_seconds);
         self::assertSame(['a'], $action->fresh()->receivers_json);
+    }
 
-        $schedule = Schedule::create(['name' => 'S', 'timezone' => 'Europe/Oslo', 'enabled' => true, 'schedule_json' => ['mode' => 'business_hours']]);
-        self::assertSame('Europe/Oslo', $schedule->fresh()->timezone);
+    public function test_the_retired_schedule_reference_is_not_mass_assignable(): void
+    {
+        self::assertNull((new Policy(['business_schedule_id' => 123]))->business_schedule_id);
     }
 }

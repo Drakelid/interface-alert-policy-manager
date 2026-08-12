@@ -4,7 +4,6 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Unit;
 
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\DTO\InterfaceContext;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ScheduleEvaluator;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SuppressionService;
 use PHPUnit\Framework\TestCase;
 
@@ -57,11 +56,8 @@ class SuppressionServiceTest extends TestCase
             'suppress_maintenance' => true,
             'suppress_parent_down' => true,
         ], $policyOverrides));
-        // No schedule: avoids a relation query in a unit test, and matches a policy
-        // that has no business_schedule_id.
-        $policy->setRelation('schedule', null);
 
-        return (new SuppressionService(new ScheduleEvaluator))->reason($policy, $this->context($context), $deviceDown, $maintenance, $parentDown);
+        return (new SuppressionService)->reason($policy, $this->context($context), $deviceDown, $maintenance, $parentDown);
     }
 
     private function context(array $overrides = []): InterfaceContext

@@ -7,7 +7,6 @@ use Illuminate\Console\Scheduling\Schedule as ConsoleSchedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\RebuildPolicyCacheJob;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyCacheRebuilder;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 use Spatie\Permission\Models\Permission;
@@ -232,7 +231,6 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
         $policy = $this->defaultPolicy();
         $destination = $this->smsDestination();
         $action = $this->triggerAction($policy, $destination);
-        $schedule = Schedule::create(['name' => 'Always', 'timezone' => 'UTC', 'enabled' => true, 'schedule_json' => ['mode' => 'always', 'periods' => []]]);
         $incident = $this->incident($policy, $this->downPort($this->device()));
         $base = self::BASE;
 
@@ -244,7 +242,6 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
             "$base/interface-matrix", "$base/policy-test", "$base/stats",
             "$base/tools/simulate", "$base/import", "$base/comparison-report",
             "$base/setup-helper", "$base/template-preview", "$base/message-templates",
-            "$base/schedules", "$base/schedules/create", "$base/schedules/{$schedule->id}/edit",
             "$base/destinations", "$base/destinations/create", "$base/destinations/{$destination->id}/edit",
             "$base/incidents", "$base/incidents/{$incident->id}",
             "$base/settings", "$base/delivery-log", "$base/audit-log",

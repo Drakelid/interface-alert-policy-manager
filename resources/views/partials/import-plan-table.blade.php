@@ -20,7 +20,7 @@
             <td class="iapm-hint">{{ $item['reason'] }}</td>
         </tr>
         @empty
-        <tr><td colspan="4" class="iapm-hint">The document contains no schedules or policies.</td></tr>
+        <tr><td colspan="4" class="iapm-hint">The document contains no policies.</td></tr>
         @endforelse
         </tbody>
     </table>

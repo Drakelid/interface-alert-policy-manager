@@ -3,7 +3,7 @@
 <div class="container-fluid">
     @include('iapm::partials.nav')
     <h1 class="iapm-page-title">Import / Export configuration</h1>
-    <p class="iapm-hint" style="max-width:70em;">Move schedules, policies, actions and assignments between installs, or keep a backup. Destinations are deliberately not exported &mdash; they hold environment-specific secrets &mdash; so actions reference their destination <em>by name</em> and are matched against the destinations that already exist here.</p>
+    <p class="iapm-hint" style="max-width:70em;">Move policies, actions and assignments between installs, or keep a backup. Destinations are deliberately not exported &mdash; they hold environment-specific secrets &mdash; so actions reference their destination <em>by name</em> and are matched against the destinations that already exist here.</p>
 
     <a class="btn btn-primary" href="{{ route('iapm.export') }}"><i class="fa fa-download"></i> Export configuration</a>
 

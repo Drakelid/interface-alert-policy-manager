@@ -6,7 +6,6 @@ use App\Models\Device;
 use Illuminate\Http\UploadedFile;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 /**
@@ -28,7 +27,6 @@ class ImportPreviewAndUpdateTest extends IntegrationTestCase
             ->assertSee('nothing has been written yet', false);
 
         self::assertNull(Policy::where('name', 'Imported policy')->first());
-        self::assertNull(Schedule::where('name', 'Imported schedule')->first());
     }
 
     public function test_the_preview_lists_each_item_with_a_planned_action(): void
@@ -38,7 +36,6 @@ class ImportPreviewAndUpdateTest extends IntegrationTestCase
             ->assertOk()
             ->getContent();
 
-        self::assertStringContainsString('Imported schedule', $body);
         self::assertStringContainsString('Imported policy', $body);
         self::assertStringContainsString('data-iapm-plan-action="create"', $body);
         self::assertStringContainsString('does not exist here yet', $body);
@@ -52,7 +49,6 @@ class ImportPreviewAndUpdateTest extends IntegrationTestCase
         self::assertSame(600, $policy->trigger_after_seconds);
         self::assertCount(1, $policy->actions);
         self::assertCount(1, $policy->assignments);
-        self::assertNotNull(Schedule::where('name', 'Imported schedule')->first());
     }
 
     /** The core failure: a second promotion of a changed policy did nothing. */
@@ -220,10 +216,6 @@ class ImportPreviewAndUpdateTest extends IntegrationTestCase
 
         return json_encode([
             'version' => 1,
-            'schedules' => [[
-                'name' => 'Imported schedule', 'timezone' => 'UTC', 'enabled' => true,
-                'schedule_json' => ['mode' => 'always', 'days' => []],
-            ]],
             'policies' => [array_merge([
                 'name' => 'Imported policy', 'description' => null, 'enabled' => true, 'priority' => 0,
                 'severity' => 'critical', 'default_receiver' => null, 'notifications_enabled' => true,
@@ -233,7 +225,6 @@ class ImportPreviewAndUpdateTest extends IntegrationTestCase
                 'suppress_disabled_port' => true, 'suppress_deleted_port' => true, 'suppress_maintenance' => true,
                 'suppress_parent_down' => true, 'suppress_uplink_down' => false,
                 'flap_threshold' => null, 'flap_window_seconds' => null, 'flap_settle_seconds' => null,
-                'schedule' => 'Imported schedule',
                 'actions' => [[
                     'destination' => 'Gateway', 'phase' => 'trigger', 'delay_seconds' => 0,
                     'repeat_seconds' => null, 'maximum_sends' => null, 'receivers_json' => [],

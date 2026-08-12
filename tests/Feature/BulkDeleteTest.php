@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
@@ -86,20 +85,6 @@ class BulkDeleteTest extends IntegrationTestCase
 
         self::assertNotNull(Destination::find($used->id));
         self::assertNull(Destination::find($free->id));
-    }
-
-    public function test_schedules_used_by_policies_are_skipped(): void
-    {
-        $used = Schedule::create(['name' => 'Used', 'timezone' => 'UTC', 'enabled' => true, 'schedule_json' => ['mode' => 'always']]);
-        $this->policy(['business_schedule_id' => $used->id]);
-        $free = Schedule::create(['name' => 'Free', 'timezone' => 'UTC', 'enabled' => true, 'schedule_json' => ['mode' => 'always']]);
-
-        $this->actingAs($this->admin())
-            ->delete('/plugin/interface-alert-policy-manager/schedules-bulk', ['ids' => [$used->id, $free->id]])
-            ->assertRedirect();
-
-        self::assertNotNull(Schedule::find($used->id));
-        self::assertNull(Schedule::find($free->id));
     }
 
     public function test_deleting_an_assignment_clears_the_policy_cache(): void

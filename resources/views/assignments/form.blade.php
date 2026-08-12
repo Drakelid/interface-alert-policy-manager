@@ -1,6 +1,3 @@
-@extends('layouts.librenmsv1') @section('title','IAPM Assignment') @section('content')
-<div class="container-fluid">@include('iapm::partials.nav')
-<h1 class="iapm-page-title">{{ $assignment->exists?'Edit':'Create' }} Assignment</h1>
 <p class="iapm-hint">Map interfaces to a policy. Choose a type below and only the relevant fields appear. Use <strong>Preview match count</strong> to see how many interfaces it currently affects before saving.</p>
 
 @php($selectedType = old('assignment_type',$assignment->assignment_type?->value ?? 'default'))
@@ -8,10 +5,7 @@
 <form method="post" action="{{ $assignment->exists?route('iapm.assignments.update',$assignment):route('iapm.assignments.store') }}" id="iapm-assignment-form">@csrf @if($assignment->exists)@method('PUT')@endif
 
 <div class="row"><div class="col-md-7">
-<div class="form-group"><label for="iapm-as-policy">Policy</label>
-    <select name="policy_id" id="iapm-as-policy" class="form-control" required>@foreach($policies as $p)<option value="{{ $p->id }}" @selected(old('policy_id',$assignment->policy_id)==$p->id)>{{ $p->name }}@unless($p->enabled) (disabled)@endunless</option>@endforeach</select>
-    <p class="iapm-hint">The policy applied to interfaces this assignment matches.</p>
-</div>
+<input type="hidden" name="policy_id" value="{{ $policy->id }}">
 
 <div class="form-group"><label for="iapm-type">Match by</label>
     <select name="assignment_type" id="iapm-type" class="form-control">
@@ -113,7 +107,8 @@
 <input type="hidden" name="enabled" value="0">
 <div class="checkbox"><label for="iapm-as-enabled"><input type="checkbox" id="iapm-as-enabled" name="enabled" value="1" @checked(old('enabled',$assignment->exists?$assignment->enabled:true))> Enabled</label></div>
 
-<button class="btn btn-primary">Save</button>
+<button class="btn btn-primary"><i class="fa fa-save"></i> Save assignment</button>
+<a class="btn btn-default" href="{{ route('iapm.policies.edit',$policy) }}#assignments">Cancel</a>
 <button type="button" class="btn btn-default" id="iapm-preview-btn"><i class="fa fa-search"></i> Preview match count</button>
 <span id="iapm-preview-result" style="margin-left:8px;" aria-live="polite"></span>
 {{-- P4-5: the preview returned only "Matches 0 interface(s)", which cannot tell
@@ -130,7 +125,6 @@
 </form>
 
 @if($assignment->exists)<form method="post" action="{{ route('iapm.assignments.destroy',$assignment) }}" data-iapm-confirm="Delete this assignment?" style="margin-top:10px;">@csrf @method('DELETE')<button class="btn btn-danger">Delete assignment</button></form>@endif
-</div>
 
 <script>
 (function () {
@@ -230,4 +224,3 @@
     });
 })();
 </script>
-@endsection

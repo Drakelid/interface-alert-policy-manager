@@ -13,7 +13,6 @@
     'policy' => 'iapm.policies.edit',
     'assignment' => 'iapm.assignments.edit',
     'destination' => 'iapm.destinations.edit',
-    'schedule' => 'iapm.schedules.edit',
     'policy_action' => 'iapm.actions.edit',
 ][$audit->object_type] ?? null)
 @php($iapmObjectLabel = str_replace('_',' ',(string) $audit->object_type))

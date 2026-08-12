@@ -3,7 +3,6 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use App\Models\User;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 /**
@@ -221,7 +220,6 @@ class AccessibilityTest extends IntegrationTestCase
         $assignment = $policy->assignments()->firstOrFail();
         $destination = $this->smsDestination();
         $action = $this->triggerAction($policy, $destination);
-        $schedule = Schedule::create(['name' => 'Always', 'timezone' => 'UTC', 'enabled' => true, 'schedule_json' => ['mode' => 'always', 'periods' => []]]);
         $port = $this->downPort($this->device());
         $incident = $this->incident($policy, $port);
         $base = self::BASE;
@@ -234,7 +232,6 @@ class AccessibilityTest extends IntegrationTestCase
             "$base/interface-matrix", "$base/policy-test", "$base/policy-test?port_id={$port->port_id}",
             "$base/stats", "$base/tools/simulate", "$base/tools/real-simulations", "$base/import", "$base/comparison-report",
             "$base/setup-helper", "$base/template-preview", "$base/message-templates",
-            "$base/schedules", "$base/schedules/create", "$base/schedules/{$schedule->id}/edit",
             "$base/destinations", "$base/destinations/create", "$base/destinations/{$destination->id}/edit",
             "$base/incidents", "$base/incidents/{$incident->id}",
             "$base/settings", "$base/delivery-log", "$base/audit-log",

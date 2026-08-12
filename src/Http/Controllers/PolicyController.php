@@ -8,8 +8,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\Concerns\BulkDeletes;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests\PolicyRequest;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AssignmentFormData;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
 
 class PolicyController extends Controller
@@ -48,7 +49,7 @@ class PolicyController extends Controller
 
     public function create()
     {
-        return view('iapm::policies.form', ['policy' => new Policy, 'schedules' => Schedule::where('enabled', true)->orderBy('name')->get()]);
+        return view('iapm::policies.form', ['policy' => new Policy]);
     }
 
     public function store(PolicyRequest $r, AuditService $audit)
@@ -59,9 +60,23 @@ class PolicyController extends Controller
         return redirect()->route('iapm.policies.edit', $p)->with('status', 'Policy created.');
     }
 
-    public function edit(Policy $policy)
+    public function edit(Request $request, Policy $policy, AssignmentFormData $assignmentForms)
     {
-        return view('iapm::policies.form', ['policy' => $policy, 'schedules' => Schedule::where('enabled', true)->orderBy('name')->get(), 'otherPolicies' => Policy::whereKeyNot($policy->id)->orderBy('name')->get(), 'openIncidentCount' => $policy->incidents()->where('state', '!=', 'recovered')->count()]);
+        $assignment = null;
+        if ($request->query('assignment') === 'new') {
+            $assignment = new Assignment(['policy_id' => $policy->id]);
+            $assignment->setRelation('deviceGroups', collect());
+        } elseif ($request->filled('assignment')) {
+            $assignment = $policy->assignments()->with('deviceGroups')->findOrFail($request->integer('assignment'));
+        }
+
+        return view('iapm::policies.form', [
+            'policy' => $policy->load('assignments.deviceGroups'),
+            'otherPolicies' => Policy::whereKeyNot($policy->id)->orderBy('name')->get(),
+            'openIncidentCount' => $policy->incidents()->where('state', '!=', 'recovered')->count(),
+            'assignmentEditor' => $assignment,
+            'assignmentFormData' => $assignment ? $assignmentForms->for($assignment) : [],
+        ]);
     }
 
     public function update(PolicyRequest $r, Policy $policy, AuditService $audit)
@@ -98,6 +113,7 @@ class PolicyController extends Controller
     {
         abort_unless($r->user()->can('manage iapm policies'), 403);
         $copy = $policy->replicate();
+        $copy->business_schedule_id = null;
         $copy->name = $policy->name.' (copy)';
         $copy->enabled = false;
         $copy->created_by = $r->user()->getAuthIdentifier();

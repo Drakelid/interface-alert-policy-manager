@@ -8,13 +8,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ConfigurationImportPlanner;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ConfigurationImportValidator;
 
 /**
- * Export/import of the alerting configuration (schedules, policies, actions,
+ * Export/import of the alerting configuration (policies, actions and
  * assignments) as JSON — for backup and staging->production promotion.
  *
  * Destinations are NOT exported (they hold environment-specific encrypted
@@ -29,11 +28,8 @@ class ImportExportController extends Controller
     {
         abort_unless($request->user()->can('manage iapm policies'), 403);
 
-        $schedules = Schedule::all()->map(fn ($s) => $this->strip($s->toArray()))->values();
-
-        $policies = Policy::with(['schedule', 'actions.destination', 'assignments.deviceGroups'])->get()->map(function (Policy $p) {
+        $policies = Policy::with(['actions.destination', 'assignments.deviceGroups'])->get()->map(function (Policy $p) {
             $row = $this->strip($p->toArray());
-            $row['schedule'] = $p->schedule?->name;
             $row['actions'] = $p->actions->map(function ($a) {
                 $action = $this->strip($a->toArray());
                 $action['destination'] = $a->destination?->name;
@@ -50,7 +46,7 @@ class ImportExportController extends Controller
             return $row;
         })->values();
 
-        $document = ['version' => 1, 'exported_at' => now()->toIso8601String(), 'schedules' => $schedules, 'policies' => $policies];
+        $document = ['version' => 1, 'exported_at' => now()->toIso8601String(), 'policies' => $policies];
 
         return response()->streamDownload(
             fn () => print (json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),

@@ -6,7 +6,6 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class AdminCrudTest extends IntegrationTestCase
@@ -90,24 +89,9 @@ class AdminCrudTest extends IntegrationTestCase
         self::assertFalse(Assignment::whereKey($assignment->id)->exists());
     }
 
-    public function test_schedule_destination_clone_settings_and_token_write_paths(): void
+    public function test_destination_clone_settings_and_token_write_paths(): void
     {
         $admin = $this->admin();
-
-        $this->actingAs($admin)->post('/plugin/interface-alert-policy-manager/schedules', [
-            'name' => 'Business hours',
-            'timezone' => 'Europe/Oslo',
-            'enabled' => '1',
-            'schedule_json' => json_encode(['mode' => 'always', 'days' => []]),
-        ])->assertRedirect();
-        $schedule = Schedule::where('name', 'Business hours')->firstOrFail();
-        $this->actingAs($admin)->put("/plugin/interface-alert-policy-manager/schedules/{$schedule->id}", [
-            'name' => 'Business hours updated',
-            'timezone' => 'UTC',
-            'enabled' => '1',
-            'schedule_json' => json_encode(['mode' => 'always', 'days' => []]),
-        ])->assertRedirect();
-        self::assertSame('UTC', $schedule->fresh()->timezone);
 
         $destination = $this->smsDestination(['password' => 'clone-secret']);
         $this->actingAs($admin)->post("/plugin/interface-alert-policy-manager/destinations/{$destination->id}/clone")->assertRedirect();
@@ -139,8 +123,6 @@ class AdminCrudTest extends IntegrationTestCase
         self::assertNotSame($oldToken, $this->settings->get('ingestion_token'));
         self::assertNotEmpty($response->getSession()->get('new_ingestion_token'));
 
-        $this->actingAs($admin)->delete("/plugin/interface-alert-policy-manager/schedules/{$schedule->id}")->assertRedirect();
-        self::assertFalse(Schedule::whereKey($schedule->id)->exists());
     }
 
     private function policyPayload(string $name, int $priority = 1): array

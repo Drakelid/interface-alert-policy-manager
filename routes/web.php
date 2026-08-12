@@ -19,7 +19,6 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\PolicyActionCo
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\PolicyController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\PolicyTestController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\RealSimulationController;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\ScheduleController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SettingsController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SetupHelperController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SimulationController;
@@ -81,8 +80,6 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::match(['get', 'post'], 'template-preview', TemplatePreviewController::class)->name('template-preview');
     Route::get('message-templates', [MessageTemplateController::class, 'edit'])->name('message-templates');
     Route::put('message-templates', [MessageTemplateController::class, 'update'])->name('message-templates.update');
-    Route::delete('schedules-bulk', [ScheduleController::class, 'bulkDestroy'])->name('schedules.bulk-destroy');
-    Route::resource('schedules', ScheduleController::class)->except('show');
     Route::delete('destinations-bulk', [DestinationController::class, 'bulkDestroy'])->name('destinations.bulk-destroy');
     Route::resource('destinations', DestinationController::class)->except('show');
     Route::post('destinations/{destination}/clone', DestinationCloneController::class)->name('destinations.clone');
