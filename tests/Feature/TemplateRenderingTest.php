@@ -56,7 +56,7 @@ class TemplateRenderingTest extends IntegrationTestCase
         $values = app(TemplateContextBuilder::class)->forIncident($incident);
 
         self::assertSame("https://librenms.example.com/device/{$incident->device_id}", $values['device_url']);
-        self::assertSame("https://librenms.example.com/device/{$incident->device_id}/port/{$incident->port_id}", $values['port_url']);
+        self::assertSame("https://librenms.example.com/device/device={$incident->device_id}/tab=port/port={$incident->port_id}/", $values['port_url']);
     }
 
     public function test_device_groups_are_available_as_a_stable_comma_separated_placeholder(): void

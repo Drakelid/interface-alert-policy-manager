@@ -99,6 +99,30 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
             ->assertJsonStructure(['status', 'progress', 'total', 'rebuilt_at', 'stale', 'running']);
     }
 
+    public function test_a_stalled_rebuild_is_immediately_visible_and_can_be_retried(): void
+    {
+        Queue::fake();
+        $rebuilder = app(PolicyCacheRebuilder::class);
+        $rebuilder->markQueued();
+        $this->travel(6)->minutes();
+
+        $state = $rebuilder->state();
+        self::assertSame('stalled', $state['status']);
+        self::assertFalse($state['running']);
+
+        $this->actingAs($this->admin())
+            ->get(self::BASE.'/interface-matrix')
+            ->assertOk()
+            ->assertSeeText('The rebuild stopped making progress. Retry it');
+
+        $this->actingAs($this->admin())
+            ->post(self::BASE.'/interface-matrix/rebuild-cache')
+            ->assertRedirect();
+
+        Queue::assertPushed(RebuildPolicyCacheJob::class);
+        self::assertSame('queued', $rebuilder->state()['status']);
+    }
+
     public function test_the_matrix_reloads_itself_after_detecting_a_completed_rebuild(): void
     {
         $body = (string) $this->actingAs($this->admin())
@@ -175,6 +199,22 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
         self::assertNotNull(app(PolicyCacheRebuilder::class)->rebuiltAt());
     }
 
+    public function test_the_queue_option_starts_a_worker_safe_rebuild(): void
+    {
+        Queue::fake();
+        $this->downPort($this->device());
+
+        $this->artisan('iapm:cache-rebuild', ['--queue' => true])
+            ->expectsOutput('Policy cache rebuild queued.')
+            ->assertSuccessful();
+
+        Queue::assertPushed(RebuildPolicyCacheJob::class);
+        $state = app(PolicyCacheRebuilder::class)->state();
+        self::assertSame('queued', $state['status']);
+        self::assertSame(0, $state['progress']);
+        self::assertTrue($state['running']);
+    }
+
     public function test_a_full_cache_rebuild_is_scheduled_every_hour(): void
     {
         $event = collect(app(ConsoleSchedule::class)->events())
@@ -182,7 +222,8 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
 
         self::assertNotNull($event, 'The scheduler did not register iapm:cache-rebuild.');
         self::assertSame('0 * * * *', $event->expression);
-        self::assertTrue($event->runInBackground);
+        self::assertStringContainsString('--queue', (string) $event->command);
+        self::assertFalse($event->runInBackground);
     }
 
     /** @return list<string> */

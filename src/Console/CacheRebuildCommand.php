@@ -6,6 +6,7 @@ use App\Models\Port;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\Concerns\SkipsWhenPluginDisabled;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\RebuildPolicyCacheJob;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyCacheRebuilder;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
@@ -14,7 +15,9 @@ class CacheRebuildCommand extends Command
 {
     use SkipsWhenPluginDisabled;
 
-    protected $signature = 'iapm:cache-rebuild {--device=}';
+    protected $signature = 'iapm:cache-rebuild
+        {--device= : Rebuild only this LibreNMS device_id}
+        {--queue : Queue a fleet-wide rebuild in worker-safe batches}';
 
     protected $description = 'Rebuild the materialized effective-policy cache for Interface Matrix filtering';
 
@@ -25,8 +28,21 @@ class CacheRebuildCommand extends Command
         }
 
         $device = $this->option('device');
+        if ($device && $this->option('queue')) {
+            $this->error('--device and --queue cannot be used together.');
+
+            return self::INVALID;
+        }
         if (! $device && $rebuilder->state()['running']) {
             $this->info('A policy cache rebuild is already running; nothing to do.');
+
+            return self::SUCCESS;
+        }
+
+        if ($this->option('queue')) {
+            $rebuilder->markQueued();
+            RebuildPolicyCacheJob::dispatch();
+            $this->info('Policy cache rebuild queued.');
 
             return self::SUCCESS;
         }

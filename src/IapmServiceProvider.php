@@ -148,10 +148,13 @@ class IapmServiceProvider extends ServiceProvider
             }
             $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping(10);
 
-            // Refresh the Interface Matrix's materialized policy resolution once
-            // per hour. A long rebuild cannot overlap the next scheduled run,
-            // and the command also yields to a rebuild started from the UI.
-            $schedule->command('iapm:cache-rebuild')->hourly()->withoutOverlapping(180)->runInBackground();
+            // Queue the hourly rebuild in bounded jobs. A detached
+            // runInBackground() command is killed by some systemd-managed
+            // LibreNMS schedulers when schedule:run exits; it could write a
+            // "running, 0 interfaces" state and never make progress. The small
+            // foreground command only enqueues the work, while the supervised
+            // iapm workers perform the same batches used by the UI button.
+            $schedule->command('iapm:cache-rebuild --queue')->hourly()->withoutOverlapping(10);
 
             // Worker-liveness heartbeat. Registered unconditionally and gated
             // inside the command, so it covers both scheduler-managed workers and

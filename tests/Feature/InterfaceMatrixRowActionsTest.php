@@ -41,7 +41,9 @@ class InterfaceMatrixRowActionsTest extends IntegrationTestCase
 
         $body = (string) $this->actingAs($this->admin())->get(self::BASE.'/interface-matrix')->assertOk()->getContent();
 
-        self::assertStringContainsString('/device/'.$device->device_id.'/port/'.$port->port_id, $body);
+        $expected = '/device/device='.$device->device_id.'/tab=port/port='.$port->port_id.'/';
+        self::assertStringContainsString($expected, $body);
+        self::assertStringNotContainsString('/device/'.$device->device_id.'/port/'.$port->port_id, $body);
     }
 
     /** The row shortcut is only useful if it arrives at a form ready to submit. */

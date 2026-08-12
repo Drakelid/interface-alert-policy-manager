@@ -50,7 +50,7 @@ $fmt = function ($seconds) {
 <div class="col-md-6">
 <div class="panel panel-default"><div class="panel-heading"><h2 style="font-size:15px;margin:0;">Noisiest interfaces</h2></div>
 <div class="iapm-table-wrap"><table class="table table-condensed"><thead><tr><th>Device</th><th>Port</th><th class="iapm-num">Outages</th><th class="iapm-num">Total down</th></tr></thead><tbody>
-@forelse($topInterfaces as $row)<tr><td><a href="{{ route('device',$row->device_id) }}">{{ $row->device_id }}</a></td><td><a href="{{ url('device/'.$row->device_id.'/port/'.$row->port_id) }}">{{ $row->port_id }}</a></td><td class="iapm-num">{{ $row->outages }}</td><td class="iapm-num">{{ $fmt($row->total_down) }}</td></tr>@empty<tr><td colspan="4" class="iapm-hint">No outages in this period.</td></tr>@endforelse
+@forelse($topInterfaces as $row)<tr><td><a href="{{ route('device',$row->device_id) }}">{{ $row->device_id }}</a></td><td><a href="{{ \LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\LibreNmsRoutes::port($row->device_id, $row->port_id) }}">{{ $row->port_id }}</a></td><td class="iapm-num">{{ $row->outages }}</td><td class="iapm-num">{{ $fmt($row->total_down) }}</td></tr>@empty<tr><td colspan="4" class="iapm-hint">No outages in this period.</td></tr>@endforelse
 </tbody></table></div></div>
 </div>
 <div class="col-md-6">

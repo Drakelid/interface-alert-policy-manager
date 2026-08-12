@@ -21,7 +21,7 @@
 </div><div class="col-md-6">
 <div class="panel panel-default"><div class="panel-heading">Open in LibreNMS</div><div class="panel-body">
     <a class="btn btn-default btn-sm" href="{{ route('device',$incident->device_id) }}"><i class="fa fa-server"></i> Device</a>
-    <a class="btn btn-default btn-sm" href="{{ url('device/'.$incident->device_id.'/port/'.$incident->port_id) }}"><i class="fa fa-plug"></i> Port</a>
+    <a class="btn btn-default btn-sm" href="{{ \LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\LibreNmsRoutes::port($incident->device_id, $incident->port_id) }}"><i class="fa fa-plug"></i> Port</a>
     <a class="btn btn-default btn-sm" href="{{ route('iapm.matrix',['device_id'=>$incident->device_id]) }}"><i class="fa fa-table"></i> Interface Matrix</a>
 </div></div>
 </div></div>

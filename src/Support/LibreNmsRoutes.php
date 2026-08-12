@@ -5,11 +5,11 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Support;
 /**
  * In-app links to LibreNMS's own pages.
  *
- * LibreNMS has no named route for a port; its port page is served by the
- * catch-all `device/{device}/{tab?}/{vars?}` route named `device`. Building
- * that in one place keeps views from hard-coding the shape, and keeps it
- * consistent with the absolute `port_url` that TemplateContextBuilder puts
- * into notification messages.
+ * LibreNMS has no named route for a port. Its own `Url::portUrl()` helper uses
+ * the legacy variable path below, which the fallback device controller parses
+ * into device, tab and port values. A superficially REST-like
+ * `/device/{id}/port/{id}` path matches the fallback route but leaves the port
+ * variable unset and ultimately produces a 404.
  */
 class LibreNmsRoutes
 {
@@ -20,6 +20,17 @@ class LibreNmsRoutes
 
     public static function port(int|string $deviceId, int|string $portId): string
     {
-        return route('device', ['device' => $deviceId, 'tab' => 'port', 'vars' => $portId]);
+        return url(self::portPath($deviceId, $portId));
+    }
+
+    public static function absolutePort(string $baseUrl, int|string $deviceId, int|string $portId): string
+    {
+        return rtrim($baseUrl, '/').'/'.self::portPath($deviceId, $portId);
+    }
+
+    private static function portPath(int|string $deviceId, int|string $portId): string
+    {
+        return 'device/device='.rawurlencode((string) $deviceId)
+            .'/tab=port/port='.rawurlencode((string) $portId).'/';
     }
 }

@@ -85,7 +85,7 @@
             <span @if($cache['changed_at']) title="Most recent change: {{ $cache['changed_at'] }}" @endif>Policies or assignments changed after the last rebuild</span>, so those three filters may be out of date. Rebuild to bring them current.
         </div>
         @endif
-        <div id="iapm-cache-progress" class="alert alert-info" style="margin:10px 0 0;{{ $cache['running'] ? '' : 'display:none;' }}"></div>
+        <div id="iapm-cache-progress" class="alert {{ $cache['status'] === 'stalled' ? 'alert-danger' : 'alert-info' }}" style="margin:10px 0 0;{{ $cache['running'] || $cache['status'] === 'stalled' ? '' : 'display:none;' }}">@if($cache['status'] === 'stalled')The rebuild stopped making progress. Retry it and verify that the IAPM queue workers are running.@endif</div>
         @if($cache['error'])<div class="alert alert-danger" style="margin:10px 0 0;">Last rebuild failed: {{ $cache['error'] }}</div>@endif
     </div>
 </div>
@@ -175,7 +175,7 @@
         if (data.status === 'stalled') {
             progress.className = 'alert alert-danger';
             progress.style.display = '';
-            progress.textContent = 'The rebuild was queued but nothing has picked it up. Check that the IAPM queue workers are running, or switch Delivery dispatch to Synchronous in Settings.';
+            progress.textContent = 'The rebuild stopped making progress. Retry it and verify that the IAPM queue workers are running.';
             button.disabled = false;
             return idlePollMilliseconds;
         }

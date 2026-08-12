@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 use App\Models\User;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\DTO\InterfaceContext;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\LibreNmsRoutes;
 
 /**
  * Builds the placeholder map consumed by SafeTemplateRenderer.
@@ -130,7 +131,7 @@ class TemplateContextBuilder
             'device_groups' => $this->deviceGroups($context['deviceGroupNames'] ?? []),
             'assignment_source' => (string) ($context['assignment_source'] ?? ''),
             'device_url' => $base === '' ? '' : "$base/device/$deviceId",
-            'port_url' => $base === '' ? '' : "$base/device/$deviceId/port/$portId",
+            'port_url' => $base === '' ? '' : LibreNmsRoutes::absolutePort($base, $deviceId, $portId),
         ]);
     }
 
