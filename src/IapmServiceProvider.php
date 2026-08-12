@@ -138,7 +138,13 @@ class IapmServiceProvider extends ServiceProvider
             $inboxWorkers = max(1, (int) config('iapm.ingestion.inbox_workers', 2));
             $inboxBatch = max(1, min(100, (int) config('iapm.ingestion.inbox_batch_per_worker', 1)));
             for ($i = 1; $i <= $inboxWorkers; $i++) {
-                $schedule->command("iapm:drain-ingestion --worker={$i} --limit={$inboxBatch}")->everyMinute()->withoutOverlapping(20)->runInBackground();
+                // Keep these bounded drainers attached to schedule:run. Some
+                // LibreNMS installations launch the scheduler from a systemd
+                // oneshot/cgroup that terminates detached children as soon as
+                // the parent exits. In that environment runInBackground() left
+                // accepted payloads untouched (attempt_count stayed at zero)
+                // while every foreground IAPM task continued normally.
+                $schedule->command("iapm:drain-ingestion --worker={$i} --limit={$inboxBatch}")->everyMinute()->withoutOverlapping(20);
             }
             $schedule->command('iapm:cleanup --force')->dailyAt('02:35')->withoutOverlapping(10);
 
