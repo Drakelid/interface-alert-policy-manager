@@ -149,6 +149,21 @@ class QueueHeartbeatTest extends IntegrationTestCase
         self::assertStringContainsString('"redis" connection', $this->queueCheck()['detail']);
     }
 
+    /** A deliberately disabled scheduler worker pool needs a specific remedy. */
+    public function test_the_failure_explains_when_scheduler_managed_workers_are_disabled(): void
+    {
+        config(['iapm.queue.workers' => 0]);
+        $this->settings->put('dispatch_mode', 'queue');
+        Queue::fake();
+        $this->artisan('iapm:queue-heartbeat');
+        $this->travel(config('iapm.queue.heartbeat_stale_seconds') + 60)->seconds();
+
+        $detail = $this->queueCheck()['detail'];
+        self::assertStringContainsString('IAPM_QUEUE_WORKERS=0', $detail);
+        self::assertStringContainsString('Scheduler-managed workers are disabled', $detail);
+        self::assertStringContainsString('set IAPM_QUEUE_WORKERS to a positive count', $detail);
+    }
+
     /** 4. An empty notification queue is not proof of a living worker. */
     public function test_an_empty_queue_with_a_stale_heartbeat_still_fails(): void
     {

@@ -35,7 +35,7 @@ can exceed what the SMS gateway accepts.
 Check with:
 
 ```bash
-pgrep -af 'queue:work --queue=iapm' | wc -l    # should equal IAPM_QUEUE_WORKERS
+pgrep -af '[q]ueue:work.*--queue=iapm' | wc -l # should equal IAPM_QUEUE_WORKERS
 ```
 
 To recover, stop every worker and let the scheduler rebuild the set:

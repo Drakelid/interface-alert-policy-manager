@@ -205,11 +205,16 @@ class QueueHeartbeat
      */
     private function stoppedWorkerDetail(CarbonImmutable $since): string
     {
+        $workerAdvice = (int) config('iapm.queue.workers', 3) === 0
+            ? ' Scheduler-managed workers are disabled by IAPM_QUEUE_WORKERS=0. Start the configured external supervisor, or set IAPM_QUEUE_WORKERS to a positive count and clear the configuration cache.'
+            : ' Check the worker process or external supervisor (systemd, Supervisor, container).';
+
         return sprintf(
-            'No IAPM queue heartbeat has been consumed for %s. Check the worker process or external supervisor (systemd, Supervisor, container) and confirm workers listen on queue "%s" using the "%s" connection. Switching Delivery dispatch to Synchronous in Settings sends inline without workers.',
+            'No IAPM queue heartbeat has been consumed for %s.%s Workers must listen on queue "%s" using the "%s" connection. Switching Delivery dispatch to Synchronous in Settings sends inline without workers.',
             // DIFF_ABSOLUTE so this reads "12 minutes", not "12 minutes ago"
             // inside a sentence that already supplies the tense.
             $since->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE),
+            $workerAdvice,
             (string) config('iapm.queue.name', 'iapm'),
             $this->connectionName()
         );

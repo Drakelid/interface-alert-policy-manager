@@ -140,7 +140,7 @@ sudo -u librenms php artisan iapm:install-check   # now all green
 Queued delivery is on by default and **self-provisions**: the queue tables were created in step 2, and the scheduler keeps `IAPM_QUEUE_WORKERS` (default 3) background workers draining the queue — nothing else to do for a working setup. To confirm:
 
 ```bash
-pgrep -af 'queue:work --queue=iapm'     # workers appear within ~1 minute
+pgrep -af '[q]ueue:work.*--queue=iapm'  # workers appear within ~1 minute
 sudo -u librenms php artisan iapm:health   # "Queue worker delivering" proves one is consuming work
 ```
 
@@ -264,7 +264,9 @@ sudo systemctl restart 'iapm-worker@*'        # or `php artisan queue:restart` f
 sudo -u librenms php artisan iapm:install-check && sudo -u librenms php artisan iapm:health
 ```
 
-Back up the database before upgrades; migrations are additive. To uninstall: disable the plugin, back up, then remove the Composer package — uninstall migrations deliberately delete IAPM data.
+Back up the database before upgrades. To replace an installed copy safely, use
+the [fresh uninstall and reinstall runbook](docs/FRESH_REINSTALL.md). Composer
+removal preserves IAPM data; only an explicit migration reset deletes it.
 
 ### Development install (path repo)
 
@@ -302,7 +304,7 @@ If you previously ran a self-heal cron to survive updates (`/etc/cron.d/iapm`), 
 **Notifications aren't delivered even though everything is green.**
 Check the delivery mode and workers. `iapm:install-check` prints `delivery=queue` or `delivery=sync`:
 - `delivery=sync` — sent inline by the scheduler; no workers needed. Fine, but no parallelism.
-- `delivery=queue` — requires running workers. Confirm with `pgrep -af 'queue:work --queue=iapm'`. If nothing is draining, jobs pile up in the `jobs` table. Either start workers (scheduler-managed needs `IAPM_QUEUE_WORKERS>0`; or the systemd units above) or switch to sync: Settings → *Delivery dispatch*.
+- `delivery=queue` — requires running workers. Confirm with `pgrep -af '[q]ueue:work.*--queue=iapm'`. If nothing is draining, jobs pile up in the `jobs` table. Either start workers (scheduler-managed needs `IAPM_QUEUE_WORKERS>0`; or the systemd units above) or switch to sync: Settings → *Delivery dispatch*.
 
 **`iapm:health` reports `[FAIL] Queue worker delivering` while workers are running.**
 The check reports a worker dead only when no heartbeat has been *consumed* within
@@ -335,6 +337,12 @@ sudo -u librenms php artisan tinker --execute="app(LibreNMS\Plugins\InterfaceAle
 **`install-check` shows `[FAIL] default_policy`.** Decide coverage: add a **Default** assignment (or set a default policy) so unmatched interfaces are covered, **or** Settings → turn off *Record alerts for interfaces with no policy* to intentionally ignore them (recommended when you scope IAPM to specific interfaces).
 
 **Plugin missing from the menu / "must be run as the user librenms".** Run `artisan`/`lnms` as `sudo -u librenms`. If the plugin vanished after an update, confirm it's in `composer.plugins.json` (that's what `daily.sh` reinstalls from) and that `vendor/drakelid/interface-alert-policy-manager` exists; re-run step 1 if not.
+
+**Queue heartbeat is not consumed.** `IAPM_QUEUE_WORKERS=0` deliberately disables
+the scheduler-managed worker pool; use it only when systemd, Supervisor, or a
+container starts equivalent workers. If `pgrep -af '[q]ueue:work.*--queue=iapm'`
+prints nothing, either restore a positive worker count and run
+`php artisan config:clear`, or start the configured external worker service.
 
 **Alert POSTs return 419 or 404, or no IAPM routes appear in `php artisan route:list`.** The routes are cached from before the plugin was installed — common on container images, which ship a prebuilt `bootstrap/cache/routes-v7.php`. Run `sudo -u librenms php artisan optimize:clear` (step 2) and reload PHP-FPM. Until the cache is cleared the ingest URL falls through to LibreNMS's own web routes, so CSRF rejects it with 419 rather than a clearer 401/404.
 
@@ -462,6 +470,10 @@ IAPM defines abilities for viewing the plugin, managing policies, assignments, d
 ## Upgrade and uninstall
 
 Back up the database and application key, update the Composer package, run `php artisan migrate`, rebuild the policy cache, and run `iapm:install-check`. Never edit or reorder a migration already deployed. To disable safely, enable dry-run, restore the prior LibreNMS transport if needed, then disable the plugin. Composer removal does not intentionally delete tables. Only run migration rollback when permanent data deletion is approved and backed up.
+
+For exact commands to remove the previous package copy and install it cleanly,
+including worker shutdown and verification, follow
+[Fresh uninstall and reinstall](docs/FRESH_REINSTALL.md).
 
 This safety upgrade is additive: it preflights stable episode IDs in restartable batches, creates the encrypted durable ingestion inbox, adds storm-path indexes, and makes successful outbox finalization repairable. During rollout, stop the scheduler/workers, back up all `iapm_*` tables and `APP_KEY`, migrate, run the install check, drain one inbox/outbox row, then restart one worker and confirm health before restoring normal concurrency. See `docs/UPGRADING.md` for rollback and release-note details.
 
