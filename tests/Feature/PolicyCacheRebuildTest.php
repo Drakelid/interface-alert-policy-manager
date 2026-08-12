@@ -112,7 +112,7 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
         $this->actingAs($this->admin())
             ->get(self::BASE.'/interface-matrix')
             ->assertOk()
-            ->assertSeeText('The rebuild stopped making progress. Retry it');
+            ->assertSeeText('The rebuild is still queued');
 
         $this->actingAs($this->admin())
             ->post(self::BASE.'/interface-matrix/rebuild-cache')
@@ -120,6 +120,36 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
 
         Queue::assertPushed(RebuildPolicyCacheJob::class);
         self::assertSame('queued', $rebuilder->state()['status']);
+    }
+
+    public function test_a_running_stall_is_reported_as_an_interrupted_batch_not_a_dead_worker(): void
+    {
+        $rebuilder = app(PolicyCacheRebuilder::class);
+        $rebuilder->markQueued();
+        $rebuilder->markRunning(10);
+        $this->travel(6)->minutes();
+
+        $state = $rebuilder->state();
+
+        self::assertSame('stalled', $state['status']);
+        self::assertStringContainsString('stopped between progress checkpoints', $state['status_message']);
+        self::assertStringNotContainsString('workers may be stopped', strtolower($state['status_message']));
+    }
+
+    public function test_a_batch_records_progress_and_returns_a_resume_cursor(): void
+    {
+        $this->defaultPolicy();
+        $device = $this->device();
+        $ports = collect(range(1, 3))->map(fn () => $this->downPort($device));
+        $rebuilder = app(PolicyCacheRebuilder::class);
+        $rebuilder->markQueued();
+
+        $result = $rebuilder->runBatch(null, 2);
+
+        self::assertFalse($result['done']);
+        self::assertSame(2, $result['processed']);
+        self::assertSame((int) $ports[1]->port_id, $result['last']);
+        self::assertSame(2, $rebuilder->state()['progress']);
     }
 
     public function test_the_matrix_reloads_itself_after_detecting_a_completed_rebuild(): void
@@ -238,7 +268,6 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
             $base,
             "$base/policies", "$base/policies/create", "$base/policies/{$policy->id}/edit",
             "$base/policies/{$policy->id}/actions/create", "$base/actions/{$action->id}/edit",
-            "$base/assignments", "$base/assignments/create",
             "$base/interface-matrix", "$base/policy-test", "$base/stats",
             "$base/tools/simulate", "$base/import", "$base/comparison-report",
             "$base/setup-helper", "$base/template-preview", "$base/message-templates",

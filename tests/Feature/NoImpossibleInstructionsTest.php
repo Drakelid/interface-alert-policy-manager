@@ -34,7 +34,8 @@ class NoImpossibleInstructionsTest extends IntegrationTestCase
     /** Every form control that takes an entity offers a name-based way in. */
     public function test_the_assignment_port_type_offers_an_interface_search(): void
     {
-        $body = (string) $this->actingAs($this->admin())->get(self::BASE.'/assignments/create')->assertOk()->getContent();
+        $policy = $this->policy();
+        $body = (string) $this->actingAs($this->admin())->get(self::BASE."/policies/{$policy->id}/edit?assignment=new")->assertOk()->getContent();
 
         self::assertStringContainsString(route('iapm.lookup.ports'), $body);
         // The raw reference field is still submitted, so existing data keeps working.
@@ -48,7 +49,7 @@ class NoImpossibleInstructionsTest extends IntegrationTestCase
         $port = $this->downPort($this->device(['hostname' => 'edge-01']), ['ifName' => 'xe-9/9/9']);
         $assignment = $policy->assignments()->create(['assignment_type' => 'port', 'assignment_reference' => (string) $port->port_id, 'match_mode' => 'any', 'priority' => 0, 'enabled' => true]);
 
-        $body = (string) $this->actingAs($this->admin())->get(self::BASE."/assignments/{$assignment->id}/edit")->assertOk()->getContent();
+        $body = (string) $this->actingAs($this->admin())->get(self::BASE."/policies/{$policy->id}/edit?assignment={$assignment->id}")->assertOk()->getContent();
 
         self::assertStringContainsString('edge-01', $body);
         self::assertStringContainsString('xe-9/9/9', $body);

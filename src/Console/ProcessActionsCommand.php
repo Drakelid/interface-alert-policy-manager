@@ -397,11 +397,15 @@ class ProcessActionsCommand extends Command
 
     private function renderMessage(string $template, array $values, string $destinationType): string
     {
-        if ($destinationType === 'sms_gateway' && (bool) config('iapm.sms.single_segment', true)) {
-            return $this->templates->renderSingleSms($template, $values);
+        if ($destinationType === 'sms_gateway') {
+            if ((bool) config('iapm.sms.single_segment', true)) {
+                return $this->templates->renderSingleSms($template, $values);
+            }
+
+            return $this->templates->render($template, $values, (int) config('iapm.sms.message_length', 480));
         }
 
-        return $this->templates->render($template, $values, (int) config('iapm.sms.message_length', 480));
+        return $this->templates->render($template, $values);
     }
 
     private function digestDelivered(Incident $incident, int $destinationId, string $receiver): bool

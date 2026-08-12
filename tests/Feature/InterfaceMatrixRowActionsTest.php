@@ -67,6 +67,6 @@ class InterfaceMatrixRowActionsTest extends IntegrationTestCase
         $body = (string) $this->actingAs($this->admin())->get(self::BASE.'/interface-matrix')->assertOk()->getContent();
 
         self::assertStringContainsString(route('iapm.policies.edit', $policy), $body);
-        self::assertStringContainsString(route('iapm.assignments.edit', $assignment), $body);
+        self::assertStringContainsString(route('iapm.policies.edit', ['policy' => $policy, 'assignment' => $assignment->id]), $body);
     }
 }

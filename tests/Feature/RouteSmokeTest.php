@@ -116,6 +116,24 @@ class RouteSmokeTest extends IntegrationTestCase
         self::assertStringNotContainsString('>Schedules<', $body);
     }
 
+    public function test_assignment_management_lives_on_the_policy_page(): void
+    {
+        $admin = $this->admin();
+        $policy = $this->defaultPolicy();
+        $assignment = $policy->assignments()->firstOrFail();
+
+        $this->actingAs($admin)->get(self::BASE.'/assignments')->assertRedirect(route('iapm.policies.index'));
+        $this->actingAs($admin)->get(self::BASE.'/assignments/create')->assertRedirect(route('iapm.policies.index'));
+        $this->actingAs($admin)->get(self::BASE."/assignments/{$assignment->id}/edit")
+            ->assertRedirect(route('iapm.policies.edit', ['policy' => $policy, 'assignment' => $assignment->id]).'#assignments');
+
+        $this->actingAs($admin)
+            ->get(self::BASE."/policies/{$policy->id}/edit?assignment={$assignment->id}")
+            ->assertOk()
+            ->assertSee('Interface assignments')
+            ->assertSee('Edit assignment #'.$assignment->id);
+    }
+
     /** Every GET route in the plugin, with fixtures materialised on demand. */
     private function paths(): array
     {
@@ -134,9 +152,7 @@ class RouteSmokeTest extends IntegrationTestCase
             "$base/policies/{$policy->id}/edit",
             "$base/policies/{$policy->id}/actions/create",
             "$base/actions/{$action->id}/edit",
-            "$base/assignments",
-            "$base/assignments/create",
-            "$base/assignments/{$assignment->id}/edit",
+            "$base/policies/{$policy->id}/edit?assignment={$assignment->id}",
             "$base/interface-matrix",
             "$base/policy-test",
             "$base/policy-test?port_id={$port->port_id}",

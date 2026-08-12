@@ -20,7 +20,7 @@
                 <li><a href="{{ route('iapm.stats') }}">Statistics &amp; SLA</a></li>
             </ul>
         </li>
-        <li class="dropdown {{ $iapmActive('iapm.policies.index','iapm.policies.create','iapm.policies.edit','iapm.assignments.index','iapm.assignments.create','iapm.assignments.edit','iapm.destinations.index','iapm.destinations.create','iapm.destinations.edit') }}">
+        <li class="dropdown {{ $iapmActive('iapm.policies.index','iapm.policies.create','iapm.policies.edit','iapm.destinations.index','iapm.destinations.create','iapm.destinations.edit') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#">Configure <span class="caret"></span></a>
             <ul class="dropdown-menu">
                 <li class="dropdown-header">Follow in order</li>
@@ -29,8 +29,7 @@
                 <li><a href="{{ route('iapm.settings.edit') }}#ingestion-token">0. Generate ingestion token</a></li>
                 <li><a href="{{ route('iapm.destinations.index') }}">1. Destinations</a></li>
                 <li><a href="{{ route('iapm.policies.index') }}">2. Policies</a></li>
-                <li><a href="{{ route('iapm.assignments.index') }}">3. Assignments</a></li>
-                <li><a href="{{ route('iapm.setup-helper') }}">4. LibreNMS setup helper</a></li>
+                <li><a href="{{ route('iapm.setup-helper') }}">3. LibreNMS setup helper</a></li>
             </ul>
         </li>
         <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.message-templates','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.real-simulations.index','iapm.import.form') }}">

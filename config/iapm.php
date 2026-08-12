@@ -35,6 +35,12 @@ return [
     ],
     'processing' => [
         'batch_size' => 500,
+        // A cache rebuild performs full policy resolution (including groups and
+        // regex assignments) for every port. Keep each queued job comfortably
+        // below the queue worker's timeout and checkpoint during the batch.
+        'cache_rebuild_batch_size' => (int) env('IAPM_CACHE_REBUILD_BATCH_SIZE', 100),
+        'cache_rebuild_max_seconds' => (int) env('IAPM_CACHE_REBUILD_MAX_SECONDS', 40),
+        'cache_rebuild_checkpoint_every' => (int) env('IAPM_CACHE_REBUILD_CHECKPOINT_EVERY', 10),
         'reconciliation_interval' => 1,
         'action_interval' => 1,
         // Per-run wall-clock budget for iapm:process-actions. A large outage can

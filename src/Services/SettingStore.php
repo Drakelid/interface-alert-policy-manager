@@ -40,6 +40,30 @@ class SettingStore
         $this->remember($key, $value);
     }
 
+    /**
+     * Persist a related group of settings atomically, then refresh the local cache.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    public function putMany(array $values): void
+    {
+        $encoded = collect($values)->map(fn (mixed $value) => Crypt::encryptString(json_encode($value, JSON_THROW_ON_ERROR)));
+
+        DB::transaction(function () use ($encoded): void {
+            $now = now();
+            foreach ($encoded as $key => $value) {
+                DB::table('iapm_settings')->updateOrInsert(
+                    ['setting_key' => (string) $key],
+                    ['setting_value' => $value, 'updated_at' => $now]
+                );
+            }
+        });
+
+        foreach ($values as $key => $value) {
+            $this->remember((string) $key, $value);
+        }
+    }
+
     public function putThrottled(string $key, mixed $value, int $seconds): bool
     {
         $now = now();

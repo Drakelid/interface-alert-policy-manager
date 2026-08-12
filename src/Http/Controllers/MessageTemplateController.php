@@ -46,7 +46,11 @@ class MessageTemplateController extends Controller
 
         $sample = $placeholders->sample();
         $saved = [];
+        $changes = [];
         foreach (MessageTemplates::PHASES as $phase) {
+            if (! array_key_exists($phase, $input)) {
+                continue;
+            }
             $template = trim((string) ($input[$phase] ?? ''));
 
             if ($template !== '') {
@@ -58,21 +62,27 @@ class MessageTemplateController extends Controller
                 }
             }
 
-            $settings->put('template_'.$phase, $template);
+            $changes['template_'.$phase] = $template;
             $saved[$phase] = $template === '' ? '(default)' : 'custom';
         }
 
         // The device digest uses a different, device-level placeholder set.
-        $digest = trim((string) ($data['digest'] ?? ''));
-        if ($digest !== '') {
-            try {
-                $renderer->render($digest, $placeholders->digestSample());
-            } catch (\Throwable $e) {
-                return back()->withErrors(['digest' => 'Device digest: '.$e->getMessage()])->withInput();
+        if (array_key_exists('digest', $data)) {
+            $digest = trim((string) ($data['digest'] ?? ''));
+            if ($digest !== '') {
+                try {
+                    $renderer->render($digest, $placeholders->digestSample());
+                } catch (\Throwable $e) {
+                    return back()->withErrors(['digest' => 'Device digest: '.$e->getMessage()])->withInput();
+                }
             }
+            $changes['template_digest'] = $digest;
+            $saved['digest'] = $digest === '' ? '(default)' : 'custom';
         }
-        $settings->put('template_digest', $digest);
-        $saved['digest'] = $digest === '' ? '(default)' : 'custom';
+
+        if ($changes !== []) {
+            $settings->putMany($changes);
+        }
 
         $audit->record($request, 'updated', 'message_templates', null, null, $saved);
 

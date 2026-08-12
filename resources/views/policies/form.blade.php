@@ -81,9 +81,9 @@ $fields = [
     <button class="btn btn-danger btn-sm" style="margin-bottom:8px;" data-iapm-bulk-button="assignments" disabled><i class="fa fa-trash"></i> Delete selected<span data-iapm-bulk-count></span></button>
 </form>
 <div class="table-responsive" data-iapm-bulk-scope="assignments"><table class="table table-hover">
-<thead><tr><th style="width:2em;"><input type="checkbox" aria-label="Select all assignments for this policy" data-iapm-toggle-all=".iapm-assignment-bulk"></th><th>Type</th><th>Reference / expression</th><th>Mode</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+<thead><tr><th style="width:2em;"><input type="checkbox" aria-label="Select all assignments for this policy" data-iapm-toggle-all=".iapm-bulk"></th><th>Type</th><th>Reference / expression</th><th>Mode</th><th>Priority</th><th>Status</th><th></th></tr></thead>
 <tbody>@foreach($policy->assignments->sortByDesc('priority') as $a)<tr>
-<td><input class="iapm-assignment-bulk" type="checkbox" form="iapm-bulk-assignments" name="ids[]" value="{{ $a->id }}" aria-label="Select assignment {{ $a->id }}"></td>
+<td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-assignments" name="ids[]" value="{{ $a->id }}" aria-label="Select assignment {{ $a->id }}"></td>
 <td>{{ str_replace('_',' ',$a->assignment_type->value) }}</td>
 <td>{{ $a->assignment_reference ?: $a->match_expression ?: ($a->deviceGroups->count() ? $a->deviceGroups->count().' device group(s)' : '—') }}</td>
 <td>{{ $a->match_mode }}</td><td>{{ $a->priority }}</td>

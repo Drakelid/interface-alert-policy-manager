@@ -85,7 +85,7 @@
             <span @if($cache['changed_at']) title="Most recent change: {{ $cache['changed_at'] }}" @endif>Policies or assignments changed after the last rebuild</span>, so those three filters may be out of date. Rebuild to bring them current.
         </div>
         @endif
-        <div id="iapm-cache-progress" class="alert {{ $cache['status'] === 'stalled' ? 'alert-danger' : 'alert-info' }}" style="margin:10px 0 0;{{ $cache['running'] || $cache['status'] === 'stalled' ? '' : 'display:none;' }}">@if($cache['status'] === 'stalled')The rebuild stopped making progress. Retry it and verify that the IAPM queue workers are running.@endif</div>
+        <div id="iapm-cache-progress" class="alert {{ $cache['status'] === 'stalled' ? 'alert-danger' : 'alert-info' }}" style="margin:10px 0 0;{{ $cache['running'] || $cache['status'] === 'stalled' ? '' : 'display:none;' }}">@if($cache['status'] === 'stalled'){{ $cache['status_message'] }}@endif</div>
         @if($cache['error'])<div class="alert alert-danger" style="margin:10px 0 0;">Last rebuild failed: {{ $cache['error'] }}</div>@endif
     </div>
 </div>
@@ -144,7 +144,7 @@
 <td>{{ $p->ifAdminStatus?->value }}</td>
 <td>{{ $p->ifOperStatus?->value }}</td>
 <td>@if($row['policy'])<a href="{{ route('iapm.policies.edit',$row['policy']) }}">{{ $row['policy']->name }}</a>@else<span class="text-warning">No policy</span>@endif</td>
-<td title="{{ collect($row['candidates'])->map(fn($a)=>$a->policy->name)->implode(', ') }}">@if($row['winner'])<a href="{{ route('iapm.assignments.edit',$row['winner']) }}">{{ $row['winner']->assignment_type->value }}</a>@else<span class="iapm-hint">&mdash;</span>@endif</td>
+<td title="{{ collect($row['candidates'])->map(fn($a)=>$a->policy->name)->implode(', ') }}">@if($row['winner'])<a href="{{ route('iapm.policies.edit',['policy'=>$row['winner']->policy,'assignment'=>$row['winner']->id]) }}#assignments">{{ $row['winner']->assignment_type->value }}</a>@else<span class="iapm-hint">&mdash;</span>@endif</td>
 <td>@if($row['incident'])<a href="{{ route('iapm.incidents.show',$row['incident']) }}">@include('iapm::partials.state-label',['state'=>$row['incident']->state->value])</a>@endif</td>
 <td class="iapm-actions" style="white-space:nowrap;">
     <a class="btn btn-default btn-xs" href="{{ route('iapm.policy-test',['port_id'=>$p->port_id]) }}" title="Policy Test for port_id {{ $p->port_id }}" aria-label="Policy Test for {{ $p->ifName }}"><i class="fa fa-flask"></i></a>
@@ -153,7 +153,7 @@
 </td>
 </tr>@endforeach</tbody></table></div>
 @if($rows->total() === 0)
-@include('iapm::partials.empty-state',['title'=>'No interfaces match','body'=>'Either LibreNMS has no ports matching this filter, or the policy cache has not been built yet — the policy, source and no-policy filters read it. Clear the filter to see everything.','route'=>route('iapm.matrix'),'action'=>'Clear filters','secondaryRoute'=>route('iapm.assignments.create'),'secondaryAction'=>'Create an assignment'])
+@include('iapm::partials.empty-state',['title'=>'No interfaces match','body'=>'Either LibreNMS has no ports matching this filter, or the policy cache has not been built yet — the policy, source and no-policy filters read it. Clear the filter to see everything.','route'=>route('iapm.matrix'),'action'=>'Clear filters','secondaryRoute'=>route('iapm.policies.index'),'secondaryAction'=>'Open policies'])
 @endif
 </form>{{ $rows->links() }}
 <script>
@@ -175,7 +175,7 @@
         if (data.status === 'stalled') {
             progress.className = 'alert alert-danger';
             progress.style.display = '';
-            progress.textContent = 'The rebuild stopped making progress. Retry it and verify that the IAPM queue workers are running.';
+            progress.textContent = data.status_message || 'The rebuild stopped making progress. Retry it.';
             button.disabled = false;
             return idlePollMilliseconds;
         }

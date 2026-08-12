@@ -42,10 +42,12 @@ class TemplateRenderingTest extends IntegrationTestCase
         $values = app(TemplateContextBuilder::class)->forIncident($incident->load('policy'));
         $renderer = app(SafeTemplateRenderer::class);
 
-        foreach (['trigger', 'escalation', 'reminder', 'recovery', 'acknowledged'] as $phase) {
+        foreach (MessageTemplates::PHASES as $phase) {
             $rendered = $renderer->render(MessageTemplates::default($phase), $values);
             self::assertStringContainsString((string) $incident->id, $rendered);
         }
+
+        self::assertNotSame('', $renderer->render(MessageTemplates::defaultDigest(), app(TemplateContextBuilder::class)->digestSample()));
     }
 
     public function test_the_device_and_port_urls_use_the_configured_url_base(): void

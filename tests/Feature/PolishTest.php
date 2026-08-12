@@ -131,7 +131,8 @@ class PolishTest extends IntegrationTestCase
 
     public function test_the_assignment_form_can_show_the_samples(): void
     {
-        $body = (string) $this->actingAs($this->admin())->get(self::BASE.'/assignments/create')->assertOk()->getContent();
+        $policy = $this->policy();
+        $body = (string) $this->actingAs($this->admin())->get(self::BASE."/policies/{$policy->id}/edit?assignment=new")->assertOk()->getContent();
 
         self::assertStringContainsString('id="iapm-preview-samples"', $body);
         self::assertStringContainsString('Sample of matched interfaces', $body);
@@ -144,7 +145,6 @@ class PolishTest extends IntegrationTestCase
         $expected = [
             '/policies' => 'No policies yet',
             '/destinations' => 'No destinations yet',
-            '/assignments' => 'No assignments yet',
             '/interface-matrix' => 'No interfaces match',
             '/delivery-log' => 'No deliveries yet',
             '/audit-log' => 'No audit entries yet',

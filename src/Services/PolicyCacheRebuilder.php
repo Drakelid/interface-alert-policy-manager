@@ -81,7 +81,8 @@ class PolicyCacheRebuilder
      */
     public function runBatch(?int $afterPortId, int $limit): array
     {
-        $this->markRunning((int) $this->settings->get(self::PROGRESS, 0));
+        $baseProgress = (int) $this->settings->get(self::PROGRESS, 0);
+        $this->markRunning($baseProgress);
 
         // First batch clears the whole table: a partial rebuild that only
         // overwrites the ports it visits would leave rows for deleted ports.
@@ -95,19 +96,35 @@ class PolicyCacheRebuilder
             ->limit($limit)
             ->get();
 
+        $processed = 0;
+        $last = null;
+        $checkpointEvery = max(1, min($limit, (int) config('iapm.processing.cache_rebuild_checkpoint_every', 10)));
+        $workerTimeout = max(15, (int) config('iapm.queue.timeout', 60));
+        $maxSeconds = max(5, min($workerTimeout - 5, (int) config('iapm.processing.cache_rebuild_max_seconds', 40)));
+        $deadline = microtime(true) + $maxSeconds;
+
         foreach ($ports as $port) {
             $this->resolver->resolve($this->contexts->forPort($port));
+            $processed++;
+            $last = (int) $port->port_id;
+
+            if ($processed % $checkpointEvery === 0) {
+                $this->markRunning($baseProgress + $processed);
+            }
+            if (microtime(true) >= $deadline) {
+                break;
+            }
         }
 
-        $processed = $ports->count();
-        $this->markRunning((int) $this->settings->get(self::PROGRESS, 0) + $processed);
-        $done = $processed < $limit;
+        $this->markRunning($baseProgress + $processed);
+        $done = $processed === $ports->count() && $ports->count() < $limit;
         if ($done) {
             $this->settings->put(self::STATUS, 'complete');
             $this->settings->put(self::REBUILT_AT, now()->toIso8601String());
+            $this->settings->put(self::ERROR, null);
         }
 
-        return ['done' => $done, 'last' => $ports->last()?->port_id, 'processed' => $processed];
+        return ['done' => $done, 'last' => $last, 'processed' => $processed];
     }
 
     /** Called by the console command, which rebuilds synchronously in one pass. */
@@ -163,8 +180,8 @@ class PolicyCacheRebuilder
         $activityAt = $this->settings->get(self::ACTIVITY_AT) ?? $this->settings->get(self::STARTED_AT);
         $progress = (int) $this->settings->get(self::PROGRESS, 0);
 
-        // A rebuild that was queued but never picked up means no worker is
-        // draining the queue; say so rather than spinning forever.
+        // Queued means no worker picked it up; running means a worker started but
+        // stopped between checkpoints (usually a timeout or forced restart).
         $stalled = in_array($status, ['queued', 'running'], true)
             && $activityAt !== null
             && CarbonImmutable::parse($activityAt)->addSeconds(self::STALLED_AFTER_SECONDS)->isPast();
@@ -178,6 +195,11 @@ class PolicyCacheRebuilder
             'stale' => $this->isStale(),
             'changed_at' => $this->configurationChangedAt()?->toIso8601String(),
             'error' => $this->settings->get(self::ERROR),
+            'status_message' => $stalled
+                ? ($status === 'queued'
+                    ? 'The rebuild is still queued. IAPM workers may be stopped or busy on older jobs.'
+                    : 'A rebuild worker stopped between progress checkpoints. Retry the rebuild; the new run uses time-bounded batches.')
+                : null,
             'running' => in_array($status, ['queued', 'running'], true) && ! $stalled,
         ];
     }

@@ -39,7 +39,7 @@ class RebuildPolicyCacheJob implements ShouldQueue
 
     public function handle(PolicyCacheRebuilder $rebuilder): void
     {
-        $batch = max(50, (int) config('iapm.processing.batch_size', 500));
+        $batch = max(10, min(500, (int) config('iapm.processing.cache_rebuild_batch_size', 100)));
         $result = $rebuilder->runBatch($this->afterPortId, $batch);
 
         if ($result['done']) {

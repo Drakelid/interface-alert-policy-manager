@@ -1,7 +1,7 @@
 @extends('layouts.librenmsv1') @section('title','IAPM Policies') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')
 <h1 class="iapm-page-title">Policies <a class="btn btn-primary btn-sm" href="{{ route('iapm.policies.create') }}"><i class="fa fa-plus"></i> Create</a></h1>
-@include('iapm::partials.step-header',['step'=>2,'total'=>3,'title'=>'Create a policy','desc'=>'A policy decides <em>when</em> an interface-down incident notifies — trigger delay, failed-poll count, repeats, escalation, and recovery. After saving, add notification <strong>actions</strong> pointing at a destination.','prevRoute'=>route('iapm.destinations.index'),'prevLabel'=>'Destinations','nextRoute'=>route('iapm.assignments.index'),'nextLabel'=>'Assignments'])
+@include('iapm::partials.step-header',['step'=>2,'total'=>2,'title'=>'Create a policy','desc'=>'A policy decides which interfaces it covers and <em>when</em> an interface-down incident notifies. After saving, add assignments and notification actions on the policy page.','prevRoute'=>route('iapm.destinations.index'),'prevLabel'=>'Destinations','nextRoute'=>route('iapm.setup-helper'),'nextLabel'=>'Setup Helper'])
 @if($policies->count())
 <form id="iapm-bulk-policies" method="post" action="{{ route('iapm.policies.bulk-destroy') }}" data-iapm-confirm="Delete the selected policies? Any still referenced by assignments or active incidents are skipped.">@csrf @method('DELETE')
     <button class="btn btn-danger btn-sm" style="margin-bottom:8px;" data-iapm-bulk-button="policies" disabled><i class="fa fa-trash"></i> Delete selected<span data-iapm-bulk-count></span></button>
@@ -14,7 +14,7 @@
 <td>{{ $p->severity->value }}</td>
 <td>{{ $p->priority }}</td>
 <td>@if($p->enabled)<span class="label label-success">Enabled</span>@else<span class="label label-default">Disabled</span>@endif</td>
-<td>@if($p->assignments_count)<a href="{{ route('iapm.assignments.index') }}">{{ $p->assignments_count }}</a>@else<span class="text-warning" title="No interfaces use this policy">0</span>@endif</td>
+<td>@if($p->assignments_count)<a href="{{ route('iapm.policies.edit',$p) }}#assignments">{{ $p->assignments_count }}</a>@else<a class="text-warning" href="{{ route('iapm.policies.edit',['policy'=>$p,'assignment'=>'new']) }}#assignments" title="Add an assignment">0</a>@endif</td>
 <td>@if($p->enabled_actions_count>0){{ $p->enabled_actions_count }}@else<span class="label label-warning" title="This policy has no enabled notification action — matched interfaces will not page anyone."><i class="fa fa-bell-slash"></i> won't notify</span>@endif</td>
 {{-- P1-4: the row name was the only way to reach the editor and carried no
      visual signal that it was an affordance at all. --}}

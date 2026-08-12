@@ -112,7 +112,7 @@ Open the plugin and work down the **Overview setup checklist** (or the numbered 
 1. **Settings → generate the ingestion token** (top of the page).
 2. **Destinations → create** your SMS gateway (URL, credentials, default receiver). Use *Send test* to confirm it reaches the gateway.
 3. **Policies → create** a policy (trigger delay, repeats, recovery), then **add at least one notification Action** pointing at the destination — a policy with no action never notifies.
-4. **Assignments → create** how interfaces map to the policy. A **Default** assignment covers every interface; or scope to specific devices/groups/port-groups/regex.
+4. On that policy's **Interface assignments** section, add how interfaces map to it. A **Default** assignment covers every interface; or scope to specific devices/groups/port-groups/regex.
 5. **Large fleets:** either set a default assignment/policy so nothing is unmatched, **or** Settings → turn **off** *Record alerts for interfaces with no policy* so un-scoped interfaces are ignored instead of stored.
 
 ### 4. Point LibreNMS at IAPM (Setup Helper)
@@ -457,7 +457,7 @@ IAPM is built to scale to very large fleets, but a few things must be configured
 
 ### Known limitations
 
-- Materialized policy filters are complete only after a cache rebuild has covered the relevant ports (Interface Matrix → **Rebuild cache**, or `iapm:cache-rebuild`).
+- Materialized policy filters are complete only after a cache rebuild has covered the relevant ports (Interface Matrix → **Rebuild cache**, or `iapm:cache-rebuild`). Queued rebuilds use time-bounded batches and checkpoint progress; tune `IAPM_CACHE_REBUILD_BATCH_SIZE`, `IAPM_CACHE_REBUILD_MAX_SECONDS`, and `IAPM_CACHE_REBUILD_CHECKPOINT_EVERY` only after measuring a representative fleet.
 - Delivery is queued by default. Scheduled discovery is time-budgeted and cursor-resumable; large storms should use the device digest, durable outbox, and supervised Redis workers.
 - Parent suppression uses current LibreNMS device relationships and cannot infer dependencies not modeled in LibreNMS.
 - Private-network destinations must be explicitly allowed and should be limited to trusted internal gateway hosts.

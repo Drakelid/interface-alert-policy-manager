@@ -11,7 +11,6 @@
 @php($iapmObjectRoute = [
     'incident' => 'iapm.incidents.show',
     'policy' => 'iapm.policies.edit',
-    'assignment' => 'iapm.assignments.edit',
     'destination' => 'iapm.destinations.edit',
     'policy_action' => 'iapm.actions.edit',
 ][$audit->object_type] ?? null)
