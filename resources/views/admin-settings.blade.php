@@ -8,13 +8,13 @@
      to the bottom of the viewport so it is reachable from any section. --}}
 <nav class="iapm-section-nav" aria-label="Settings sections">
     <span class="iapm-hint">Jump to:</span>
-    <a href="#ingestion-token">Ingestion token</a>
-    <a href="#delivery-mode">Delivery mode</a>
-    <a href="#policy-defaults">Policy defaults</a>
-    <a href="#delivery-retention">Delivery &amp; retention</a>
-    <a href="#delivery-dispatch">Dispatch</a>
-    <a href="#storm-control">Storm control</a>
-    <a href="#root-cause">Root-cause suppression</a>
+    <a href="{{ route('iapm.settings.edit') }}#ingestion-token">Ingestion token</a>
+    <a href="{{ route('iapm.settings.edit') }}#delivery-mode">Delivery mode</a>
+    <a href="{{ route('iapm.settings.edit') }}#policy-defaults">Policy defaults</a>
+    <a href="{{ route('iapm.settings.edit') }}#delivery-retention">Delivery &amp; retention</a>
+    <a href="{{ route('iapm.settings.edit') }}#delivery-dispatch">Dispatch</a>
+    <a href="{{ route('iapm.settings.edit') }}#storm-control">Storm control</a>
+    <a href="{{ route('iapm.settings.edit') }}#root-cause">Root-cause suppression</a>
 </nav>
 
 <div class="panel {{ $values['has_token'] ? 'panel-default' : 'panel-warning' }}" id="ingestion-token">

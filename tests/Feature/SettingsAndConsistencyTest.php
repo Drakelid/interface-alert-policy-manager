@@ -73,7 +73,8 @@ class SettingsAndConsistencyTest extends IntegrationTestCase
 
         foreach (['ingestion-token', 'delivery-mode', 'policy-defaults', 'delivery-retention', 'delivery-dispatch', 'storm-control', 'root-cause'] as $anchor) {
             self::assertStringContainsString('id="'.$anchor.'"', $body, "Settings has no #$anchor section.");
-            self::assertStringContainsString('href="#'.$anchor.'"', $body, "The jump list does not offer #$anchor.");
+            self::assertStringContainsString('href="'.route('iapm.settings.edit').'#'.$anchor.'"', $body, "The jump list does not offer #$anchor on the Settings URL.");
+            self::assertStringNotContainsString('href="#'.$anchor.'"', $body, "Fragment-only #$anchor resolves against LibreNMS's base URL and redirects to the dashboard.");
         }
         self::assertStringContainsString('iapm-sticky-save', $body);
     }
