@@ -30,7 +30,7 @@ class TemplatePreviewController extends Controller
                     $warning = $metrics['segments'] > 1
                         ? "The rendered {$metrics['encoding']} message would use {$metrics['segments']} SMS segments, so it was truncated to one {$metrics['single_limit']}-unit segment."
                         : "The rendered message fits in one {$metrics['encoding']} SMS segment.";
-                    $rendered = $renderer->limitToSingleSms($full, $values['incident_id'] ?? null);
+                    $rendered = $renderer->limitToSingleSms($full);
                 } else {
                     $limit = (int) config('iapm.sms.message_length', 480);
                     $warning = mb_strlen($full) > $limit ? 'Rendered message is '.mb_strlen($full)." characters; it will be deterministically truncated to $limit." : null;

@@ -94,7 +94,7 @@ class TemplateRenderingTest extends IntegrationTestCase
         app(SafeTemplateRenderer::class)->render('Down: {{ not_a_placeholder }}', $values);
     }
 
-    public function test_an_over_long_message_is_truncated_deterministically_and_keeps_the_incident_id(): void
+    public function test_an_over_long_message_is_truncated_without_adding_template_content(): void
     {
         $incident = $this->incident($this->policy(), $this->downPort($this->device()));
         $values = app(TemplateContextBuilder::class)->forIncident($incident);
@@ -105,7 +105,8 @@ class TemplateRenderingTest extends IntegrationTestCase
 
         self::assertLessThanOrEqual(160, mb_strlen($first));
         self::assertSame($first, $second, 'Truncation must be deterministic.');
-        self::assertStringEndsWith("Incident: {$incident->id}", $first);
+        self::assertStringEndsWith('...', $first);
+        self::assertStringNotContainsString('Incident:', $first);
     }
 
     public function test_preview_values_cover_the_same_placeholders_as_delivery(): void

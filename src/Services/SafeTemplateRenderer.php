@@ -30,8 +30,8 @@ class SafeTemplateRenderer
         $rendered = $this->renderNodes($nodes);
 
         if ($limit !== null && mb_strlen($rendered) > $limit) {
-            $suffix = isset($values['incident_id']) ? "\nIncident: {$values['incident_id']}" : '';
-            $rendered = rtrim(mb_substr($rendered, 0, max(0, $limit - mb_strlen($suffix) - 1))).'…'.$suffix;
+            $suffix = mb_substr('...', 0, min(3, $limit));
+            $rendered = rtrim(mb_substr($rendered, 0, max(0, $limit - mb_strlen($suffix)))).$suffix;
         }
 
         return $rendered;
@@ -40,7 +40,7 @@ class SafeTemplateRenderer
     /** Render and guarantee that an SMS gateway receives at most one SMS segment. */
     public function renderSingleSms(string $template, array $values): string
     {
-        return $this->limitToSingleSms($this->render($template, $values), $values['incident_id'] ?? null);
+        return $this->limitToSingleSms($this->render($template, $values));
     }
 
     /** @return array{encoding: string, units: int, segments: int, single_limit: int} */
@@ -60,13 +60,13 @@ class SafeTemplateRenderer
         ];
     }
 
-    public function limitToSingleSms(string $message, string|int|null $incidentId = null): string
+    public function limitToSingleSms(string $message): string
     {
         if ($this->smsMetrics($message)['segments'] === 1) {
             return $message;
         }
 
-        $suffix = $incidentId === null || $incidentId === '' ? '...' : "...\nIncident: $incidentId";
+        $suffix = '...';
         $result = '';
         foreach ($this->characters($message) as $character) {
             if ($this->smsMetrics($result.$character.$suffix)['segments'] > 1) {

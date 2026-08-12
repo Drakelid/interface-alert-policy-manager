@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class MessageTemplateTest extends IntegrationTestCase
@@ -70,6 +71,25 @@ class MessageTemplateTest extends IntegrationTestCase
         $this->artisan('iapm:process-actions');
 
         Http::assertSent(fn ($request) => $request['message'] === $message);
+    }
+
+    public function test_sms_truncation_does_not_add_an_incident_identifier_missing_from_the_template(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination(), ['message_template' => str_repeat('x', 300)]);
+        $this->incident($policy, $this->downPort($this->device()));
+
+        $this->artisan('iapm:process-actions');
+
+        Http::assertSent(function ($request): bool {
+            $message = (string) $request['message'];
+
+            return ! str_contains($message, 'Incident:')
+                && str_ends_with($message, '...')
+                && app(SafeTemplateRenderer::class)
+                    ->smsMetrics($message)['segments'] === 1;
+        });
     }
 
     public function test_saving_a_valid_template_persists(): void
