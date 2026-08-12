@@ -109,6 +109,7 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
 
 <script>
 (function () {
+    function initializeIapmControls() {
     // --- Toasts: promote flagged flash alerts into dismissible toasts ---
     var host = document.getElementById('iapm-toasts');
     document.querySelectorAll('.iapm-toast').forEach(function (el) {
@@ -525,6 +526,16 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
         setInterval(tick, 1000);
         schedule();
         tick();
+    }
+    }
+
+    // This partial is emitted by the navigation before each page's controls.
+    // Initializing after parsing makes every eager widget (port pickers,
+    // counters, quick-find, bulk controls and auto-refresh) see the full page.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeIapmControls);
+    } else {
+        initializeIapmControls();
     }
 })();
 </script>

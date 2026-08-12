@@ -4,6 +4,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\Concerns\SkipsWhenPluginDisabled;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
@@ -33,7 +34,8 @@ class CleanupCommand extends Command
         $outageCount = DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff)->count();
         $outboxCount = DB::table('iapm_notification_outbox')->whereIn('incident_id', (clone $recovered)->select('id'))->count();
         $inboxCount = DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'failed', 'dead'])->where('created_at', '<', $cutoff)->count();
-        $this->table(['Record type', 'Eligible'], [['Recovered incidents', $incidentCount], ['Incident events', $eventCount], ['Delivery logs', $deliveryCount], ['Notification outbox', $outboxCount], ['Ingestion inbox', $inboxCount], ['Audit logs', $auditCount], ['Outage records', $outageCount]]);
+        $simulationCount = Schema::hasTable('iapm_simulations') ? DB::table('iapm_simulations')->whereIn('status', ['recovered', 'failed'])->where('created_at', '<', $cutoff)->count() : 0;
+        $this->table(['Record type', 'Eligible'], [['Recovered incidents', $incidentCount], ['Incident events', $eventCount], ['Delivery logs', $deliveryCount], ['Notification outbox', $outboxCount], ['Ingestion inbox', $inboxCount], ['Simulation records', $simulationCount], ['Audit logs', $auditCount], ['Outage records', $outageCount]]);
         if (! $this->option('force')) {
             $this->info('Dry-run only. Re-run with --force to delete eligible records.');
 
@@ -46,6 +48,9 @@ class CleanupCommand extends Command
         $this->purge(fn () => DB::table('iapm_audit_logs')->where('created_at', '<', $cutoff));
         $this->purge(fn () => DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff));
         $this->purge(fn () => DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'failed', 'dead'])->where('created_at', '<', $cutoff));
+        if (Schema::hasTable('iapm_simulations')) {
+            $this->purge(fn () => DB::table('iapm_simulations')->whereIn('status', ['recovered', 'failed'])->where('created_at', '<', $cutoff));
+        }
         // Deleting the incident cascades its events and delivery logs at the DB level.
         $this->purge(fn () => DB::table('iapm_incidents')->where('state', 'recovered')->where('recovered_at', '<', $cutoff));
         $this->info(microtime(true) >= $this->deadline ? 'Retention cleanup reached its time budget; the next run will resume.' : 'Retention cleanup completed.');

@@ -34,7 +34,7 @@
                 <li><a href="{{ route('iapm.setup-helper') }}">5. LibreNMS setup helper</a></li>
             </ul>
         </li>
-        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.message-templates','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.import.form') }}">
+        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.message-templates','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.real-simulations.index','iapm.import.form') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#">Tools <span class="caret"></span></a>
             <ul class="dropdown-menu">
                 <li class="dropdown-header">Templates</li>
@@ -43,7 +43,8 @@
                 <li role="separator" class="divider"></li>
                 <li class="dropdown-header">Test &amp; validate</li>
                 <li><a href="{{ route('iapm.policy-test') }}">Policy Test</a></li>
-                <li><a href="{{ route('iapm.simulate') }}">Simulate Alert</a></li>
+                <li><a href="{{ route('iapm.simulate') }}">Synthetic Simulation</a></li>
+                <li><a href="{{ route('iapm.real-simulations.index') }}"><strong>Real Simulation</strong></a></li>
                 <li><a href="{{ route('iapm.comparison-report') }}">Comparison Report</a></li>
                 <li role="separator" class="divider"></li>
                 <li><a href="{{ route('iapm.import.form') }}">Import / Export</a></li>

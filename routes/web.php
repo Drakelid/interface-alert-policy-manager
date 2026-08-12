@@ -18,6 +18,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\OverviewContro
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\PolicyActionController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\PolicyController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\PolicyTestController;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\RealSimulationController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\ScheduleController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SettingsController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SetupHelperController;
@@ -64,6 +65,9 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::get('statistics', fn (Request $request) => redirect()->route('iapm.stats', $request->query()))->name('statistics');
     Route::get('tools/simulate', [SimulationController::class, 'form'])->name('simulate');
     Route::post('tools/simulate', [SimulationController::class, 'run'])->name('simulate.run');
+    Route::get('tools/real-simulations', [RealSimulationController::class, 'index'])->name('real-simulations.index');
+    Route::post('tools/real-simulations', [RealSimulationController::class, 'store'])->middleware('throttle:5,1')->name('real-simulations.store');
+    Route::post('tools/real-simulations/{simulation}/recover', [RealSimulationController::class, 'recover'])->name('real-simulations.recover');
     Route::get('export', [ImportExportController::class, 'export'])->name('export');
     Route::get('import', [ImportExportController::class, 'importForm'])->name('import.form');
     Route::post('import', [ImportExportController::class, 'import'])->name('import');

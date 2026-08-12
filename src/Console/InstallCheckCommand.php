@@ -47,7 +47,8 @@ class InstallCheckCommand extends Command
         }
 
         $scheduled = collect($schedule->events())->contains(fn ($event) => str_contains((string) ($event->command ?? ''), 'iapm:reconcile'))
-            && collect($schedule->events())->contains(fn ($event) => str_contains((string) ($event->command ?? ''), 'iapm:process-actions'));
+            && collect($schedule->events())->contains(fn ($event) => str_contains((string) ($event->command ?? ''), 'iapm:process-actions'))
+            && collect($schedule->events())->contains(fn ($event) => str_contains((string) ($event->command ?? ''), 'iapm:recover-simulations'));
         $this->report('scheduler_registration', $scheduled);
         $ok = $ok && $scheduled;
 

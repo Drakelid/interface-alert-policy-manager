@@ -21,6 +21,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\InstallCheckCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ProcessActionsCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\QueueHeartbeatCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\ReconcileCommand;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\RecoverSimulationsCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestDestinationCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Console\TestPolicyCommand;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Hooks\MenuEntry;
@@ -119,7 +120,7 @@ class IapmServiceProvider extends ServiceProvider
         // CommandNotFoundException in the browser. Registration is lazy — the
         // command classes are only resolved when one is actually run — so there
         // is no cost to an ordinary web request.
-        $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, DrainIngestionCommand::class, DrainOutboxCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, QueueHeartbeatCommand::class, ReconcileCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
+        $this->commands([CacheClearCommand::class, CacheRebuildCommand::class, CleanupCommand::class, DrainIngestionCommand::class, DrainOutboxCommand::class, HealthCommand::class, InstallCheckCommand::class, ProcessActionsCommand::class, QueueHeartbeatCommand::class, ReconcileCommand::class, RecoverSimulationsCommand::class, TestDestinationCommand::class, TestPolicyCommand::class]);
 
         // The scheduler is resolved during app boot, when the plugins table may
         // not exist yet on a fresh install. So entries are always registered and
@@ -128,6 +129,9 @@ class IapmServiceProvider extends ServiceProvider
             // A 10-minute lock expiry: without it Laravel holds the overlap lock for
             // 24h, so a run killed mid-outage (OOM, deploy) would silently freeze all
             // processing for a day. 10m lets a stuck run self-clear on the next tick.
+            // Runs first so a real simulation's down overlay survives a physical
+            // poll, and restores expired simulations before normal reconciliation.
+            $schedule->command('iapm:recover-simulations')->everyMinute()->withoutOverlapping(10);
             $schedule->command('iapm:reconcile')->everyMinute()->withoutOverlapping(10);
             $schedule->command('iapm:process-actions')->everyMinute()->withoutOverlapping(10);
             $schedule->command('iapm:drain-outbox')->everyMinute()->withoutOverlapping(10);

@@ -232,7 +232,7 @@ class AccessibilityTest extends IntegrationTestCase
             "$base/policies/{$policy->id}/actions/create", "$base/actions/{$action->id}/edit",
             "$base/assignments", "$base/assignments/create", "$base/assignments/{$assignment->id}/edit",
             "$base/interface-matrix", "$base/policy-test", "$base/policy-test?port_id={$port->port_id}",
-            "$base/stats", "$base/tools/simulate", "$base/import", "$base/comparison-report",
+            "$base/stats", "$base/tools/simulate", "$base/tools/real-simulations", "$base/import", "$base/comparison-report",
             "$base/setup-helper", "$base/template-preview", "$base/message-templates",
             "$base/schedules", "$base/schedules/create", "$base/schedules/{$schedule->id}/edit",
             "$base/destinations", "$base/destinations/create", "$base/destinations/{$destination->id}/edit",

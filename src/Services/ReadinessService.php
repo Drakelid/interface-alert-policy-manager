@@ -25,7 +25,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
  */
 class ReadinessService
 {
-    private const TABLES = ['iapm_policies', 'iapm_assignments', 'iapm_destinations', 'iapm_policy_actions', 'iapm_incidents', 'iapm_incident_events', 'iapm_delivery_logs', 'iapm_ingestion_inbox', 'iapm_notification_outbox', 'iapm_notification_outbox_incidents', 'iapm_outages', 'iapm_settings', 'iapm_interface_policy_cache', 'iapm_audit_logs'];
+    private const TABLES = ['iapm_policies', 'iapm_assignments', 'iapm_destinations', 'iapm_policy_actions', 'iapm_incidents', 'iapm_incident_events', 'iapm_delivery_logs', 'iapm_ingestion_inbox', 'iapm_notification_outbox', 'iapm_notification_outbox_incidents', 'iapm_outages', 'iapm_simulations', 'iapm_settings', 'iapm_interface_policy_cache', 'iapm_audit_logs'];
 
     public function __construct(private readonly SettingStore $settings, private readonly ReceiverResolver $receivers) {}
 
