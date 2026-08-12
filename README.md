@@ -8,14 +8,27 @@ For the impatient — install and enable, then finish configuration in the UI. S
 
 ```bash
 cd /opt/librenms
+
+# Record the plugin so LibreNMS updates cannot drop it.
+# Merge this entry by hand if composer.plugins.json already exists.
+sudo -u librenms tee composer.plugins.json >/dev/null <<'JSON'
+{
+    "require": {
+        "drakelid/interface-alert-policy-manager": "^1.4"
+    }
+}
+JSON
+
 sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php require drakelid/interface-alert-policy-manager
 sudo -u librenms php artisan migrate --force
 sudo -u librenms ./lnms plugin:enable interface-alert-policy-manager
-sudo -u librenms php artisan optimize:clear && sudo systemctl reload php8.4-fpm
-sudo -u librenms php artisan iapm:install-check
+sudo -u librenms php artisan optimize:clear
+sudo systemctl reload "php$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')-fpm"
 ```
 
 Then open **Plugins → Interface Alert Policy Manager** and follow the Overview setup checklist: generate the ingestion token, add a destination, a policy with a notification action, and an assignment — then wire up the LibreNMS rule/template/transport from **Tools → Setup Helper**. Queued delivery and its workers start automatically. It begins in dry-run; turn that off when you're ready to send.
+
+Once that configuration is done, `sudo -u librenms php artisan iapm:install-check` should be all green. Run it any earlier and it reports the setup checks as `[FAIL]` — that is the checklist telling you what is still missing, not a broken install.
 
 ## Compatibility discovered
 
@@ -23,12 +36,27 @@ The documented and CI-tested baseline is LibreNMS `26.7.0`, PHP 8.2–8.4, and L
 
 ## Installation
 
-Follow these steps in order. At the end the plugin is fully operational and delivering notifications. All commands run on the LibreNMS host; `php artisan` must run as the `librenms` user.
+Follow these steps in order. At the end the plugin is fully operational and delivering notifications. All commands run on the LibreNMS host; `php artisan` and `lnms` must run as the `librenms` user.
+
+The path, end to end:
+
+| Step | What it does | Where |
+|---|---|---|
+| [1](#1-install-the-package-packagist) | Install the package and make it survive LibreNMS updates | shell |
+| [2](#2-migrate-and-enable) | Create tables, enable the plugin, clear caches | shell |
+| [3](#3-configure-the-essentials-ui) | Token, destination, policy + action, assignment | UI |
+| [4](#4-point-librenms-at-iapm-setup-helper) | LibreNMS alert rule, template, and API transport | UI |
+| [5](#5-delivery-workers-queued-dispatch-is-the-default) | Confirm queue workers are draining | shell |
+| [6](#6-test-before-going-live) | Simulate an alert while still in dry-run | UI |
+| [7](#7-go-live) | Turn dry-run off | UI |
+
+`iapm:install-check` is the progress meter for steps 1–3 and exits 0 once step 3 is complete; its informational `alert_source` line turns green when step 4 delivers the first alert. Steps 5–7 are verified with `iapm:health` and the Overview health panel.
 
 ### Requirements
 
-- LibreNMS on Laravel 12+ with its scheduler running (the standard `* * * * * librenms /opt/librenms/lnms schedule:run` cron). IAPM's reconcile, action processing, and queue workers all rely on it.
-- PHP 8.2+ and Composer.
+- **LibreNMS 26.x** (CI-tested against `26.7.0`) on Laravel 12+, with its scheduler running — the standard `* * * * * librenms /opt/librenms/lnms schedule:run` cron. IAPM's reconcile, action processing, and queue workers all rely on it. Step 4's alert-operation wiring is specific to 26.x.
+- PHP 8.2, 8.3, or 8.4, and Composer.
+- The LibreNMS database (MySQL/MariaDB). No extra service is required — the queue runs on the database by default; Redis is optional and only for scale.
 - An SMS gateway (or webhook) reachable from the LibreNMS host.
 
 ### 1. Install the package (Packagist)
@@ -41,12 +69,16 @@ and then re-requires only the packages listed in `composer.plugins.json`.
 ```bash
 cd /opt/librenms
 
-# 1a. Record the plugin so updates cannot drop it. Merge this entry if the file
-#     already exists — do not overwrite other plugins.
+# 1a. Record the plugin so updates cannot drop it.
+#     Check first — this file may already list other plugins, and the command
+#     below REPLACES it. If it prints anything, add the require entry by hand
+#     instead of running the heredoc.
+cat composer.plugins.json 2>/dev/null
+
 sudo -u librenms tee composer.plugins.json >/dev/null <<'JSON'
 {
     "require": {
-        "drakelid/interface-alert-policy-manager": "^1.3"
+        "drakelid/interface-alert-policy-manager": "^1.4"
     }
 }
 JSON
@@ -55,16 +87,21 @@ JSON
 sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php require drakelid/interface-alert-policy-manager
 ```
 
-<sub>Verify the first step took effect with `sudo -u librenms php daily.php -f composer_get_plugins`; it must print `drakelid/interface-alert-policy-manager:^1.3`. If it prints nothing, `daily.sh` will remove the plugin on its next run. `composer_wrapper.php` is only a wrapper around composer itself — it writes to `composer.json`, never to `composer.plugins.json`.</sub>
+<sub>Verify the first step took effect with `sudo -u librenms php daily.php -f composer_get_plugins`; it must print `drakelid/interface-alert-policy-manager:^1.4`. If it prints nothing, `daily.sh` will remove the plugin on its next run. `composer_wrapper.php` is only a wrapper around composer itself — it writes to `composer.json`, never to `composer.plugins.json`. `^1.4` tracks 1.x releases from 1.4 up; pin it tighter (`~1.4.0`) if you want patch-only updates.</sub>
 
 ### 2. Migrate and enable
 
 ```bash
 sudo -u librenms php artisan migrate --force          # IAPM tables + queue tables + scale indexes
 sudo -u librenms ./lnms plugin:enable interface-alert-policy-manager    # if not already active
-sudo -u librenms php artisan optimize:clear && sudo systemctl reload php8.4-fpm
-sudo -u librenms php artisan iapm:install-check        # should report all green
+sudo -u librenms php artisan optimize:clear
+sudo systemctl reload "php$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')-fpm"
+sudo -u librenms php artisan iapm:install-check
 ```
+
+<sub>The reload command derives your PHP-FPM unit from the CLI PHP version (`php8.4-fpm`, `php8.3-fpm`, …). Confirm the unit name with `systemctl list-units 'php*-fpm*'` if it differs, and skip the reload entirely if LibreNMS is not served through PHP-FPM.</sub>
+
+At this point `iapm:install-check` reports the **system** checks green — `plugin_registration`, `migrations`, `encryption_key`, `writable_storage`, `scheduler_registration` — and the **setup** checks red: `ingestion_token`, `policy_exists`, `policy_action`, `default_policy`, `enabled_destination`, `sms_receiver`. That is correct here — step 3 is what turns them green. Each `[FAIL]` line prints the hint for fixing it, plus the command to run where one applies.
 
 Refresh LibreNMS — **Plugins → Interface Alert Policy Manager** is now in the menu, starting in **dry-run** (nothing is sent until you go live in step 7).
 
@@ -90,13 +127,33 @@ On LibreNMS 26.x the rule must also be attached to an **alert operation**, and t
 
 The Setup Helper's **"Confirm it's working"** panel turns green once LibreNMS posts its first alert.
 
+Re-run the readiness gate before continuing:
+
+```bash
+sudo -u librenms php artisan iapm:install-check   # now all green
+```
+
+`alert_source` ("LibreNMS is posting alerts") is reported as `[INFO]` rather than `[FAIL]`: it stays informational until LibreNMS posts its first alert and never affects the exit code, so the command already exits 0 once step 3 is done.
+
 ### 5. Delivery workers (queued dispatch is the default)
 
 Queued delivery is on by default and **self-provisions**: the queue tables were created in step 2, and the scheduler keeps `IAPM_QUEUE_WORKERS` (default 3) background workers draining the queue — nothing else to do for a working setup. To confirm:
 
 ```bash
 pgrep -af 'queue:work --queue=iapm'     # workers appear within ~1 minute
+sudo -u librenms php artisan iapm:health   # "Queue worker delivering" proves one is consuming work
 ```
+
+<sub>That `pgrep` pattern assumes the default queue name; match `IAPM_QUEUE_NAME` if you changed it.</sub>
+
+IAPM publishes on `IAPM_QUEUE_CONNECTION` when set, and on LibreNMS's default queue connection when it is not. Leaving it unset is fine as long as that default is a real asynchronous driver. Check it with `sudo -u librenms php artisan tinker --execute="echo config('queue.default');"` — if it prints `sync`, jobs run inline and the workers have nothing to consume, so pin the connection explicitly instead:
+
+```bash
+echo 'IAPM_QUEUE_CONNECTION=database' | sudo tee -a /opt/librenms/.env
+cd /opt/librenms && sudo -u librenms php artisan config:clear
+```
+
+The `database` driver needs no extra service — step 2 created its tables. Scheduler-managed workers pick the change up on their next recycle, within a few minutes. Whatever you set here, **the workers must run on the same connection and queue as the publisher**; that is the single most common cause of a red `Queue worker delivering` check.
 
 Each worker exits after `IAPM_QUEUE_WORKER_MAX_SECONDS` (default 240) and the next scheduler tick replaces it, so PIDs change every few minutes — that is the recycle, not a crash. Lifetimes are staggered so the workers never all exit on the same tick. The recycle also bounds recovery: a worker killed without releasing its overlap lock (OOM kill, container stop) is replaced within about 7 minutes rather than being blocked until the lock expires. Raising this value lengthens that outage proportionally.
 
@@ -193,7 +250,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now iapm-worker@{1..6}
 ```
 
-<sub>Adjust the `ExecStart` php path to match `command -v php`. For Redis, insert `redis` right after `queue:work`. Set the queue connection's `retry_after` above the 60-second worker timeout (90 seconds or more). A destination's worst-case delivery (`1 + retry_count` attempts x request timeout, plus retry delays) must also fit inside the worker timeout — IAPM rejects destinations above ~80% of it (`IAPM_DELIVERY_BUDGET_RATIO`) and clamps attempts at delivery time, because a job killed mid-delivery is stale-reclaimed and resent. Transport failures remain in IAPM's durable outbox with backoff; Laravel process failures also appear in `failed_jobs`.</sub>
+<sub>Adjust the `ExecStart` php path to match `command -v php`. **If `IAPM_QUEUE_CONNECTION` is set, pass the same connection as the first argument** — `queue:work redis …` or `queue:work database …`; the unit above omits it and therefore uses LibreNMS's default connection, which will not see IAPM's jobs if the publisher is on a different one. Set the queue connection's `retry_after` above the 60-second worker timeout (90 seconds or more). A destination's worst-case delivery (`1 + retry_count` attempts x request timeout, plus retry delays) must also fit inside the worker timeout — IAPM rejects destinations above ~80% of it (`IAPM_DELIVERY_BUDGET_RATIO`) and clamps attempts at delivery time, because a job killed mid-delivery is stale-reclaimed and resent. Transport failures remain in IAPM's durable outbox with backoff; Laravel process failures also appear in `failed_jobs`.</sub>
 
 ### Updating
 
@@ -201,24 +258,31 @@ sudo systemctl enable --now iapm-worker@{1..6}
 
 ```bash
 sudo -u librenms php artisan migrate --force
-sudo -u librenms php artisan optimize:clear && sudo systemctl reload php8.4-fpm
+sudo -u librenms php artisan optimize:clear
+sudo systemctl reload "php$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')-fpm"
 sudo systemctl restart 'iapm-worker@*'        # or `php artisan queue:restart` for scheduler-managed workers
+sudo -u librenms php artisan iapm:install-check && sudo -u librenms php artisan iapm:health
 ```
 
 Back up the database before upgrades; migrations are additive. To uninstall: disable the plugin, back up, then remove the Composer package — uninstall migrations deliberately delete IAPM data.
 
 ### Development install (path repo)
 
-For local development against a checkout instead of Packagist:
+For local development against a checkout instead of Packagist. Do **not** add a development install to `composer.plugins.json` — `daily.sh` would try to reinstall it from Packagist and you would end up with the plugin installed twice (see the ambiguous-class-resolution entry below).
 
 ```bash
 cd /opt/librenms
-composer config repositories.iapm '{"type":"path","url":"../interface-alert-policy-manager","options":{"symlink":true}}'
-sudo -u librenms env FORCE=1 composer require drakelid/interface-alert-policy-manager:@dev
-php artisan migrate && ./lnms plugin:enable interface-alert-policy-manager && php artisan iapm:install-check
+sudo -u librenms php composer.phar config repositories.iapm '{"type":"path","url":"../interface-alert-policy-manager","options":{"symlink":true}}'
+sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php require drakelid/interface-alert-policy-manager:@dev
+sudo -u librenms php artisan migrate
+sudo -u librenms ./lnms plugin:enable interface-alert-policy-manager
+sudo -u librenms php artisan optimize:clear
+sudo -u librenms php artisan iapm:install-check
 ```
 
-### Troubleshooting
+<sub>Every command runs as `librenms`, including the composer ones — running them as root leaves `composer.json`, `vendor/`, and the caches owned by the wrong user. `composer` is usually not on the PATH on a LibreNMS host; use `php composer.phar` or the wrapper as shown, and see the troubleshooting entry below if it is somewhere else.</sub>
+
+### Installation troubleshooting
 
 **`env: 'composer': No such file or directory`, or composer commands seem to do nothing.**
 On many LibreNMS hosts `composer` is not on the PATH (it's a phar), so bare `composer …` silently fails. Use the LibreNMS wrapper (`./scripts/composer_wrapper.php …`) for install/update, and for any *manual* composer step use the phar directly, e.g. `sudo -u librenms php /opt/librenms/composer.phar dump-autoload`. Find it with `sudo find /opt/librenms -maxdepth 2 -name 'composer*'`.
@@ -322,17 +386,21 @@ Assignment precedence is port, port group, device, device group, location, ifAli
 Commands:
 
 ```sh
-php artisan iapm:install-check
+php artisan iapm:install-check [--gateway]
 php artisan iapm:reconcile [--dry-run] [--incident=ID] [--device=ID]
-php artisan iapm:process-actions [--incident=ID]
+php artisan iapm:process-actions [--incident=ID] [--action=ID] [--force]
 php artisan iapm:test-policy --port=PORT_ID
 php artisan iapm:test-destination --destination=ID --receiver=VALUE [--force]
 php artisan iapm:cleanup [--force]
 php artisan iapm:cache-clear
 php artisan iapm:cache-rebuild [--device=DEVICE_ID]
+php artisan iapm:drain-outbox [--limit=N]        # scheduled every minute; republishes due outbox rows
+php artisan iapm:drain-ingestion [--limit=N] [--worker=N]   # scheduled; replays the durable ingestion inbox
 php artisan iapm:queue-heartbeat   # scheduler runs this every minute; safe to run by hand
 php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external monitoring)
 ```
+
+`reconcile`, `process-actions`, `drain-outbox`, `drain-ingestion`, `queue-heartbeat`, and the nightly `cleanup --force` all run from the LibreNMS scheduler already; the entries above are for manual inspection and troubleshooting.
 
 ## Noise control, monitoring, and tooling
 
