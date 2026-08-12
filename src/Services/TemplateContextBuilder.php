@@ -46,7 +46,7 @@ class TemplateContextBuilder
     /** A synthetic placeholder map covering every placeholder, for template validation. */
     public function sample(): array
     {
-        return $this->forPreview(new InterfaceContext(1, 2, 'core-router-01', null, 'xe-0/0/4', 'xe-0/0/4', 'CUST: Example customer', 'ethernetCsmacd', 'up', 'down', false, false, false, [], [], 'core-router-01', 'core-router-01', 'HQ'));
+        return $this->forPreview(new InterfaceContext(1, 2, 'core-router-01', null, 'xe-0/0/4', 'xe-0/0/4', 'CUST: Example customer', 'ethernetCsmacd', 'up', 'down', false, false, false, [], [], 'core-router-01', 'core-router-01', 'HQ', ['Core routers', 'Production']));
     }
 
     /**
@@ -60,7 +60,7 @@ class TemplateContextBuilder
      */
     public const INTERFACE_PLACEHOLDERS = [
         'hostname', 'sysName', 'display_name', 'ifName', 'ifDescr', 'ifAlias',
-        'ifAdminStatus', 'ifOperStatus', 'interface_type', 'location',
+        'ifAdminStatus', 'ifOperStatus', 'interface_type', 'location', 'device_groups',
         'severity', 'state', 'policy_name', 'assignment_source',
         'first_seen_at', 'triggered_at', 'recovered_at', 'outage_duration',
         'acknowledgement_user', 'suppression_reason',
@@ -69,7 +69,7 @@ class TemplateContextBuilder
 
     /** The device-digest template's own, different set. */
     public const DIGEST_PLACEHOLDERS = [
-        'hostname', 'device_id', 'interface_count', 'interfaces', 'severity', 'first_seen_at', 'device_url',
+        'hostname', 'device_id', 'device_groups', 'interface_count', 'interfaces', 'severity', 'first_seen_at', 'device_url',
     ];
 
     /** Placeholder map for the device-digest template (a different, device-level set). */
@@ -79,6 +79,7 @@ class TemplateContextBuilder
             'severity' => 'critical',
             'hostname' => 'core-router-01',
             'device_id' => 1,
+            'device_groups' => 'Core routers, Production',
             'interface_count' => 42,
             'interfaces' => 'xe-0/0/1, xe-0/0/2, xe-0/0/3 +39 more',
             'first_seen_at' => now()->subMinutes(2)->format('Y-m-d H:i:s'),
@@ -126,6 +127,7 @@ class TemplateContextBuilder
             'ifOperStatus' => (string) ($context['operStatus'] ?? ''),
             'interface_type' => (string) ($context['ifType'] ?? ''),
             'location' => (string) ($context['location'] ?? ''),
+            'device_groups' => $this->deviceGroups($context['deviceGroupNames'] ?? []),
             'assignment_source' => (string) ($context['assignment_source'] ?? ''),
             'device_url' => $base === '' ? '' : "$base/device/$deviceId",
             'port_url' => $base === '' ? '' : "$base/device/$deviceId/port/$portId",
@@ -135,6 +137,20 @@ class TemplateContextBuilder
     private function moment(mixed $value): string
     {
         return $value instanceof \DateTimeInterface ? $value->format('Y-m-d H:i:s') : '';
+    }
+
+    private function deviceGroups(mixed $groups): string
+    {
+        if (! is_array($groups)) {
+            return '';
+        }
+
+        return collect($groups)
+            ->filter(fn ($name) => is_scalar($name) && trim((string) $name) !== '')
+            ->map(fn ($name) => trim((string) $name))
+            ->unique()
+            ->sort()
+            ->implode(', ');
     }
 
     private function userName(?int $userId): string

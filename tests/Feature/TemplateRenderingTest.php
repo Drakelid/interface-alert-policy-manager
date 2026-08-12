@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
+use App\Models\DeviceGroup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
@@ -16,7 +17,7 @@ class TemplateRenderingTest extends IntegrationTestCase
         'incident_id', 'severity', 'state', 'hostname', 'sysName', 'display_name', 'device_id',
         'port_id', 'ifName', 'ifDescr', 'ifAlias', 'ifAdminStatus', 'ifOperStatus', 'location',
         'policy_name', 'assignment_source', 'first_seen_at', 'triggered_at', 'recovered_at',
-        'outage_duration', 'device_url', 'port_url', 'acknowledgement_user', 'suppression_reason',
+        'outage_duration', 'device_url', 'port_url', 'acknowledgement_user', 'suppression_reason', 'device_groups',
     ];
 
     public function test_every_documented_placeholder_resolves_for_an_incident(): void
@@ -56,6 +57,22 @@ class TemplateRenderingTest extends IntegrationTestCase
 
         self::assertSame("https://librenms.example.com/device/{$incident->device_id}", $values['device_url']);
         self::assertSame("https://librenms.example.com/device/{$incident->device_id}/port/{$incident->port_id}", $values['port_url']);
+    }
+
+    public function test_device_groups_are_available_as_a_stable_comma_separated_placeholder(): void
+    {
+        $device = $this->device();
+        $device->groups()->attach([
+            DeviceGroup::factory()->create(['name' => 'Production'])->id,
+            DeviceGroup::factory()->create(['name' => 'Core routers'])->id,
+        ]);
+        $port = $this->downPort($device);
+        $context = app(InterfaceContextService::class)->forPort($port);
+
+        $values = app(TemplateContextBuilder::class)->forPreview($context);
+
+        self::assertSame('Core routers, Production', $values['device_groups']);
+        self::assertSame('Groups: Core routers, Production', app(SafeTemplateRenderer::class)->render('Groups: {{ device_groups }}', $values));
     }
 
     public function test_the_acknowledgement_user_resolves_to_a_username(): void

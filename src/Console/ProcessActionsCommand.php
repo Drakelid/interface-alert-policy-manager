@@ -279,6 +279,7 @@ class ProcessActionsCommand extends Command
             'severity' => $first->severity?->value ?? 'critical',
             'hostname' => $hostname,
             'device_id' => (int) $first->device_id,
+            'device_groups' => $this->deviceGroupNames($ctx['deviceGroupNames'] ?? []),
             'interface_count' => $incidents->count(),
             'interfaces' => $listed,
             'first_seen_at' => $firstSeen ? $firstSeen->format('Y-m-d H:i:s') : '',
@@ -323,6 +324,20 @@ class ProcessActionsCommand extends Command
         }
 
         return $sentAny ? 1 : 0;
+    }
+
+    private function deviceGroupNames(mixed $groups): string
+    {
+        if (! is_array($groups)) {
+            return '';
+        }
+
+        return collect($groups)
+            ->filter(fn ($name) => is_scalar($name) && trim((string) $name) !== '')
+            ->map(fn ($name) => trim((string) $name))
+            ->unique()
+            ->sort()
+            ->implode(', ');
     }
 
     /** Send one dampened flap notice per episode via the policy's trigger actions. */
