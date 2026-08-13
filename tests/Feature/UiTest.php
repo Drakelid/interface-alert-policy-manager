@@ -17,6 +17,27 @@ class UiTest extends IntegrationTestCase
             ->assertSeeText('IAPM '.app(PluginVersion::class)->display());
     }
 
+    public function test_every_shared_navigation_link_has_an_icon(): void
+    {
+        $html = $this->actingAs($this->admin())
+            ->get('/plugin/interface-alert-policy-manager')
+            ->assertOk()
+            ->getContent();
+
+        $document = new \DOMDocument;
+        @$document->loadHTML((string) $html);
+        $xpath = new \DOMXPath($document);
+        $links = $xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " iapm-nav ")]//ul[contains(concat(" ", normalize-space(@class), " "), " nav-pills ")]//a');
+
+        self::assertNotFalse($links);
+        self::assertGreaterThan(10, $links->count(), 'Expected the complete shared navigation menu.');
+        foreach ($links as $link) {
+            $icons = $xpath->query('.//i[contains(concat(" ", normalize-space(@class), " "), " fa ")]', $link);
+            self::assertNotFalse($icons);
+            self::assertGreaterThan(0, $icons->count(), 'Navigation link "'.trim($link->textContent).'" has no icon.');
+        }
+    }
+
     public function test_incidents_are_ordered_urgent_first(): void
     {
         $policy = $this->policy();
