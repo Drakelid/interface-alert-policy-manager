@@ -26,7 +26,8 @@ class UiTest extends IntegrationTestCase
 
         self::assertStringContainsString('id="iapm-plugin-menu-fallback"', (string) $body);
         self::assertStringContainsString("item.id = 'iapm-top-navigation'", (string) $body);
-        self::assertStringContainsString("textContent = 'IAPM'", (string) $body);
+        self::assertStringContainsString("textContent = 'Dispatch'", (string) $body);
+        self::assertStringNotContainsString("item.className = 'active'", (string) $body);
     }
 
     public function test_every_shared_navigation_link_has_an_icon(): void

@@ -6,7 +6,6 @@
 --}}
 <a id="iapm-plugin-menu-fallback"
    href="{{ route('iapm.overview') }}"
-   data-iapm-active="{{ request()->routeIs('iapm.*') ? '1' : '0' }}"
    title="Interface Alert Policy Manager">
     <i class="fa fa-bell-o fa-fw fa-lg" aria-hidden="true"></i>
     <span data-iapm-menu-label>Interface Policies</span>
@@ -28,16 +27,12 @@
 
         var item = document.createElement('li');
         item.id = 'iapm-top-navigation';
-        if (source.getAttribute('data-iapm-active') === '1') {
-            item.className = 'active';
-        }
 
         var link = source.cloneNode(true);
         link.id = 'iapm-top-navigation-link';
-        link.removeAttribute('data-iapm-active');
         link.setAttribute('aria-label', 'Interface Alert Policy Manager');
         link.querySelector('i').className = 'fa fa-bell-o fa-fw fa-lg fa-nav-icons';
-        link.querySelector('[data-iapm-menu-label]').textContent = 'IAPM';
+        link.querySelector('[data-iapm-menu-label]').textContent = 'Dispatch';
 
         item.appendChild(link);
         navbar.appendChild(item);
