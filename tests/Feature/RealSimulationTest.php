@@ -42,7 +42,7 @@ class RealSimulationTest extends IntegrationTestCase
 
         $simulation = Simulation::firstOrFail();
         self::assertSame('running', $simulation->status);
-        self::assertSame('down', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('down', $this->statusValue($port->fresh()->ifOperStatus));
 
         $incident = Incident::findOrFail($simulation->incident_id);
         self::assertSame(IncidentState::Active, $incident->state);
@@ -69,7 +69,7 @@ class RealSimulationTest extends IntegrationTestCase
         $simulation->refresh();
         $incident = $simulation->incident()->firstOrFail();
         self::assertSame('recovered', $simulation->status);
-        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('up', $this->statusValue($port->fresh()->ifOperStatus));
         self::assertSame(IncidentState::Recovered, $incident->state);
         self::assertTrue(DeliveryLog::where('incident_id', $incident->id)->where('phase', 'recovery')->where('status', 'sent')->exists());
     }
@@ -89,7 +89,7 @@ class RealSimulationTest extends IntegrationTestCase
         $this->artisan('iapm:recover-simulations')->assertExitCode(0);
 
         self::assertSame('recovered', Simulation::firstOrFail()->status);
-        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('up', $this->statusValue($port->fresh()->ifOperStatus));
     }
 
     public function test_the_scheduler_reasserts_a_running_simulation_after_a_poll(): void
@@ -105,15 +105,15 @@ class RealSimulationTest extends IntegrationTestCase
         $simulation = Simulation::firstOrFail();
         self::assertSame('down', $simulation->simulated_admin_status);
         self::assertSame('up', $simulation->simulated_oper_status);
-        self::assertSame('down', $this->status($port->fresh()->ifAdminStatus));
-        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('down', $this->statusValue($port->fresh()->ifAdminStatus));
+        self::assertSame('up', $this->statusValue($port->fresh()->ifOperStatus));
         $port->update(['ifAdminStatus' => 'up', 'ifOperStatus' => 'down']); // emulate a physical poll
 
         $this->artisan('iapm:recover-simulations')->assertExitCode(0);
 
         self::assertSame('running', Simulation::firstOrFail()->status);
-        self::assertSame('down', $this->status($port->fresh()->ifAdminStatus));
-        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('down', $this->statusValue($port->fresh()->ifAdminStatus));
+        self::assertSame('up', $this->statusValue($port->fresh()->ifOperStatus));
     }
 
     public function test_a_port_that_is_not_up_is_rejected_without_mutation(): void
@@ -128,7 +128,7 @@ class RealSimulationTest extends IntegrationTestCase
         ])->assertRedirect(self::BASE)->assertSessionHas('error');
 
         self::assertSame(0, Simulation::count());
-        self::assertSame('down', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('down', $this->statusValue($port->fresh()->ifOperStatus));
     }
 
     public function test_start_rejects_an_unknown_simulation_status(): void
@@ -143,7 +143,7 @@ class RealSimulationTest extends IntegrationTestCase
         ])->assertRedirect(self::BASE)->assertSessionHasErrors('simulated_admin_status');
 
         self::assertSame(0, Simulation::count());
-        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('up', $this->statusValue($port->fresh()->ifOperStatus));
     }
 
     public function test_a_viewer_cannot_start_a_real_simulation(): void
@@ -161,7 +161,7 @@ class RealSimulationTest extends IntegrationTestCase
         ])->assertForbidden();
 
         self::assertSame(0, Simulation::count());
-        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('up', $this->statusValue($port->fresh()->ifOperStatus));
     }
 
     public function test_repeated_start_requests_do_not_hit_a_shared_rate_limit(): void
@@ -189,7 +189,7 @@ class RealSimulationTest extends IntegrationTestCase
         return $this->downPort($this->device(), ['ifOperStatus' => 'up']);
     }
 
-    private function status(mixed $status): string
+    private function statusValue(mixed $status): string
     {
         return $status instanceof \BackedEnum ? (string) $status->value : (string) $status;
     }
