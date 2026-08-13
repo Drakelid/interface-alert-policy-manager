@@ -76,7 +76,8 @@ class MessageTemplateTest extends IntegrationTestCase
     {
         Http::fake(['*' => Http::response('ok', 200)]);
         $policy = $this->policy();
-        $message = "Device information first\n".str_repeat('Complete useful description details ', 20)."\nFinal information";
+        $description = implode(' ', array_fill(0, 20, 'Complete useful description details'));
+        $message = "Device information first\n{$description}\nFinal information";
         $this->triggerAction($policy, $this->smsDestination(), ['message_template' => $message]);
         $this->incident($policy, $this->downPort($this->device()));
 

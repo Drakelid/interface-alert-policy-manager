@@ -13,7 +13,7 @@ class AuditLog extends Model
      *
      * @var list<string>
      */
-    public const OBJECT_TYPES = ['assignment', 'configuration', 'destination', 'incident', 'interface_matrix', 'message_templates', 'policy', 'policy_action', 'schedule', 'settings', 'simulation'];
+    public const OBJECT_TYPES = ['assignment', 'configuration', 'destination', 'incident', 'interface_matrix', 'message_templates', 'policy', 'policy_action', 'schedule', 'settings', 'simulation', 'sms_content_filters'];
 
     public $timestamps = false;
 

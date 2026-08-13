@@ -20,7 +20,9 @@ class LibreNmsRoutes
 
     public static function port(int|string $deviceId, int|string $portId): string
     {
-        return url(self::portPath($deviceId, $portId));
+        // Laravel's URL generator trims a trailing slash from the supplied path.
+        // LibreNMS documents and emits this legacy variable route with one.
+        return rtrim(url(self::portPath($deviceId, $portId)), '/').'/';
     }
 
     public static function absolutePort(string $baseUrl, int|string $deviceId, int|string $portId): string

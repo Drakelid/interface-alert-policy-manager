@@ -83,6 +83,10 @@ abstract class IntegrationTestCase extends TestCase
         // Most lifecycle tests exercise the synchronous compatibility path. A
         // dedicated storm test opts into the production durable-recovery default.
         config(['iapm.ingestion.async_recovery' => false]);
+        // Individual command tests may intentionally exhaust the processing
+        // budget. LibreNMS reuses the application between tests, so restore the
+        // production default before every integration test.
+        config(['iapm.processing.max_seconds' => 50]);
 
     }
 
