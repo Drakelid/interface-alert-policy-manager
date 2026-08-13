@@ -16,14 +16,16 @@ class PolicyDeleteFlowTest extends IntegrationTestCase
 {
     private const BASE = '/plugin/interface-alert-policy-manager';
 
-    public function test_save_is_a_full_width_footer_covering_both_columns(): void
+    public function test_edit_controls_are_grouped_with_clone_under_manage_policy(): void
     {
         $policy = $this->policy();
 
         $body = (string) $this->actingAs($this->admin())->get(self::BASE."/policies/{$policy->id}/edit")->assertOk()->getContent();
 
-        self::assertStringContainsString('iapm-form-footer', $body);
-        self::assertStringContainsString('Saves every field on this page, in both columns.', $body);
+        self::assertStringContainsString('form="iapm-policy-form"', $body);
+        self::assertStringContainsString('Save applies every policy field above.', $body);
+        self::assertGreaterThan(strpos($body, 'Manage this policy'), strpos($body, 'Save policy'));
+        self::assertGreaterThan(strpos($body, 'Save policy'), strpos($body, 'Clone policy'));
     }
 
     public function test_the_confirmation_names_what_is_deleted_when_there_are_no_incidents(): void

@@ -1,7 +1,7 @@
 @extends('layouts.librenmsv1') @section('title',$policy->exists?'Edit IAPM Policy':'Create IAPM Policy') @section('content')
 <div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">{{ $policy->exists?'Edit':'Create' }} Policy</h1>
 <p class="iapm-hint">Timing controls the incident lifecycle: <strong>trigger delay</strong> + <strong>down observations</strong> must both be satisfied before an incident becomes active and notifies; <strong>repeat</strong>/<strong>maximum repeats</strong> govern reminders; <strong>recovery hold-down</strong> is how long an interface must stay up before it's marked recovered. Set 0 for immediate. Detection can never be faster than your LibreNMS poll interval (300 seconds by default), so timings below that round up to the next poll. Add notification <em>actions</em> below after saving.</p>
-<form method="post" action="{{ $policy->exists?route('iapm.policies.update',$policy):route('iapm.policies.store') }}">@csrf @if($policy->exists)@method('PUT')@endif<div class="row"><div class="col-md-6">
+<form id="iapm-policy-form" method="post" action="{{ $policy->exists?route('iapm.policies.update',$policy):route('iapm.policies.store') }}">@csrf @if($policy->exists)@method('PUT')@endif<div class="row"><div class="col-md-6">
 @php
 $fields = [
   'name'=>['label'=>'Name','type'=>'text','required'=>true],
@@ -42,14 +42,13 @@ $fields = [
 @foreach(['flap_threshold'=>['Flap threshold (down/up cycles)',false],'flap_window_seconds'=>['Flap window (seconds)',true],'flap_settle_seconds'=>['Settle period (seconds)',true]] as $key=>$meta)<div class="form-group"><label for="iapm-policy-{{ $key }}">{{ $meta[0] }}</label><input class="form-control{{ $meta[1]?' iapm-seconds':'' }}" id="iapm-policy-{{ $key }}" type="number" min="0" name="{{ $key }}" value="{{ old($key,$policy->$key) }}">@if($meta[1])<span class="help-block iapm-seconds-hint text-info" style="display:inline;margin-left:6px;"></span>@endif</div>@endforeach
 </fieldset>
 </div></div>
-{{-- P2-4: Save used to sit at the bottom of the left column while the right
-     column ended much higher, leaving a large dead zone and obscuring that one
-     Save commits both columns. It is now a full-width footer under both. --}}
+@unless($policy->exists)
 <div class="iapm-form-footer">
     <button class="btn btn-primary"><i class="fa fa-save"></i> Save policy</button>
     <a class="btn btn-default" href="{{ route('iapm.policies.index') }}">Cancel</a>
     <span class="iapm-hint">Saves every field on this page, in both columns.</span>
 </div>
+@endunless
 </form>
 @if($policy->exists)<hr><h2>Notification actions <a class="btn btn-primary btn-sm" href="{{ route('iapm.actions.create',$policy) }}">Add action</a></h2>
 @php($enabledActionCount = $policy->actions()->where('enabled',true)->count())
@@ -103,7 +102,12 @@ $fields = [
 </section>
 <hr>
 <h2>Manage this policy</h2>
-<form method="post" action="{{ route('iapm.policies.clone',$policy) }}" style="margin-bottom:14px;">@csrf<button class="btn btn-default"><i class="fa fa-copy"></i> Clone policy</button> <span class="iapm-hint">Creates a disabled copy with the same timing and actions.</span></form>
+<div class="iapm-form-footer" style="margin-bottom:14px;">
+    <button type="submit" form="iapm-policy-form" class="btn btn-primary"><i class="fa fa-save"></i> Save policy</button>
+    <a class="btn btn-default" href="{{ route('iapm.policies.index') }}">Cancel</a>
+    <form method="post" action="{{ route('iapm.policies.clone',$policy) }}" style="display:inline;">@csrf<button class="btn btn-default"><i class="fa fa-copy"></i> Clone policy</button></form>
+    <span class="iapm-hint">Save applies every policy field above. Clone creates a disabled copy with the same timing and actions.</span>
+</div>
 
 {{-- P2-4: the confirmation used to read only "Delete this policy?" — it said
      nothing about the active incidents or whether the migration selection had
