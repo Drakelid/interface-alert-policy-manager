@@ -74,7 +74,7 @@
                             Insert values with <code>@{{ placeholder }}</code>. Add safe conditions with an optional else branch:
                             <code class="iapm-code-example">@{{#if ifAlias}}Circuit: @{{ ifAlias }}@{{else}}Interface: @{{ ifName }}@{{/if}}
 @{{#if severity == "critical"}}URGENT: @{{/if}}</code>
-                            Conditions accept a placeholder alone, or <code>==</code> / <code>!=</code> with a quoted value, and may be nested. No PHP or Blade runs. Invalid syntax and unknown placeholders are rejected on save. <a href="{{ route('iapm.template-preview') }}" target="_blank">Preview this template</a>.
+                            Conditions accept a placeholder alone, <code>==</code> / <code>!=</code>, or <code>contains</code> / <code>not contains</code> with a quoted value, and may be nested. For group membership use <code>@{{#if device_groups contains "Production"}}</code>. No PHP or Blade runs. Invalid syntax and unknown placeholders are rejected on save. <a href="{{ route('iapm.template-preview') }}" target="_blank">Preview this template</a>.
                         </div>
                         @include('iapm::partials.placeholder-chips',['target'=>'#iapm-action-template'])
                     </div>

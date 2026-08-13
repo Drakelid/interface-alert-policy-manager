@@ -75,6 +75,25 @@ class TemplateRenderingTest extends IntegrationTestCase
 
         self::assertSame('Core routers, Production', $values['device_groups']);
         self::assertSame('Groups: Core routers, Production', app(SafeTemplateRenderer::class)->render('Groups: {{ device_groups }}', $values));
+        self::assertSame('PROD', app(SafeTemplateRenderer::class)->render('{{#if device_groups contains "Production"}}PROD{{else}}NON-PROD{{/if}}', $values));
+    }
+
+    public function test_legacy_incident_context_loads_current_device_groups_for_conditions(): void
+    {
+        $device = $this->device();
+        $device->groups()->attach(DeviceGroup::factory()->create(['name' => 'Production'])->id);
+        $incident = $this->incident($this->policy(), $this->downPort($device));
+        $context = (array) $incident->context_json;
+        unset($context['deviceGroupNames']);
+        $incident->update(['context_json' => $context]);
+
+        $values = app(TemplateContextBuilder::class)->forIncident($incident->fresh());
+        $rendered = app(SafeTemplateRenderer::class)->render('{{#if device_groups contains "Production"}}PROD{{else}}NON-PROD{{/if}}', $values);
+        $truthy = app(SafeTemplateRenderer::class)->render('{{#if device_groups}}GROUPED{{else}}UNGROUPED{{/if}}', $values);
+
+        self::assertSame('Production', $values['device_groups']);
+        self::assertSame('PROD', $rendered);
+        self::assertSame('GROUPED', $truthy);
     }
 
     public function test_interface_alias_placeholder_keeps_inventory_text_until_sms_filtering(): void

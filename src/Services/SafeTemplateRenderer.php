@@ -93,16 +93,17 @@ class SafeTemplateRenderer
         return [$nodes, null];
     }
 
-    /** @return array{value: scalar|null, operator: string|null, expected: string|null} */
+    /** @return array{name: string, value: scalar|null, operator: string|null, expected: string|null} */
     private function parseCondition(string $tag, array $values): array
     {
-        if (preg_match('/^#if\s+([a-zA-Z][a-zA-Z0-9_]*)(?:\s*(==|!=)\s*(["\'])(.*?)\3)?$/s', $tag, $matches) !== 1) {
-            throw new InvalidArgumentException('Invalid condition. Use {{#if placeholder}} or {{#if placeholder == "value"}}.');
+        if (preg_match('/^#if\s+([a-zA-Z][a-zA-Z0-9_]*)(?:\s*(==|!=|contains|not\s+contains)\s*(["\'])(.*?)\3)?$/s', $tag, $matches) !== 1) {
+            throw new InvalidArgumentException('Invalid condition. Use {{#if placeholder}}, {{#if placeholder == "value"}}, or {{#if placeholder contains "value"}}.');
         }
 
         return [
+            'name' => $matches[1],
             'value' => $this->value($matches[1], $values),
-            'operator' => $matches[2] ?? null,
+            'operator' => isset($matches[2]) ? preg_replace('/\s+/', ' ', $matches[2]) : null,
             'expected' => $matches[4] ?? null,
         ];
     }
@@ -134,13 +135,29 @@ class SafeTemplateRenderer
 
             $condition = $node['condition'];
             $matches = match ($condition['operator']) {
-                '==' => (string) $condition['value'] === $condition['expected'],
-                '!=' => (string) $condition['value'] !== $condition['expected'],
+                '==' => $this->equals($condition['name'], $condition['value'], (string) $condition['expected']),
+                '!=' => ! $this->equals($condition['name'], $condition['value'], (string) $condition['expected']),
+                'contains' => $this->contains($condition['name'], $condition['value'], (string) $condition['expected']),
+                'not contains' => ! $this->contains($condition['name'], $condition['value'], (string) $condition['expected']),
                 default => (bool) $condition['value'],
             };
             $rendered .= $this->renderNodes($matches ? $node['truthy'] : $node['falsy']);
         }
 
         return $rendered;
+    }
+
+    private function equals(string $name, mixed $value, string $expected): bool
+    {
+        return (string) $value === $expected || ($name === 'device_groups' && $this->contains($name, $value, $expected));
+    }
+
+    private function contains(string $name, mixed $value, string $expected): bool
+    {
+        if ($name === 'device_groups') {
+            return in_array($expected, array_map('trim', explode(',', (string) $value)), true);
+        }
+
+        return str_contains((string) $value, $expected);
     }
 }

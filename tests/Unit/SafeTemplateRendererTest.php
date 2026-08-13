@@ -38,6 +38,17 @@ class SafeTemplateRendererTest extends TestCase
         ]));
     }
 
+    public function test_contains_conditions_support_device_group_membership(): void
+    {
+        $renderer = new SafeTemplateRenderer;
+        $values = ['device_groups' => 'Core routers, Production'];
+
+        self::assertSame('CORE', $renderer->render('{{#if device_groups contains "Core routers"}}CORE{{else}}OTHER{{/if}}', $values));
+        self::assertSame('PROD', $renderer->render('{{#if device_groups == "Production"}}PROD{{else}}OTHER{{/if}}', $values));
+        self::assertSame('OTHER', $renderer->render('{{#if device_groups contains "NonProduction"}}WRONG{{else}}OTHER{{/if}}', $values));
+        self::assertSame('YES', $renderer->render('{{#if device_groups not contains "Branches"}}YES{{/if}}', $values));
+    }
+
     public function test_unknown_placeholder_in_an_unselected_branch_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);

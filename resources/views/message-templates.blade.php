@@ -4,7 +4,11 @@
 {{-- P4-4: the intro's {{ placeholder }} code span wrapped and overflowed the
      container's right edge; iapm-wrap-code keeps it inside. The placeholder wall
      of text is replaced by click-to-insert chips beside each field. --}}
-<p class="iapm-hint iapm-wrap-code" style="max-width:70em;">The default message sent for each event type. A policy action with its own template overrides these. Leave a box blank to use the built-in default, shown as the placeholder text. Insert values with <code>@{{ placeholder }}</code>. Conditional text uses <code>@{{#if ifAlias}}...@{{else}}...@{{/if}}</code>, or compares a value with <code>@{{#if severity == "critical"}}...@{{/if}}</code>; <code>!=</code> and nested conditions are also supported. No PHP or Blade runs, and invalid syntax or unknown placeholders are rejected on save. Try wording on the <a href="{{ route('iapm.template-preview') }}" target="_blank">Template Preview</a> page@can('manage iapm settings'), and manage post-render cleanup under <a href="{{ route('iapm.sms-content-filters.edit') }}">SMS Content Filters</a>@endcan.</p>
+<p class="iapm-hint iapm-wrap-code" style="max-width:70em;">The default message sent for each event type. A policy action with its own template overrides these. Leave a box blank to use the built-in default, shown as the placeholder text. Insert values with <code>@{{ placeholder }}</code>. Conditional text uses <code>@{{#if ifAlias}}...@{{else}}...@{{/if}}</code>, compares values with <code>@{{#if severity == "critical"}}...@{{/if}}</code>, and checks group membership with <code>@{{#if device_groups contains "Production"}}...@{{/if}}</code>; <code>!=</code>, <code>not contains</code>, and nested conditions are also supported. No PHP or Blade runs, and invalid syntax or unknown placeholders are rejected on save. Try wording on the <a href="{{ route('iapm.template-preview') }}" target="_blank">Template Preview</a> page.
+@can('manage iapm settings')
+Manage post-render cleanup under <a href="{{ route('iapm.sms-content-filters.edit') }}">SMS Content Filters</a>.
+@endcan
+</p>
 
 <form method="post" action="{{ route('iapm.message-templates.update') }}">@csrf @method('PUT')
 <div class="row">

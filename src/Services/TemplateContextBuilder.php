@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
+use App\Models\Device;
 use App\Models\User;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\DTO\InterfaceContext;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
@@ -18,6 +19,9 @@ class TemplateContextBuilder
     /** @var array<int, string> */
     private array $userNames = [];
 
+    /** @var array<int, list<string>> */
+    private array $legacyDeviceGroupNames = [];
+
     private ?string $urlBase = null;
 
     public function __construct(private readonly SettingStore $settings) {}
@@ -25,6 +29,9 @@ class TemplateContextBuilder
     public function forIncident(Incident $incident): array
     {
         $context = (array) $incident->context_json;
+        if (! isset($context['deviceGroupNames']) || ! is_array($context['deviceGroupNames'])) {
+            $context['deviceGroupNames'] = $this->currentDeviceGroupNames((int) $incident->device_id);
+        }
         $recoveredAt = $incident->recovered_at;
         $firstSeenAt = $incident->first_seen_at;
 
@@ -152,6 +159,30 @@ class TemplateContextBuilder
             ->unique()
             ->sort()
             ->implode(', ');
+    }
+
+    /** @return list<string> */
+    private function currentDeviceGroupNames(int $deviceId): array
+    {
+        if (array_key_exists($deviceId, $this->legacyDeviceGroupNames)) {
+            return $this->legacyDeviceGroupNames[$deviceId];
+        }
+
+        try {
+            $device = Device::with('groups')->find($deviceId);
+            $names = $device?->groups
+                ->pluck('name')
+                ->filter(fn ($name) => is_scalar($name) && trim((string) $name) !== '')
+                ->map(fn ($name) => trim((string) $name))
+                ->unique()
+                ->sort()
+                ->values()
+                ->all() ?? [];
+        } catch (\Throwable) {
+            $names = [];
+        }
+
+        return $this->legacyDeviceGroupNames[$deviceId] = $names;
     }
 
     private function userName(?int $userId): string

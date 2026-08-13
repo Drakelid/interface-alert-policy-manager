@@ -29,6 +29,8 @@ class BladeDirectiveSyntaxTest extends TestCase
         'isset', 'endisset', 'php', 'endphp', 'verbatim', 'endverbatim',
         'section', 'endsection', 'yield', 'extends', 'include', 'csrf', 'method',
         'json', 'error', 'enderror', 'checked', 'selected', 'disabled', 'inject',
+        'can', 'elsecan', 'endcan', 'cannot', 'elsecannot', 'endcannot',
+        'canany', 'endcanany',
     ];
 
     public function test_no_blade_directive_is_preceded_by_a_word_character(): void
@@ -55,6 +57,13 @@ class BladeDirectiveSyntaxTest extends TestCase
         // Regression anchor: proves the assertion above would have failed on the
         // exact markup that shipped in 1.3.2, rather than passing vacuously.
         $shipped = '<td>@if(count($d[\'receivers\']))@foreach($d[\'receivers\'] as $rcv)<span>x</span> @endforeach@else<span>no receiver</span>@endif</td>';
+
+        self::assertMatchesRegularExpression('/\w@('.implode('|', self::DIRECTIVES).')\b/', $shipped);
+    }
+
+    public function test_the_guard_detects_an_inline_authorization_directive(): void
+    {
+        $shipped = 'Open the preview page@can(\'manage iapm settings\') settings @endcan';
 
         self::assertMatchesRegularExpression('/\w@('.implode('|', self::DIRECTIVES).')\b/', $shipped);
     }
