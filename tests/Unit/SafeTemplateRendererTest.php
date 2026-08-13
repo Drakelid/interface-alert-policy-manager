@@ -49,6 +49,31 @@ class SafeTemplateRendererTest extends TestCase
         self::assertSame('YES', $renderer->render('{{#if device_groups not contains "Branches"}}YES{{/if}}', $values));
     }
 
+    public function test_and_combines_multiple_conditions(): void
+    {
+        $renderer = new SafeTemplateRenderer;
+        $template = '{{#if ifAdminStatus == up && ifOperStatus == down}}down{{else}}not down{{/if}}';
+
+        self::assertSame('down', $renderer->render($template, ['ifAdminStatus' => 'up', 'ifOperStatus' => 'down']));
+        self::assertSame('not down', $renderer->render($template, ['ifAdminStatus' => 'down', 'ifOperStatus' => 'down']));
+        self::assertSame('not down', $renderer->render($template, ['ifAdminStatus' => 'up', 'ifOperStatus' => 'up']));
+    }
+
+    public function test_and_supports_quoted_values_and_contains_conditions(): void
+    {
+        $template = '{{#if device_groups contains "Core routers" && severity != warning}}YES{{else}}NO{{/if}}';
+
+        self::assertSame('YES', (new SafeTemplateRenderer)->render($template, [
+            'device_groups' => 'Core routers, Production', 'severity' => 'critical',
+        ]));
+    }
+
+    public function test_an_empty_and_operand_is_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        (new SafeTemplateRenderer)->render('{{#if enabled && }}invalid{{/if}}', ['enabled' => true]);
+    }
+
     public function test_unknown_placeholder_in_an_unselected_branch_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);

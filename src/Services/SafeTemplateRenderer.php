@@ -8,6 +8,8 @@ class SafeTemplateRenderer
 {
     private const MAX_CONDITIONAL_DEPTH = 10;
 
+    private const MAX_CONDITIONS_PER_BLOCK = 10;
+
     public function render(string $template, array $values): string
     {
         $tokens = preg_split('/(\{\{.*?\}\})/s', $template, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
@@ -93,19 +95,63 @@ class SafeTemplateRenderer
         return [$nodes, null];
     }
 
-    /** @return array{name: string, value: scalar|null, operator: string|null, expected: string|null} */
+    /** @return list<array{name: string, value: scalar|null, operator: string|null, expected: string|null}> */
     private function parseCondition(string $tag, array $values): array
     {
-        if (preg_match('/^#if\s+([a-zA-Z][a-zA-Z0-9_]*)(?:\s*(==|!=|contains|not\s+contains)\s*(["\'])(.*?)\3)?$/s', $tag, $matches) !== 1) {
-            throw new InvalidArgumentException('Invalid condition. Use {{#if placeholder}}, {{#if placeholder == "value"}}, or {{#if placeholder contains "value"}}.');
+        if (! str_starts_with($tag, '#if ')) {
+            throw $this->invalidCondition();
         }
 
-        return [
-            'name' => $matches[1],
-            'value' => $this->value($matches[1], $values),
-            'operator' => isset($matches[2]) ? preg_replace('/\s+/', ' ', $matches[2]) : null,
-            'expected' => $matches[4] ?? null,
-        ];
+        $parts = $this->splitConditions(substr($tag, 4));
+        if ($parts === [] || count($parts) > self::MAX_CONDITIONS_PER_BLOCK) {
+            throw $this->invalidCondition();
+        }
+
+        return array_map(function (string $part) use ($values): array {
+            if (preg_match('/^([a-zA-Z][a-zA-Z0-9_]*)(?:\s*(==|!=|contains|not\s+contains)\s*(?:(["\'])(.*?)\3|([a-zA-Z0-9_.:\-]+)))?$/s', trim($part), $matches) !== 1) {
+                throw $this->invalidCondition();
+            }
+
+            return [
+                'name' => $matches[1],
+                'value' => $this->value($matches[1], $values),
+                'operator' => isset($matches[2]) ? preg_replace('/\s+/', ' ', $matches[2]) : null,
+                'expected' => ($matches[3] ?? '') !== '' ? ($matches[4] ?? '') : ($matches[5] ?? null),
+            ];
+        }, $parts);
+    }
+
+    /** @return list<string> */
+    private function splitConditions(string $expression): array
+    {
+        $parts = [];
+        $start = 0;
+        $quote = null;
+        $length = strlen($expression);
+        for ($position = 0; $position < $length; $position++) {
+            $character = $expression[$position];
+            if ($character === '"' || $character === "'") {
+                $quote = $quote === null ? $character : ($quote === $character ? null : $quote);
+
+                continue;
+            }
+            if ($quote === null && $character === '&' && ($expression[$position + 1] ?? null) === '&') {
+                $parts[] = trim(substr($expression, $start, $position - $start));
+                $start = $position + 2;
+                $position++;
+            }
+        }
+        if ($quote !== null) {
+            throw $this->invalidCondition();
+        }
+        $parts[] = trim(substr($expression, $start));
+
+        return $parts;
+    }
+
+    private function invalidCondition(): InvalidArgumentException
+    {
+        return new InvalidArgumentException('Invalid condition. Use {{#if placeholder}}, {{#if placeholder == "value"}}, {{#if placeholder contains "value"}}, and combine conditions with &&.');
     }
 
     private function value(string $name, array $values): string|int|float|bool|null
@@ -133,14 +179,16 @@ class SafeTemplateRenderer
                 continue;
             }
 
-            $condition = $node['condition'];
-            $matches = match ($condition['operator']) {
-                '==' => $this->equals($condition['name'], $condition['value'], (string) $condition['expected']),
-                '!=' => ! $this->equals($condition['name'], $condition['value'], (string) $condition['expected']),
-                'contains' => $this->contains($condition['name'], $condition['value'], (string) $condition['expected']),
-                'not contains' => ! $this->contains($condition['name'], $condition['value'], (string) $condition['expected']),
-                default => (bool) $condition['value'],
-            };
+            $matches = true;
+            foreach ($node['condition'] as $condition) {
+                $matches = $matches && match ($condition['operator']) {
+                    '==' => $this->equals($condition['name'], $condition['value'], (string) $condition['expected']),
+                    '!=' => ! $this->equals($condition['name'], $condition['value'], (string) $condition['expected']),
+                    'contains' => $this->contains($condition['name'], $condition['value'], (string) $condition['expected']),
+                    'not contains' => ! $this->contains($condition['name'], $condition['value'], (string) $condition['expected']),
+                    default => (bool) $condition['value'],
+                };
+            }
             $rendered .= $this->renderNodes($matches ? $node['truthy'] : $node['falsy']);
         }
 

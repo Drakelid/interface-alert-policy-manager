@@ -108,6 +108,19 @@ class TemplateRenderingTest extends IntegrationTestCase
         self::assertSame('### Bundle to Oslo distribution switch ###', $port->ifAlias, 'LibreNMS inventory data must remain unchanged.');
     }
 
+    public function test_interface_statuses_can_be_combined_in_one_conditional(): void
+    {
+        $port = $this->downPort($this->device(), ['ifAdminStatus' => 'up', 'ifOperStatus' => 'down']);
+        $values = app(TemplateContextBuilder::class)->forPreview(app(InterfaceContextService::class)->forPort($port));
+
+        $rendered = app(SafeTemplateRenderer::class)->render(
+            '{{#if ifAdminStatus == up && ifOperStatus == down}}down{{else}}not down{{/if}}',
+            $values,
+        );
+
+        self::assertSame('down', $rendered);
+    }
+
     public function test_the_acknowledgement_user_resolves_to_a_username(): void
     {
         $admin = $this->admin();
