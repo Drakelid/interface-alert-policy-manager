@@ -17,6 +17,18 @@ class UiTest extends IntegrationTestCase
             ->assertSeeText('IAPM '.app(PluginVersion::class)->display());
     }
 
+    public function test_the_plugin_publishes_a_dedicated_librenms_top_navigation_link(): void
+    {
+        $body = $this->actingAs($this->admin())
+            ->get('/plugin/interface-alert-policy-manager')
+            ->assertOk()
+            ->getContent();
+
+        self::assertStringContainsString('id="iapm-plugin-menu-fallback"', (string) $body);
+        self::assertStringContainsString("item.id = 'iapm-top-navigation'", (string) $body);
+        self::assertStringContainsString("textContent = 'IAPM'", (string) $body);
+    }
+
     public function test_every_shared_navigation_link_has_an_icon(): void
     {
         $html = $this->actingAs($this->admin())
