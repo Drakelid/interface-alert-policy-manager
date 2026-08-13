@@ -91,6 +91,10 @@ class PolicyCacheRebuilder
         }
 
         $ports = Port::with(['device.location', 'device.groups', 'groups'])
+            // LibreNMS installations can retain ports after their device row has
+            // been removed. They cannot resolve to a policy without device
+            // context, so exclude them instead of aborting the fleet rebuild.
+            ->whereHas('device')
             ->when($afterPortId !== null, fn ($q) => $q->where('port_id', '>', $afterPortId))
             ->orderBy('port_id')
             ->limit($limit)

@@ -55,7 +55,7 @@ class CacheRebuildCommand extends Command
         try {
             DB::table('iapm_interface_policy_cache')->when($device, fn ($q) => $q->whereIn('port_id', Port::where('device_id', $device)->select('port_id')))->delete();
             $count = 0;
-            Port::with(['device.location', 'device.groups', 'groups'])->when($device, fn ($q, $id) => $q->where('device_id', $id))->orderBy('port_id')->chunkById((int) config('iapm.processing.batch_size', 500), function ($ports) use ($contexts, $resolver, $rebuilder, $device, &$count) {
+            Port::with(['device.location', 'device.groups', 'groups'])->whereHas('device')->when($device, fn ($q, $id) => $q->where('device_id', $id))->orderBy('port_id')->chunkById((int) config('iapm.processing.batch_size', 500), function ($ports) use ($contexts, $resolver, $rebuilder, $device, &$count) {
                 foreach ($ports as $port) {
                     $resolver->resolve($contexts->forPort($port));
                     $count++;

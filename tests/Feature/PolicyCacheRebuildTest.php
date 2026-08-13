@@ -85,6 +85,22 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
         self::assertDatabaseHas('iapm_interface_policy_cache', ['port_id' => $port->port_id]);
     }
 
+    public function test_a_rebuild_skips_ports_whose_device_no_longer_exists(): void
+    {
+        $port = $this->downPort($this->device());
+        $orphanDeviceId = 2147483647;
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        try {
+            DB::table('ports')->where('port_id', $port->port_id)->update(['device_id' => $orphanDeviceId]);
+        } finally {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
+
+        $this->artisan('iapm:cache-rebuild')->assertSuccessful();
+
+        self::assertFalse(DB::table('iapm_interface_policy_cache')->where('port_id', $port->port_id)->exists());
+    }
+
     public function test_progress_can_be_polled_while_a_rebuild_runs(): void
     {
         Queue::fake();
