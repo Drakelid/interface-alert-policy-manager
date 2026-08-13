@@ -46,6 +46,8 @@ class RealSimulationController extends Controller
         $data = $request->validate([
             'port_id' => ['required', 'integer', 'exists:ports,port_id'],
             'duration_seconds' => ['required', 'integer', 'between:60,86400'],
+            'simulated_admin_status' => ['required', 'string', 'in:up,down'],
+            'simulated_oper_status' => ['required', 'string', 'in:up,down'],
         ]);
 
         try {
@@ -53,6 +55,8 @@ class RealSimulationController extends Controller
                 $request,
                 Port::with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']),
                 (int) $data['duration_seconds'],
+                $data['simulated_admin_status'],
+                $data['simulated_oper_status'],
                 true,
             );
         } catch (\DomainException $exception) {

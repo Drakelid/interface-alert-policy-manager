@@ -4,7 +4,7 @@
 
 <div class="alert alert-danger" style="max-width:85em;">
     <i class="fa fa-exclamation-triangle"></i>
-    <strong>This sends real notifications.</strong> The selected interface is temporarily recorded as operationally down in LibreNMS. IAPM creates a real incident, evaluates its real policy and actions, and dispatches through the configured queue and gateway. Use only an isolated test interface.
+    <strong>This sends real notifications.</strong> The selected interface is temporarily recorded with the chosen admin and operational states in LibreNMS. IAPM creates a real incident, evaluates its real policy and actions, and dispatches through the configured queue and gateway. Use only an isolated test interface.
 </div>
 
 <div class="row">
@@ -16,8 +16,30 @@
                     @include('iapm::partials.port-picker',['id'=>'iapm-real-sim','value'=>old('port_id', request('port_id')),'valueLabel'=>$portLabel,'required'=>true])
                     <p class="iapm-hint">Safety checks require the port to be admin up, oper up, enabled, not ignored, covered by an enabled policy, and free of another open IAPM incident.</p>
 
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <div class="form-group">
+                                <label for="iapm-real-admin-status">Simulated admin status</label>
+                                <select class="form-control" id="iapm-real-admin-status" name="simulated_admin_status" required>
+                                    <option value="up" @selected(old('simulated_admin_status', 'up') === 'up')>Up</option>
+                                    <option value="down" @selected(old('simulated_admin_status') === 'down')>Down</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="form-group">
+                                <label for="iapm-real-oper-status">Simulated operational status</label>
+                                <select class="form-control" id="iapm-real-oper-status" name="simulated_oper_status" required>
+                                    <option value="down" @selected(old('simulated_oper_status', 'down') === 'down')>Down</option>
+                                    <option value="up" @selected(old('simulated_oper_status') === 'up')>Up</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="iapm-hint"><strong>Common modes:</strong> admin up / oper down tests an operational failure; admin down / oper down tests administrative suppression; the other combinations support edge-case validation.</p>
+
                     <div class="form-group iapm-narrow-field">
-                        <label for="iapm-real-duration">Keep simulated down for</label>
+                        <label for="iapm-real-duration">Keep simulated state for</label>
                         <div class="input-group"><input type="number" min="60" max="86400" step="60" name="duration_seconds" id="iapm-real-duration" class="form-control" value="{{ old('duration_seconds',600) }}" required><span class="input-group-addon">seconds</span></div>
                         <p class="iapm-hint">Choose enough time for the policy's trigger delay, required observations, and action delay. The scheduler restores the exact original state at the deadline.</p>
                     </div>
@@ -49,7 +71,7 @@
 <div class="iapm-result-bar"><h2 style="font-size:20px;margin:0;">Recent simulations</h2><span style="margin-left:auto;">@include('iapm::partials.auto-refresh')</span></div>
 <div class="iapm-table-wrap">
 <table class="table table-striped table-condensed">
-    <thead><tr><th>ID</th><th>Interface</th><th>Status</th><th>IAPM incident</th><th>Delivery</th><th>Started</th><th>Automatic recovery</th><th>Action</th></tr></thead>
+    <thead><tr><th>ID</th><th>Interface</th><th>Mode</th><th>Status</th><th>IAPM incident</th><th>Delivery</th><th>Started</th><th>Automatic recovery</th><th>Action</th></tr></thead>
     <tbody>
     @forelse($simulations as $simulation)
         @php($incident = $simulation->incident)
@@ -57,6 +79,7 @@
         <tr>
             <td><code>#{{ $simulation->id }}</code></td>
             <td>{{ $simulation->port?->device?->hostname ?? 'device '.$simulation->device_id }} — {{ $simulation->port?->ifName ?? 'port '.$simulation->port_id }} <span class="iapm-hint">({{ $simulation->port_id }})</span></td>
+            <td><code>admin={{ $simulation->simulated_admin_status }}</code><br><code>oper={{ $simulation->simulated_oper_status }}</code></td>
             <td><span class="label label-{{ $simulation->status === 'running' ? 'danger' : ($simulation->status === 'recovered' ? 'success' : ($simulation->status === 'failed' ? 'warning' : 'default')) }}">{{ strtoupper($simulation->status) }}</span>@if($simulation->last_error)<br><span class="text-danger">{{ $simulation->last_error }}</span>@endif</td>
             <td>@if($incident)<a href="{{ route('iapm.incidents.show',$incident) }}">#{{ $incident->id }}</a> — {{ $incident->state->value }}@else<span class="iapm-hint">Not created</span>@endif</td>
             <td>@if($latestDelivery)<span class="label label-{{ in_array($latestDelivery->status,['sent','dry_run']) ? 'success' : 'danger' }}">{{ $latestDelivery->phase }}: {{ $latestDelivery->status }}</span>@else<span class="iapm-hint">Waiting for an action</span>@endif</td>
@@ -65,7 +88,7 @@
             <td>@if(in_array($simulation->status,['starting','running','recovering','failed']))<form method="post" action="{{ route('iapm.real-simulations.recover',$simulation) }}" data-iapm-busy data-iapm-confirm="Restore this port and send recovery now?">@csrf<button class="btn btn-success btn-xs" data-busy="Recovering…"><i class="fa fa-check"></i> Recover now</button></form>@else—@endif</td>
         </tr>
     @empty
-        <tr><td colspan="8" class="iapm-hint">No real simulations have been run.</td></tr>
+        <tr><td colspan="9" class="iapm-hint">No real simulations have been run.</td></tr>
     @endforelse
     </tbody>
 </table>

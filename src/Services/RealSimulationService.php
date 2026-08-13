@@ -27,12 +27,18 @@ class RealSimulationService
         private readonly PolicyResolver $policies,
     ) {}
 
-    public function start(Request $request, Port $port, int $durationSeconds, bool $sendNotifications): Simulation
-    {
+    public function start(
+        Request $request,
+        Port $port,
+        int $durationSeconds,
+        string $simulatedAdminStatus,
+        string $simulatedOperStatus,
+        bool $sendNotifications,
+    ): Simulation {
         $policy = $this->assertStartable($port);
         $this->assertDuration($policy, $durationSeconds);
 
-        $simulation = DB::transaction(function () use ($request, $port, $durationSeconds, $sendNotifications): Simulation {
+        $simulation = DB::transaction(function () use ($request, $port, $durationSeconds, $simulatedAdminStatus, $simulatedOperStatus, $sendNotifications): Simulation {
             $locked = Port::whereKey($port->port_id)->lockForUpdate()->firstOrFail();
             $policy = $this->assertStartable($locked);
             $this->assertDuration($policy, $durationSeconds);
@@ -45,6 +51,8 @@ class RealSimulationService
                 'status' => 'starting',
                 'original_admin_status' => $this->statusValue($locked->ifAdminStatus),
                 'original_oper_status' => $this->statusValue($locked->ifOperStatus),
+                'simulated_admin_status' => $simulatedAdminStatus,
+                'simulated_oper_status' => $simulatedOperStatus,
                 'duration_seconds' => $durationSeconds,
                 'send_notifications' => $sendNotifications,
                 'started_at' => now(),
@@ -52,8 +60,8 @@ class RealSimulationService
             ]);
 
             DB::table('ports')->where('port_id', $locked->port_id)->update([
-                'ifAdminStatus' => 'up',
-                'ifOperStatus' => 'down',
+                'ifAdminStatus' => $simulatedAdminStatus,
+                'ifOperStatus' => $simulatedOperStatus,
             ]);
 
             return $simulation;
@@ -75,6 +83,8 @@ class RealSimulationService
                 'device_id' => $simulation->device_id,
                 'port_id' => $simulation->port_id,
                 'duration_seconds' => $durationSeconds,
+                'simulated_admin_status' => $simulatedAdminStatus,
+                'simulated_oper_status' => $simulatedOperStatus,
                 'send_notifications' => $sendNotifications,
                 'ingestion' => $result,
             ]);
@@ -159,8 +169,8 @@ class RealSimulationService
                             // Polling writes the physical state back periodically.
                             // Reassert the simulation overlay until its deadline.
                             DB::table('ports')->where('port_id', $simulation->port_id)->update([
-                                'ifAdminStatus' => 'up',
-                                'ifOperStatus' => 'down',
+                                'ifAdminStatus' => $simulation->simulated_admin_status,
+                                'ifOperStatus' => $simulation->simulated_oper_status,
                             ]);
                             if ($simulation->incident_id) {
                                 Artisan::call('iapm:reconcile', ['--incident' => $simulation->incident_id]);
@@ -266,8 +276,8 @@ class RealSimulationService
                 'ifName' => (string) $port->ifName,
                 'ifDescr' => (string) $port->ifDescr,
                 'ifAlias' => (string) $port->ifAlias,
-                'ifAdminStatus' => 'up',
-                'ifOperStatus' => 'down',
+                'ifAdminStatus' => $simulation->simulated_admin_status,
+                'ifOperStatus' => $simulation->simulated_oper_status,
             ]] : [],
         ];
         $token = (string) $this->settings->get('ingestion_token');

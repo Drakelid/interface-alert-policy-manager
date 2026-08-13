@@ -23,6 +23,8 @@ class RealSimulationTest extends IntegrationTestCase
             ->assertOk()
             ->assertSee('This sends real notifications')
             ->assertDontSee('SEND REAL ALERTS')
+            ->assertSee('Simulated admin status')
+            ->assertSee('Simulated operational status')
             ->assertSee('Automatic recovery');
     }
 
@@ -34,6 +36,8 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
+            'simulated_admin_status' => 'up',
+            'simulated_oper_status' => 'down',
         ])->assertRedirect(self::BASE);
 
         $simulation = Simulation::firstOrFail();
@@ -55,6 +59,8 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($admin)->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
+            'simulated_admin_status' => 'up',
+            'simulated_oper_status' => 'down',
         ]);
         $simulation = Simulation::firstOrFail();
 
@@ -75,6 +81,8 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 60,
+            'simulated_admin_status' => 'up',
+            'simulated_oper_status' => 'down',
         ]);
 
         $this->travel(61)->seconds();
@@ -91,13 +99,21 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
+            'simulated_admin_status' => 'down',
+            'simulated_oper_status' => 'up',
         ]);
-        $port->update(['ifOperStatus' => 'up']); // emulate a physical poll
+        $simulation = Simulation::firstOrFail();
+        self::assertSame('down', $simulation->simulated_admin_status);
+        self::assertSame('up', $simulation->simulated_oper_status);
+        self::assertSame('down', $this->status($port->fresh()->ifAdminStatus));
+        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
+        $port->update(['ifAdminStatus' => 'up', 'ifOperStatus' => 'down']); // emulate a physical poll
 
         $this->artisan('iapm:recover-simulations')->assertExitCode(0);
 
         self::assertSame('running', Simulation::firstOrFail()->status);
-        self::assertSame('down', $this->status($port->fresh()->ifOperStatus));
+        self::assertSame('down', $this->status($port->fresh()->ifAdminStatus));
+        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
     }
 
     public function test_a_port_that_is_not_up_is_rejected_without_mutation(): void
@@ -107,10 +123,27 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($this->admin())->from(self::BASE)->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
+            'simulated_admin_status' => 'up',
+            'simulated_oper_status' => 'down',
         ])->assertRedirect(self::BASE)->assertSessionHas('error');
 
         self::assertSame(0, Simulation::count());
         self::assertSame('down', $this->status($port->fresh()->ifOperStatus));
+    }
+
+    public function test_start_rejects_an_unknown_simulation_status(): void
+    {
+        $port = $this->upPortWithNotifyingPolicy();
+
+        $this->actingAs($this->admin())->from(self::BASE)->post(self::BASE, [
+            'port_id' => $port->port_id,
+            'duration_seconds' => 600,
+            'simulated_admin_status' => 'testing',
+            'simulated_oper_status' => 'down',
+        ])->assertRedirect(self::BASE)->assertSessionHasErrors('simulated_admin_status');
+
+        self::assertSame(0, Simulation::count());
+        self::assertSame('up', $this->status($port->fresh()->ifOperStatus));
     }
 
     public function test_a_viewer_cannot_start_a_real_simulation(): void
@@ -123,6 +156,8 @@ class RealSimulationTest extends IntegrationTestCase
         $this->actingAs($viewer)->post(self::BASE, [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
+            'simulated_admin_status' => 'up',
+            'simulated_oper_status' => 'down',
         ])->assertForbidden();
 
         self::assertSame(0, Simulation::count());
