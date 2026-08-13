@@ -15,7 +15,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Transports\TransportResult;
 
 class NotificationDispatcher
 {
-    public function __construct(private readonly TransportManager $transports, private readonly Redactor $redactor, private readonly SettingStore $settings) {}
+    public function __construct(private readonly TransportManager $transports, private readonly Redactor $redactor, private readonly SettingStore $settings, private readonly SmsContentFilter $smsFilters) {}
 
     public function configurationFailure(Incident $incident, Destination $destination, ?PolicyAction $action, string $phase, string $error): TransportResult
     {
@@ -36,6 +36,9 @@ class NotificationDispatcher
     {
         if (! $destination->enabled) {
             return $this->configurationFailure($incident, $destination, $action, $phase, 'Destination is disabled.');
+        }
+        if ($destination->type === 'sms_gateway') {
+            $message = $this->smsFilters->filter($message);
         }
 
         $incidents = Incident::whereIn('id', $incidentIds ?: [$incident->id])->get()->filter(fn (Incident $item) => filled($item->episode_uuid));
@@ -258,6 +261,9 @@ class NotificationDispatcher
 
     public function test(Destination $destination, string $receiver, string $message): TransportResult
     {
+        if ($destination->type === 'sms_gateway') {
+            $message = $this->smsFilters->filter($message);
+        }
         $configuration = (array) $destination->configuration_encrypted;
         $result = $this->transports->for($destination->type)->send($configuration, $receiver, $message);
         // Test gateways sometimes echo their request body. The administrator may

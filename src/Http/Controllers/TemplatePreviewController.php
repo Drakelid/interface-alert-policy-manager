@@ -9,11 +9,12 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SmsContentFilter;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\TemplateContextBuilder;
 
 class TemplatePreviewController extends Controller
 {
-    public function __invoke(Request $request, InterfaceContextService $contexts, SafeTemplateRenderer $renderer, TemplateContextBuilder $placeholders, EntityLookup $lookup)
+    public function __invoke(Request $request, InterfaceContextService $contexts, SafeTemplateRenderer $renderer, TemplateContextBuilder $placeholders, EntityLookup $lookup, SmsContentFilter $smsFilters)
     {
         $rendered = null;
         $warning = null;
@@ -24,8 +25,8 @@ class TemplatePreviewController extends Controller
             $port = Port::with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']);
             $values = $placeholders->forPreview($contexts->forPort($port));
             try {
-                $rendered = $renderer->render($data['template'], $values);
-                $warning = 'Rendered length: '.mb_strlen($rendered).' characters. IAPM sends this complete message unchanged; the SMS gateway controls final length and segmentation.';
+                $rendered = $smsFilters->filter($renderer->render($data['template'], $values));
+                $warning = 'Filtered SMS length: '.mb_strlen($rendered).' characters. IAPM sends this complete result without truncation; the SMS gateway controls final length and segmentation.';
             } catch (\Throwable $e) {
                 $warning = $e->getMessage();
             }

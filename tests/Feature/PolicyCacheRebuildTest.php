@@ -270,7 +270,7 @@ class PolicyCacheRebuildTest extends IntegrationTestCase
             "$base/policies/{$policy->id}/actions/create", "$base/actions/{$action->id}/edit",
             "$base/interface-matrix", "$base/policy-test", "$base/stats",
             "$base/tools/simulate", "$base/import", "$base/comparison-report",
-            "$base/setup-helper", "$base/template-preview", "$base/message-templates",
+            "$base/setup-helper", "$base/template-preview", "$base/message-templates", "$base/sms-content-filters",
             "$base/destinations", "$base/destinations/create", "$base/destinations/{$destination->id}/edit",
             "$base/incidents", "$base/incidents/{$incident->id}",
             "$base/settings", "$base/delivery-log", "$base/audit-log",

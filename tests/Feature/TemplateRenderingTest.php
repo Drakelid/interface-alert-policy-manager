@@ -77,7 +77,7 @@ class TemplateRenderingTest extends IntegrationTestCase
         self::assertSame('Groups: Core routers, Production', app(SafeTemplateRenderer::class)->render('Groups: {{ device_groups }}', $values));
     }
 
-    public function test_interface_alias_placeholder_removes_bundle_decoration_only(): void
+    public function test_interface_alias_placeholder_keeps_inventory_text_until_sms_filtering(): void
     {
         $port = $this->downPort($this->device(), [
             'ifAlias' => '### Bundle to Oslo distribution switch ###',
@@ -85,8 +85,8 @@ class TemplateRenderingTest extends IntegrationTestCase
 
         $values = app(TemplateContextBuilder::class)->forPreview(app(InterfaceContextService::class)->forPort($port));
 
-        self::assertSame('Oslo distribution switch', $values['ifAlias']);
-        self::assertSame('Oslo distribution switch', $port->ifAlias, 'LibreNMS inventory data must remain unchanged.');
+        self::assertSame('### Bundle to Oslo distribution switch ###', $values['ifAlias']);
+        self::assertSame('### Bundle to Oslo distribution switch ###', $port->ifAlias, 'LibreNMS inventory data must remain unchanged.');
     }
 
     public function test_the_acknowledgement_user_resolves_to_a_username(): void

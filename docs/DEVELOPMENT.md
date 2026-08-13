@@ -17,7 +17,7 @@ Add a transport by implementing `NotificationTransport`, registering it in `Tran
 
 Message placeholders come from `TemplateContextBuilder`. `SafeTemplateRenderer` supports substitutions plus its own constrained `{{#if placeholder}}`, `{{else}}`, `{{/if}}`, `==`, and `!=` grammar; it never evaluates PHP or Blade. It throws on unknown placeholders even in an unselected branch, so a new placeholder must be added to the builder (both `forIncident()` and `forPreview()` go through the same map) and to the README list. `TemplateRenderingTest` asserts that every documented placeholder resolves.
 
-SMS destinations use `SafeTemplateRenderer::render()` and send its complete output unchanged. Never add delivery-side truncation or segment enforcement; final length and segmentation belong to the configured SMS gateway. Keep the exact long-message delivery regression in `MessageTemplateTest` when changing message rendering.
+SMS destinations use `SafeTemplateRenderer::render()`, then `SmsContentFilter`, and send the complete filtered output. The dispatcher owns filtering so actions, digests, simulations, retries, and destination tests share one path while generic webhooks remain untouched. Never add truncation or segment enforcement; final length and segmentation belong to the configured SMS gateway. Keep the exact long-message and SMS-only filter regressions when changing delivery.
 
 ## Tests
 

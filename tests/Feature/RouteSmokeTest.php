@@ -163,6 +163,7 @@ class RouteSmokeTest extends IntegrationTestCase
             "$base/setup-helper",
             "$base/template-preview",
             "$base/message-templates",
+            "$base/sms-content-filters",
             "$base/destinations",
             "$base/destinations/create",
             "$base/destinations/{$destination->id}/edit",

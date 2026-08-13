@@ -32,11 +32,12 @@
                 <li><a href="{{ route('iapm.setup-helper') }}">3. LibreNMS setup helper</a></li>
             </ul>
         </li>
-        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.message-templates','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.real-simulations.index','iapm.import.form') }}">
+        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.message-templates','iapm.sms-content-filters.edit','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.real-simulations.index','iapm.import.form') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#">Tools <span class="caret"></span></a>
             <ul class="dropdown-menu">
                 <li class="dropdown-header">Templates</li>
                 <li><a href="{{ route('iapm.message-templates') }}">Message Templates</a></li>
+                @can('manage iapm settings')<li><a href="{{ route('iapm.sms-content-filters.edit') }}">SMS Content Filters</a></li>@endcan
                 <li><a href="{{ route('iapm.template-preview') }}">Template Preview</a></li>
                 <li role="separator" class="divider"></li>
                 <li class="dropdown-header">Test &amp; validate</li>

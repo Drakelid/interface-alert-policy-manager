@@ -22,6 +22,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\RealSimulation
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SettingsController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SetupHelperController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SimulationController;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\SmsContentFilterController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\StatsController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\TemplatePreviewController;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Middleware\AuthenticateIngestion;
@@ -80,6 +81,11 @@ Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])-
     Route::match(['get', 'post'], 'template-preview', TemplatePreviewController::class)->name('template-preview');
     Route::get('message-templates', [MessageTemplateController::class, 'edit'])->name('message-templates');
     Route::put('message-templates', [MessageTemplateController::class, 'update'])->name('message-templates.update');
+    Route::middleware('can:manage iapm settings')->group(function (): void {
+        Route::get('sms-content-filters', [SmsContentFilterController::class, 'edit'])->name('sms-content-filters.edit');
+        Route::put('sms-content-filters', [SmsContentFilterController::class, 'update'])->name('sms-content-filters.update');
+        Route::post('sms-content-filters/preview', [SmsContentFilterController::class, 'preview'])->middleware('throttle:120,1')->name('sms-content-filters.preview');
+    });
     Route::delete('destinations-bulk', [DestinationController::class, 'bulkDestroy'])->name('destinations.bulk-destroy');
     Route::resource('destinations', DestinationController::class)->except('show');
     Route::post('destinations/{destination}/clone', DestinationCloneController::class)->name('destinations.clone');
