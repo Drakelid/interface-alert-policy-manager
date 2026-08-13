@@ -11,7 +11,7 @@
 
     @php($iapmActionFields = [
       'delay_seconds' => ['label'=>'Delay', 'unit'=>'seconds', 'default'=>0, 'seconds'=>true, 'help'=>'Wait this long after the phase begins before sending. 0 = immediately. Escalation delays start when the incident triggers.'],
-      'repeat_seconds' => ['label'=>'Repeat every', 'unit'=>'seconds', 'default'=>null, 'seconds'=>true, 'help'=>'Blank inherits the policy interval; if both are blank, send once. Minimum 60 seconds.'],
+      'repeat_seconds' => ['label'=>'Repeat every', 'unit'=>'seconds', 'default'=>null, 'seconds'=>true, 'help'=>'Blank = inherit the policy interval; if both are blank, send once. Minimum 60 seconds.'],
       'maximum_sends' => ['label'=>'Maximum sends', 'unit'=>null, 'default'=>null, 'seconds'=>false, 'help'=>'Blank = unlimited, subject to the policy cap. 1 sends only once.'],
       'sort_order' => ['label'=>'Sort order', 'unit'=>null, 'default'=>0, 'seconds'=>false, 'help'=>'Order within this phase. Lower actions run first.'],
     ])

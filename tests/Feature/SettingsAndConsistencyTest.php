@@ -171,7 +171,8 @@ class SettingsAndConsistencyTest extends IntegrationTestCase
     {
         $this->policy();
         $this->smsDestination();
-        $this->policy()->assignments()->create(['assignment_type' => 'default', 'match_mode' => 'any', 'priority' => 0, 'enabled' => true]);
+        $policy = $this->policy();
+        $policy->assignments()->create(['assignment_type' => 'default', 'match_mode' => 'any', 'priority' => 0, 'enabled' => true]);
         $admin = $this->admin();
 
         foreach (['policies', 'destinations'] as $list) {
@@ -183,7 +184,6 @@ class SettingsAndConsistencyTest extends IntegrationTestCase
 
         // Assignments are managed inside their owning policy, and the standalone
         // resource index deliberately redirects to the policies list.
-        $policy = $this->policy();
         $body = (string) $this->actingAs($admin)->get(self::BASE."/policies/{$policy->id}/edit")->assertOk()->getContent();
         self::assertStringContainsString('data-iapm-bulk-button="assignments" disabled', $body);
         self::assertStringContainsString('data-iapm-bulk-scope="assignments"', $body);

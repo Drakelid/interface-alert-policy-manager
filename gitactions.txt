@@ -5,17 +5,17 @@ Configuration: /package/phpunit.xml
 
 ...............................................................  63 / 539 ( 11%)
 ..........F.................................................... 126 / 539 ( 23%)
-...........................F......................F............ 189 / 539 ( 35%)
-.......................F....................................... 252 / 539 ( 46%)
+............................................................... 189 / 539 ( 35%)
+............................................................... 252 / 539 ( 46%)
 ............................................................... 315 / 539 ( 58%)
 ............................................................... 378 / 539 ( 70%)
 ..........................F.................................... 441 / 539 ( 81%)
 ............................................................... 504 / 539 ( 93%)
 ...................................                             539 / 539 (100%)
 
-Time: 01:28.662, Memory: 153.00 MB
+Time: 01:16.115, Memory: 153.00 MB
 
-There were 5 failures:
+There were 2 failures:
 
 1) LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature\BlankMeansUnlimitedTest::test_both_forms_state_the_convention
 Failed asserting that '<!DOCTYPE HTML>\n
@@ -34,7 +34,7 @@ Failed asserting that '<!DOCTYPE HTML>\n
         <link rel="shortcut icon" href="http://localhost/images/favicon.ico">\n
     \n
     <link rel="manifest" href="http://localhost/images/manifest.json" crossorigin="use-credentials">\n
-    <meta name="csrf-token" content="3rEcOKuuBNojwSgHxw4TwpDpmTfKYcf0COX3pIww">\n
+    <meta name="csrf-token" content="c4InrJ7bffaUPF68ECfLQuyjzWFgcSuhUAhoXIB3">\n
     <meta name="msapplication-config" content="http://localhost/images/browserconfig.xml">\n
     <meta name="theme-color" content="#ffffff">\n
 \n
@@ -493,7 +493,7 @@ Failed asserting that '<!DOCTYPE HTML>\n
                     <a href="#" class="dropdown-toggle" data-hover="dropdown" data-toggle="dropdown">\n
                         <i class="fa fa-user fa-fw fa-lg fa-nav-icons" aria-hidden="true"></i>\n
                         <span class="badge badge-navbar-user count-notif badge-default"></span>\n
-                        <span class="tw:md:hidden tw:2xl:inline-block"><small>woreilly</small></span>\n
+                        <span class="tw:md:hidden tw:2xl:inline-block"><small>hartmann.delia</small></span>\n
                         <span class="visible-xs-inline-block">User</span>\n
                     </a>\n
                     <ul class="dropdown-menu">\n
@@ -577,7 +577,7 @@ Failed asserting that '<!DOCTYPE HTML>\n
                             </a>\n
 \n
                             <form id="logout-form" action="http://localhost/logout" method="POST" style="display: none;">\n
-                                <input type="hidden" name="_token" value="3rEcOKuuBNojwSgHxw4TwpDpmTfKYcf0COX3pIww" autocomplete="off">\n
+                                <input type="hidden" name="_token" value="c4InrJ7bffaUPF68ECfLQuyjzWFgcSuhUAhoXIB3" autocomplete="off">\n
                             </form>\n
                         </li>\n
                     </ul>\n
@@ -1470,20 +1470,20 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }\n
             <div id="iapm-quickfind-results" class="list-group" role="listbox" data-iapm-quickfind-results\n
                  style="display:none;position:absolute;z-index:1050;right:0;min-width:380px;max-height:300px;overflow:auto;box-shadow:0 2px 8px rgba(0,0,0,.2);"></div>\n
         </form>\n
-        <span class="label label-default" style="margin-right:4px;" title="Installed Interface Alert Policy Manager package version">IAPM v1.6.5</span>\n
+        <span class="label label-default" style="margin-right:4px;" title="Installed Interface Alert Policy Manager package version">IAPM v1.6.7</span>\n
                     <span class="label label-success" title="Notifications are delivered to the gateway."><i class="fa fa-bolt"></i> LIVE</span>\n
             </span>\n
 </div>\n
 \n
-    <h1 class="iapm-page-title">Create action for Policy 62246</h1>\n
+    <h1 class="iapm-page-title">Create action for Policy 80220</h1>\n
     <p class="iapm-hint" style="max-width:70em;">\n
         An action defines where one notification goes, when it sends, and what it says. Build an escalation chain with several escalation actions at increasing delays.\n
-        <a href="http://localhost/plugin/interface-alert-policy-manager/policies/51/edit">Back to Policy 62246</a>.\n
+        <a href="http://localhost/plugin/interface-alert-policy-manager/policies/51/edit">Back to Policy 80220</a>.\n
     </p>\n
 \n
     \n
     <form method="post" action="http://localhost/plugin/interface-alert-policy-manager/policies/51/actions">\n
-        <input type="hidden" name="_token" value="3rEcOKuuBNojwSgHxw4TwpDpmTfKYcf0COX3pIww" autocomplete="off">        \n
+        <input type="hidden" name="_token" value="c4InrJ7bffaUPF68ECfLQuyjzWFgcSuhUAhoXIB3" autocomplete="off">        \n
         <div class="iapm-editor-grid">\n
             <section class="panel panel-default" aria-labelledby="iapm-delivery-heading">\n
                 <div class="panel-heading" id="iapm-delivery-heading"><i class="fa fa-paper-plane"></i> Delivery and timing</div>\n
@@ -1516,7 +1516,7 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }\n
                                                 <div class="form-group iapm-narrow-field">\n
                             <label for="iapm-action-maximum_sends">Maximum sends</label>\n
                             <input type="number" id="iapm-action-maximum_sends" name="maximum_sends" class="form-control" value="" aria-describedby="iapm-action-maximum_sends-help">\n
-                                                        <p class="iapm-hint" id="iapm-action-maximum_sends-help">Blank is unlimited, subject to the policy cap. 1 sends only once.</p>\n
+                                                        <p class="iapm-hint" id="iapm-action-maximum_sends-help">Blank = unlimited, subject to the policy cap. 1 sends only once.</p>\n
                         </div>\n
                                                 <div class="form-group iapm-narrow-field">\n
                             <label for="iapm-action-sort_order">Sort order</label>\n
@@ -1614,18 +1614,18 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }\n
 \n
 </body>\n
 </html>\n
-' [UTF-8](length: 102761) contains "Blank = unlimited" [ASCII](length: 17).
+' [UTF-8](length: 102766) contains "Blank = inherit" [ASCII](length: 15).
 
-/package/tests/Feature/BlankMeansUnlimitedTest.php:93
+/package/tests/Feature/BlankMeansUnlimitedTest.php:94
 /package/vendor/phpunit/phpunit/phpunit:104
 
-2) LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature\InterfaceMatrixRowActionsTest::test_the_interface_name_links_to_the_librenms_port_page
+2) LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature\SettingsAndConsistencyTest::test_bulk_delete_buttons_start_disabled
 Failed asserting that '<!DOCTYPE HTML>\n
 <html lang="en">\n
 <head>\n
     <meta charset="utf-8">\n
     <meta http-equiv="X-UA-Compatible" content="IE=edge">\n
-    <title>IAPM Interface Matrix | LibreNMS</title>\n
+    <title>Edit IAPM Policy | LibreNMS</title>\n
     <base href="/">\n
     <meta http-equiv="content-type" content="text/html; charset=utf-8">\n
     <meta name="viewport" content="width=device-width, initial-scale=1.0">\n
@@ -1636,7 +1636,7 @@ Failed asserting that '<!DOCTYPE HTML>\n
         <link rel="shortcut icon" href="http://localhost/images/favicon.ico">\n
     \n
     <link rel="manifest" href="http://localhost/images/manifest.json" crossorigin="use-credentials">\n
-    <meta name="csrf-token" content="c1KS5G0Q8IZezZBkuUHCzu1A8omnZzzjDgu45lRC">\n
+    <meta name="csrf-token" content="uIL6zerkCIjPn9DpfujDejSszYTSVssp2X1wTmgC">\n
     <meta name="msapplication-config" content="http://localhost/images/browserconfig.xml">\n
     <meta name="theme-color" content="#ffffff">\n
 \n
@@ -1895,11 +1895,7 @@ Failed asserting that '<!DOCTYPE HTML>\n
                        data-toggle="dropdown"><i class="fa fa-server fa-fw fa-lg fa-nav-icons"\n
                                                  aria-hidden="true"></i> <span>Devices</span></a>\n
                     <ul class="dropdown-menu">\n
-                                        <li class="dropdown-submenu"><a href="http://localhost/devices"><i class="fa fa-server fa-fw fa-lg" aria-hidden="true"></i> All Devices</a>\n
-                                                <ul class="dropdown-menu scrollable-menu">\n
-                                                    <li><a href="http://localhost/devices?filter%5Btype%5D%5Beq%5D=proxy"><i class="fa fa-angle-double-right fa-fw fa-lg" aria-hidden="true"></i> Proxy</a></li>\n
-                                                </ul>\n
-                                            </li>\n
+                                        <li><a href="#"><i class="fa fa-server fa-fw fa-lg" aria-hidden="true"></i> No Devices</a>\n
                     \n
                                                                                                                                 <li role="presentation" class="divider"></li>\n
                         <li><a href="http://localhost/outages"><i class="fa fa-exclamation-triangle fa-fw fa-lg"\n
@@ -1989,7 +1985,7 @@ Failed asserting that '<!DOCTYPE HTML>\n
                             <li role="presentation" class="divider"></li>\n
                             \n
                             <li><a href="http://localhost/ports/detail?filter%5Bstate%5D%5Beq%5D=down"><i class="fa fa-arrow-circle-down fa-fw fa-lg"\n
-                                                                           aria-hidden="true"></i> Down 1\n
+                                                                           aria-hidden="true"></i> Down 0\n
                                 </a></li>\n
                             <li><a href="http://localhost/ports/detail?filter%5Bstate%5D%5Beq%5D=shutdown&amp;filter%5Bdisabled%5D%5Beq%5D=0&amp;filter%5Bignore%5D%5Beq%5D=0&amp;filter%5Bdeleted%5D%5Beq%5D=0"><i\n
                                         class="fa fa-arrow-circle-o-down fa-fw fa-lg"\n
@@ -2099,7 +2095,7 @@ Failed asserting that '<!DOCTYPE HTML>\n
                     <a href="#" class="dropdown-toggle" data-hover="dropdown" data-toggle="dropdown">\n
                         <i class="fa fa-user fa-fw fa-lg fa-nav-icons" aria-hidden="true"></i>\n
                         <span class="badge badge-navbar-user count-notif badge-default"></span>\n
-                        <span class="tw:md:hidden tw:2xl:inline-block"><small>reinger.giovanny</small></span>\n
+                        <span class="tw:md:hidden tw:2xl:inline-block"><small>mgoyette</small></span>\n
                         <span class="visible-xs-inline-block">User</span>\n
                     </a>\n
                     <ul class="dropdown-menu">\n
@@ -2183,7 +2179,7 @@ Failed asserting that '<!DOCTYPE HTML>\n
                             </a>\n
 \n
                             <form id="logout-form" action="http://localhost/logout" method="POST" style="display: none;">\n
-                                <input type="hidden" name="_token" value="c1KS5G0Q8IZezZBkuUHCzu1A8omnZzzjDgu45lRC" autocomplete="off">\n
+                                <input type="hidden" name="_token" value="uIL6zerkCIjPn9DpfujDejSszYTSVssp2X1wTmgC" autocomplete="off">\n
                             </form>\n
                         </li>\n
                     </ul>\n
@@ -2680,712 +2676,64 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }\n
             clearTimeout(timer);\n
             if (term.length < 2) { close(); return; }\n
             timer = setTimeout(function () {\n
-                fetch(form.dataset.iapmQuickfind + '?q=' + encodeURIComponent(term), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })\n
-                    .then(function (r) { return r.ok ? r.json() : []; })\n
-                    .then(function (list) {\n
-                        results.innerHTML = '';\n
-                        if (! list.length) { close(); return; }\n
-                        list.forEach(function (item) {\n
-                            var a = document.createElement('a');\n
-                            a.className = 'list-group-item';\n
-                            a.setAttribute('role', 'option');\n
-                            a.textContent = item.label;\n
-                            a.href = form.dataset.iapmQuickfindTarget + '?port_id=' + encodeURIComponent(item.id);\n
-                            results.appendChild(a);\n
-                        });\n
-                        results.style.display = 'block';\n
-                        input.setAttribute('aria-expanded', 'true');\n
-                    })\n
-                    .catch(close);\n
-            }, 200);\n
-        });\n
+</tbody></table></div>\n
+<hr>\n
+<section id="assignments">\n
+<h2>Interface assignments\n
+    <a class="btn btn-primary btn-sm" href="http://localhost/plugin/interface-alert-policy-manager/policies/35/edit?assignment=new#assignments"><i class="fa fa-plus"></i> Add assignment</a>\n
+</h2>\n
+<p class="iapm-hint">Assignments define which interfaces use this policy. Specific matches take precedence over broad ones: port, port group, device, device group, location, regex, interface type, then default.</p>\n
+<div class="alert alert-warning"><strong>No interfaces use this policy yet.</strong> Add an assignment, usually a default assignment for the catch-all policy.</div>\n
 \n
-        input.addEventListener('keydown', function (e) {\n
-            if (e.key === 'Escape') { close(); }\n
-            // Enter keeps its existing behaviour: submit the name search.\n
-        });\n
-        document.addEventListener('click', function (e) { if (! form.contains(e.target)) { close(); } });\n
-    });\n
-\n
-    // --- Delegated confirmation for destructive actions (P3-6) ---\n
-    // A delegated listener rather than inline onsubmit/onclick, so the plugin\n
-    // stays usable under a Content-Security-Policy without 'unsafe-inline'.\n
-    // data-iapm-confirm may sit on the form or on the submitting control.\n
-    document.addEventListener('submit', function (e) {\n
-        var form = e.target;\n
-        if (! form.matches || ! form.matches('form')) { return; }\n
-        var source = (e.submitter && e.submitter.dataset && e.submitter.dataset.iapmConfirm) ? e.submitter : form;\n
-        var message = source.dataset ? source.dataset.iapmConfirm : null;\n
-        if (message && ! window.confirm(message)) {\n
-            e.preventDefault();\n
-            e.stopImmediatePropagation();\n
-        }\n
-    }, true);\n
-\n
-    // --- Name-for-id type-ahead (P1-2) ---\n
-    // One implementation for every picker; markup comes from partials/typeahead.\n
-    document.querySelectorAll('[data-iapm-typeahead]').forEach(function (root) {\n
-        var input = root.querySelector('[data-iapm-typeahead-input]');\n
-        var hidden = root.querySelector('[data-iapm-typeahead-value]');\n
-        var results = root.querySelector('[data-iapm-typeahead-results]');\n
-        var endpoint = root.dataset.iapmTypeahead;\n
-        var dependsOn = root.dataset.iapmTypeaheadDepends;\n
-        var timer = null;\n
-        var requestSerial = 0;\n
-        var loadingMore = false;\n
-\n
-        function close() { results.style.display = 'none'; results.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); }\n
-\n
-        function addResult(item) {\n
-            var a = document.createElement('a');\n
-            a.href = '#';\n
-            a.className = 'list-group-item';\n
-            a.setAttribute('role', 'option');\n
-            a.textContent = item.label;\n
-            a.addEventListener('click', function (e) { e.preventDefault(); choose(item); });\n
-            results.appendChild(a);\n
-        }\n
-\n
-        function load(term, offset, append, serial) {\n
-            if (append && loadingMore) { return; }\n
-            if (append) { loadingMore = true; }\n
-            var url = endpoint + '?q=' + encodeURIComponent(term) + (offset ? '&offset=' + encodeURIComponent(offset) : '');\n
-            if (dependsOn) {\n
-                var dep = document.getElementById(dependsOn);\n
-                if (dep && dep.value) { url += '&device_id=' + encodeURIComponent(dep.value); }\n
-            }\n
-            fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })\n
-                .then(function (r) { return r.ok ? r.json() : []; })\n
-                .then(function (payload) {\n
-                    if (serial !== requestSerial) { return; }\n
-                    var list = Array.isArray(payload) ? payload : (payload.items || []);\n
-                    var hasMore = ! Array.isArray(payload) && !! payload.has_more;\n
-                    var nextOffset = ! Array.isArray(payload) ? payload.next_offset : 0;\n
-                    if (! append) { results.innerHTML = ''; }\n
-                    var oldMore = results.querySelector('[data-iapm-typeahead-more]');\n
-                    if (oldMore) { oldMore.remove(); }\n
-                    if (! list.length && ! append) {\n
-                        var none = document.createElement('span');\n
-                        none.className = 'list-group-item iapm-hint';\n
-                        none.textContent = 'No matches';\n
-                        results.appendChild(none);\n
-                    }\n
-                    list.forEach(addResult);\n
-                    if (hasMore) {\n
-                        var more = document.createElement('button');\n
-                        more.type = 'button';\n
-                        more.className = 'list-group-item iapm-typeahead-more';\n
-                        more.dataset.iapmTypeaheadMore = '1';\n
-                        more.textContent = 'Load more interfaces';\n
-                        more.addEventListener('click', function () { load(term, nextOffset, true, serial); });\n
-                        results.appendChild(more);\n
-                    }\n
-                    results.style.display = 'block';\n
-                    input.setAttribute('aria-expanded', 'true');\n
-                })\n
-                .catch(function () { if (serial === requestSerial) { close(); } })\n
-                .finally(function () { if (append) { loadingMore = false; } });\n
-        }\n
-\n
-        // The port picker keeps a visible raw-id box alongside the search, for\n
-        // operators who already have the number. data-iapm-mirror keeps the two\n
-        // in step in both directions rather than making them rival inputs.\n
-        var mirror = hidden.dataset.iapmMirror ? document.querySelector(hidden.dataset.iapmMirror) : null;\n
-\n
-        function choose(item) {\n
-            requestSerial++;\n
-            input.value = item.label;\n
-            hidden.value = item.id;\n
-            if (mirror) { mirror.value = item.id; }\n
-            close();\n
-            // Filter bars submit on change; let listeners know the id moved.\n
-            hidden.dispatchEvent(new Event('change', { bubbles: true }));\n
-        }\n
-\n
-        if (mirror) {\n
-            mirror.addEventListener('input', function () {\n
-                // A hand-typed id wins; the stale label beside it would lie.\n
-                if (mirror.value !== hidden.value) { hidden.value = mirror.value; input.value = ''; }\n
-            });\n
-        }\n
-\n
-        input.addEventListener('input', function () {\n
-            // Clearing the box clears the id: a stale id behind an edited label\n
-            // is how these pickers silently filter by the wrong thing.\n
-            hidden.value = '';\n
-            var term = input.value.trim();\n
-            clearTimeout(timer);\n
-            requestSerial++;\n
-            var serial = requestSerial;\n
-            if (term === '') { close(); return; }\n
-            timer = setTimeout(function () {\n
-                load(term, 0, false, serial);\n
-            }, 200);\n
-        });\n
-\n
-        results.addEventListener('scroll', function () {\n
-            if (results.scrollTop + results.clientHeight >= results.scrollHeight - 40) {\n
-                var more = results.querySelector('[data-iapm-typeahead-more]');\n
-                if (more) { more.click(); }\n
-            }\n
-        });\n
-\n
-        input.addEventListener('keydown', function (e) {\n
-            if (e.key === 'Escape') { close(); return; }\n
-            if (e.key !== 'ArrowDown' && e.key !== 'Enter') { return; }\n
-            var first = results.querySelector('a');\n
-            if (! first) { return; }\n
-            e.preventDefault();\n
-            first.focus();\n
-            if (e.key === 'Enter') { first.click(); }\n
-        });\n
-\n
-        document.addEventListener('click', function (e) {\n
-            if (! root.contains(e.target)) { close(); }\n
-        });\n
-    });\n
-\n
-    // --- Ingestion token reveal / copy (P0-5) ---\n
-    // Slots carry the surrounding text in data-iapm-token-template with a\n
-    // __TOKEN__ marker, so one mechanism serves both the bare token field on\n
-    // Settings and the paste-ready header block on the Setup Helper.\n
-    function tokenSlots() { return document.querySelectorAll('[data-iapm-token-template]'); }\n
-    function paintToken(value) {\n
-        tokenSlots().forEach(function (slot) {\n
-            var text = slot.dataset.iapmTokenTemplate.replace('__TOKEN__', value);\n
-            if ('value' in slot && slot.tagName !== 'DIV') { slot.value = text; } else { slot.textContent = text; }\n
-        });\n
-    }\n
-    // The assets partial is rendered from the navigation, before the rest of\n
-    // the page markup. Delegate clicks so controls appearing later in the DOM\n
-    // (including the Settings token controls) are still wired up.\n
-    document.addEventListener('click', function (e) {\n
-        var btn = e.target.closest && e.target.closest('[data-iapm-reveal-token]');\n
-        if (! btn) { return; }\n
-        e.preventDefault();\n
-        var mask = btn.dataset.iapmTokenMask || '••••••••••••••••';\n
-        if (btn.dataset.shown === '1') {\n
-            paintToken(mask);\n
-            btn.dataset.shown = '0';\n
-            btn.innerHTML = '<i class="fa fa-eye"></i> Reveal';\n
-            return;\n
-        }\n
-        btn.disabled = true;\n
-        fetch(btn.dataset.iapmRevealToken, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })\n
-            .then(function (r) { if (! r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })\n
-            .then(function (data) {\n
-                paintToken(data.token);\n
-                btn.dataset.shown = '1';\n
-                btn.innerHTML = '<i class="fa fa-eye-slash"></i> Hide';\n
-                btn.title = '';\n
-            })\n
-            .catch(function (err) {\n
-                btn.innerHTML = '<i class="fa fa-exclamation-triangle"></i> Unavailable';\n
-                btn.title = 'Could not read the token (' + err.message + '). You may not have permission to manage IAPM settings.';\n
-            })\n
-            .finally(function () { btn.disabled = false; });\n
-    });\n
-\n
-    // navigator.clipboard is unavailable on plain HTTP and can be rejected by\n
-    // browser permissions. Keep copy functional on those LibreNMS installs by\n
-    // falling back to the long-supported selection API.\n
-    function legacyCopy(text) {\n
-        return new Promise(function (resolve, reject) {\n
-            var area = document.createElement('textarea');\n
-            area.value = text;\n
-            area.setAttribute('readonly', '');\n
-            area.style.position = 'fixed';\n
-            area.style.opacity = '0';\n
-            document.body.appendChild(area);\n
-            area.select();\n
-            area.setSelectionRange(0, area.value.length);\n
-            try {\n
-                if (document.execCommand('copy')) { resolve(); } else { reject(new Error('Copy command was rejected')); }\n
-            } catch (err) {\n
-                reject(err);\n
-            } finally {\n
-                document.body.removeChild(area);\n
-            }\n
-        });\n
-    }\n
-    function copyText(text) {\n
-        if (navigator.clipboard && navigator.clipboard.writeText) {\n
-            return navigator.clipboard.writeText(text).catch(function () { return legacyCopy(text); });\n
-        }\n
-\n
-        return legacyCopy(text);\n
-    }\n
-    function showCopied(btn, includeLabel) {\n
-        var original = btn.innerHTML;\n
-        btn.innerHTML = '<i class="fa fa-check"></i>' + (includeLabel ? ' Copied' : '');\n
-        setTimeout(function () { btn.innerHTML = original; }, includeLabel ? 1500 : 1200);\n
-    }\n
-    function showCopyFailure(btn, err) {\n
-        btn.title = 'Could not copy automatically (' + err.message + '). Select the value and copy it manually.';\n
-    }\n
-\n
-    // Delegation is required here for the same reason as token reveal: most\n
-    // copy buttons are parsed after this shared partial runs.\n
-    document.addEventListener('click', function (e) {\n
-        var btn = e.target.closest && e.target.closest('[data-iapm-copy-text], [data-copy]');\n
-        if (! btn) { return; }\n
-        e.preventDefault();\n
-        var text;\n
-        var includeLabel = false;\n
-        if (btn.hasAttribute('data-iapm-copy-text')) {\n
-            text = btn.dataset.iapmCopyText;\n
-        } else {\n
-            var el = document.querySelector(btn.dataset.copy);\n
-            if (! el) { return; }\n
-            text = ('value' in el && el.tagName !== 'DIV') ? el.value : el.textContent;\n
-            includeLabel = true;\n
-        }\n
-        copyText(text)\n
-            .then(function () { btn.title = ''; showCopied(btn, includeLabel); })\n
-            .catch(function (err) { showCopyFailure(btn, err); });\n
-    });\n
-\n
-    // --- Auto-refresh (opt in with an element #iapm-autorefresh[data-interval]) ---\n
-    // P4-3: the checkbox gave no indication of its interval, when the page last\n
-    // loaded, or when the next refresh was due. All three are now shown, and the\n
-    // interval is selectable and remembered per page.\n
-    var ar = document.getElementById('iapm-autorefresh');\n
-    if (ar) {\n
-        var key = 'iapm.autorefresh.' + location.pathname;\n
-        var intervalKey = key + '.interval';\n
-        var box = ar.querySelector('input[type=checkbox]');\n
-        var intervalSelect = ar.querySelector('[data-iapm-refresh-interval]');\n
-        var stamp = ar.querySelector('.iapm-updated');\n
-        var loadedAt = Date.now();\n
-        var timer = null;\n
-\n
-        function interval() {\n
-            var stored = parseInt(localStorage.getItem(intervalKey) || '', 10);\n
-            var chosen = intervalSelect ? parseInt(intervalSelect.value, 10) : stored;\n
-            return chosen || stored || parseInt(ar.dataset.interval || '30', 10);\n
-        }\n
-\n
-        if (intervalSelect) {\n
-            var stored = localStorage.getItem(intervalKey);\n
-            if (stored) { intervalSelect.value = stored; }\n
-            intervalSelect.addEventListener('change', function () {\n
-                localStorage.setItem(intervalKey, intervalSelect.value);\n
-                schedule(); tick();\n
-            });\n
-        }\n
-        if (box) {\n
-            box.checked = localStorage.getItem(key) === '1';\n
-            box.addEventListener('change', function () {\n
-                localStorage.setItem(key, box.checked ? '1' : '0');\n
-                schedule(); tick();\n
-            });\n
-        }\n
-\n
-        function tick() {\n
-            if (! stamp) { return; }\n
-            var age = Math.round((Date.now() - loadedAt) / 1000);\n
-            var text = 'loaded ' + age + 's ago';\n
-            if (box && box.checked) {\n
-                text += ' · next refresh in ' + Math.max(0, interval() - age) + 's';\n
-            } else {\n
-                text += ' · auto-refresh off';\n
-            }\n
-            stamp.textContent = text;\n
-        }\n
-\n
-        function schedule() {\n
-            if (timer) { clearTimeout(timer); timer = null; }\n
-            if (box && box.checked) { timer = setTimeout(function () { location.reload(); }, interval() * 1000); }\n
-        }\n
-\n
-        setInterval(tick, 1000);\n
-        schedule();\n
-        tick();\n
-    }\n
-    }\n
-\n
-    // This partial is emitted by the navigation before each page's controls.\n
-    // Initializing after parsing makes every eager widget (port pickers,\n
-    // counters, quick-find, bulk controls and auto-refresh) see the full page.\n
-    if (document.readyState === 'loading') {\n
-        document.addEventListener('DOMContentLoaded', initializeIapmControls);\n
-    } else {\n
-        initializeIapmControls();\n
-    }\n
-})();\n
-</script>\n
-\n
-<div class="iapm-nav clearfix" style="margin-bottom:10px;">\n
-    <ul class="nav nav-pills" style="display:inline-block;">\n
-        <li class=""><a href="http://localhost/plugin/interface-alert-policy-manager"><i class="fa fa-dashboard fa-fw" aria-hidden="true"></i> Overview</a></li>\n
-        <li class="dropdown active">\n
-            <a class="dropdown-toggle" data-toggle="dropdown" href="#"><i class="fa fa-heartbeat fa-fw" aria-hidden="true"></i> Monitor <span class="caret"></span></a>\n
-            <ul class="dropdown-menu">\n
-                \n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/incidents"><i class="fa fa-exclamation-circle fa-fw" aria-hidden="true"></i> Incidents</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix"><i class="fa fa-table fa-fw" aria-hidden="true"></i> Interface Matrix</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/stats"><i class="fa fa-line-chart fa-fw" aria-hidden="true"></i> Statistics &amp; SLA</a></li>\n
-            </ul>\n
-        </li>\n
-        <li class="dropdown ">\n
-            <a class="dropdown-toggle" data-toggle="dropdown" href="#"><i class="fa fa-sliders fa-fw" aria-hidden="true"></i> Configure <span class="caret"></span></a>\n
-            <ul class="dropdown-menu">\n
-                <li class="dropdown-header">Follow in order</li>\n
-                \n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/settings#ingestion-token"><i class="fa fa-key fa-fw" aria-hidden="true"></i> 0. Generate ingestion token</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/destinations"><i class="fa fa-paper-plane fa-fw" aria-hidden="true"></i> 1. Destinations</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/policies"><i class="fa fa-list-alt fa-fw" aria-hidden="true"></i> 2. Policies</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/setup-helper"><i class="fa fa-plug fa-fw" aria-hidden="true"></i> 3. LibreNMS setup helper</a></li>\n
-            </ul>\n
-        </li>\n
-        <li class="dropdown ">\n
-            <a class="dropdown-toggle" data-toggle="dropdown" href="#"><i class="fa fa-wrench fa-fw" aria-hidden="true"></i> Tools <span class="caret"></span></a>\n
-            <ul class="dropdown-menu">\n
-                <li class="dropdown-header">Templates</li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/message-templates"><i class="fa fa-comment fa-fw" aria-hidden="true"></i> Message Templates</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/sms-content-filters"><i class="fa fa-filter fa-fw" aria-hidden="true"></i> SMS Content Filters</a></li>                <li><a href="http://localhost/plugin/interface-alert-policy-manager/template-preview"><i class="fa fa-eye fa-fw" aria-hidden="true"></i> Template Preview</a></li>\n
-                <li role="separator" class="divider"></li>\n
-                <li class="dropdown-header">Test &amp; validate</li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/policy-test"><i class="fa fa-check-square-o fa-fw" aria-hidden="true"></i> Policy Test</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/tools/simulate"><i class="fa fa-flask fa-fw" aria-hidden="true"></i> Synthetic Simulation</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/tools/real-simulations"><i class="fa fa-bolt fa-fw" aria-hidden="true"></i> <strong>Real Simulation</strong></a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/comparison-report"><i class="fa fa-balance-scale fa-fw" aria-hidden="true"></i> Comparison Report</a></li>\n
-                <li role="separator" class="divider"></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/import"><i class="fa fa-exchange fa-fw" aria-hidden="true"></i> Import / Export</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/setup-helper"><i class="fa fa-life-ring fa-fw" aria-hidden="true"></i> Setup Helper</a></li>\n
-            </ul>\n
-        </li>\n
-        <li class="dropdown ">\n
-            <a class="dropdown-toggle" data-toggle="dropdown" href="#"><i class="fa fa-file-text-o fa-fw" aria-hidden="true"></i> Logs <span class="caret"></span></a>\n
-            <ul class="dropdown-menu">\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/delivery-log"><i class="fa fa-paper-plane-o fa-fw" aria-hidden="true"></i> Delivery Log</a></li>\n
-                <li><a href="http://localhost/plugin/interface-alert-policy-manager/audit-log"><i class="fa fa-history fa-fw" aria-hidden="true"></i> Audit Log</a></li>\n
-            </ul>\n
-        </li>\n
-        <li class=""><a href="http://localhost/plugin/interface-alert-policy-manager/settings"><i class="fa fa-cog fa-fw" aria-hidden="true"></i> Settings</a></li>\n
-    </ul>\n
-    <span class="pull-right" style="margin-top:4px;">\n
-        \n
-        <form class="form-inline iapm-hide-sm" method="get" action="http://localhost/plugin/interface-alert-policy-manager/interface-matrix" style="display:inline-block;margin-right:8px;position:relative;"\n
-              data-iapm-quickfind="http://localhost/plugin/interface-alert-policy-manager/lookup/ports" data-iapm-quickfind-target="http://localhost/plugin/interface-alert-policy-manager/interface-matrix">\n
-            <label class="sr-only" for="iapm-quickfind">Find an interface</label>\n
-            <input class="form-control input-sm iapm-quickfind" id="iapm-quickfind" name="search" autocomplete="off"\n
-                   role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="iapm-quickfind-results"\n
-                   placeholder="Find interface…" value="">\n
-            <div id="iapm-quickfind-results" class="list-group" role="listbox" data-iapm-quickfind-results\n
-                 style="display:none;position:absolute;z-index:1050;right:0;min-width:380px;max-height:300px;overflow:auto;box-shadow:0 2px 8px rgba(0,0,0,.2);"></div>\n
-        </form>\n
-        <span class="label label-default" style="margin-right:4px;" title="Installed Interface Alert Policy Manager package version">IAPM v1.6.5</span>\n
-                    <span class="label label-success" title="Notifications are delivered to the gateway."><i class="fa fa-bolt"></i> LIVE</span>\n
-            </span>\n
+</section>\n
+<hr>\n
+<h2>Manage this policy</h2>\n
+<div class="iapm-form-footer" style="margin-bottom:14px;">\n
+    <button type="submit" form="iapm-policy-form" class="btn btn-primary"><i class="fa fa-save"></i> Save policy</button>\n
+    <a class="btn btn-default" href="http://localhost/plugin/interface-alert-policy-manager/policies">Cancel</a>\n
+    <form method="post" action="http://localhost/plugin/interface-alert-policy-manager/policies/35/clone" style="display:inline;"><input type="hidden" name="_token" value="uIL6zerkCIjPn9DpfujDejSszYTSVssp2X1wTmgC" autocomplete="off"><button class="btn btn-default"><i class="fa fa-copy"></i> Clone policy</button></form>\n
+    <span class="iapm-hint">Save applies every policy field above. Clone creates a disabled copy with the same timing and actions.</span>\n
 </div>\n
 \n
-<h1 class="iapm-page-title">Interface Matrix</h1>\n
-<p class="iapm-hint" style="max-width:70em;">Every interface LibreNMS knows about, and <strong>which policy would apply to it</strong>. Use it to find interfaces nothing covers, to bulk-assign a policy, and to look up a <code>port_id</code> for the tools that need one. Policy, assignment-source and no-policy filtering reads the materialized cache below.</p>\n
 \n
-<form class="panel panel-default iapm-filter-bar" method="get">\n
+<div class="panel panel-danger">\n
+    <div class="panel-heading">Delete policy</div>\n
     <div class="panel-body">\n
-        <div class="iapm-field-grid">\n
-            <div class="form-group">\n
-                <label for="iapm-f-search">Interface or description</label>\n
-                <input class="form-control" id="iapm-f-search" name="search" value="" placeholder="e.g. xe-0/0/1 or CUST:">\n
-            </div>\n
-            <div class="form-group">\n
-                <label for="iapm-f-devicegroup">Device group</label>\n
-                <select class="form-control" id="iapm-f-devicegroup" name="device_group_id"><option value="">Any device group</option></select>\n
-            </div>\n
-            <div class="form-group iapm-typeahead" style="position:relative;"\n
-     data-iapm-typeahead="http://localhost/plugin/interface-alert-policy-manager/lookup/devices">\n
-    <label for="iapm-f-device" class="">Device</label>\n
-    <input type="text" class="form-control" id="iapm-f-device"\n
-           autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"\n
-           aria-controls="iapm-f-device-results"\n
-           placeholder="Type a hostname…" value=""\n
-           data-iapm-typeahead-input\n
-           >\n
-    <input type="hidden" name="device_id" value="" data-iapm-typeahead-value>\n
-    <div id="iapm-f-device-results" class="list-group iapm-typeahead-results" role="listbox" data-iapm-typeahead-results></div>\n
-    </div>\n
-            <div class="form-group">\n
-                <label for="iapm-f-location">Location</label>\n
-                <select class="form-control" id="iapm-f-location" name="location_id"><option value="">Any location</option></select>\n
-            </div>\n
-            <div class="form-group">\n
-                <label for="iapm-f-policy">Policy</label>\n
-                <select class="form-control" id="iapm-f-policy" name="policy_id"><option value="">Any policy</option></select>\n
-            </div>\n
-            <div class="form-group">\n
-                <label for="iapm-f-source">Assignment source</label>\n
-                <select class="form-control" id="iapm-f-source" name="assignment_source"><option value="">Any source</option><option >port</option><option >port_group</option><option >device</option><option >device_group</option><option >location</option><option >ifalias_regex</option><option >ifname_regex</option><option >interface_type</option><option >default</option><option >configured_default</option></select>\n
-            </div>\n
-            <div class="form-group">\n
-                <label for="iapm-f-admin">Admin status</label>\n
-                <select class="form-control" id="iapm-f-admin" name="admin"><option value="">Any admin</option><option >up</option><option >down</option></select>\n
-            </div>\n
-            <div class="form-group">\n
-                <label for="iapm-f-oper">Operational status</label>\n
-                <select class="form-control" id="iapm-f-oper" name="oper"><option value="">Any oper</option><option >up</option><option >down</option></select>\n
-            </div>\n
-            <div class="form-group">\n
-                <label for="iapm-f-incident">Incident state</label>\n
-                <select class="form-control" id="iapm-f-incident" name="incident_state"><option value="">Any incident</option><option >pending</option><option >active</option><option >acknowledged</option><option >suppressed</option><option >recovered</option></select>\n
-            </div>\n
-        </div>\n
-        <div class="iapm-checkbox-row">\n
-                        <label class="checkbox-inline" for="iapm-f-no_policy"><input type="checkbox" id="iapm-f-no_policy" name="no_policy" value="1" > No policy</label>\n
-                        <label class="checkbox-inline" for="iapm-f-active_incident"><input type="checkbox" id="iapm-f-active_incident" name="active_incident" value="1" > Open incident</label>\n
-                        <label class="checkbox-inline" for="iapm-f-muted"><input type="checkbox" id="iapm-f-muted" name="muted" value="1" > Muted</label>\n
-                        <span class="iapm-filter-actions">\n
-                <button class="btn btn-primary"><i class="fa fa-filter"></i> Filter</button>\n
-                <a class="btn btn-default" href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix">Reset</a>\n
-                <a class="btn btn-default" href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix/export"><i class="fa fa-download"></i> Export CSV</a>\n
-            </span>\n
-        </div>\n
-    </div>\n
-</form>\n
-\n
-<div class="panel panel-default" id="iapm-cache-panel">\n
-    <div class="panel-body">\n
-        <div class="iapm-toolbar" style="margin-bottom:0;">\n
-            <span>\n
-                <i class="fa fa-database"></i>\n
-                <strong>Policy cache</strong>\n
-                <span class="iapm-hint">&mdash; the policy, assignment-source and no-policy filters read it.</span>\n
-            </span>\n
-            <span class="spacer"></span>\n
-            <span id="iapm-cache-state">\n
-                                    <span class="iapm-hint">Never rebuilt.</span>\n
-                            </span>\n
-            <form method="post" action="http://localhost/plugin/interface-alert-policy-manager/interface-matrix/rebuild-cache" data-iapm-busy style="display:inline;"><input type="hidden" name="_token" value="c1KS5G0Q8IZezZBkuUHCzu1A8omnZzzjDgu45lRC" autocomplete="off">                <button class="btn btn-default btn-sm" id="iapm-cache-rebuild" data-busy="Starting…" ><i class="fa fa-refresh"></i> Rebuild cache</button>\n
+                    <form method="post" action="http://localhost/plugin/interface-alert-policy-manager/policies/35" id="iapm-delete-policy"\n
+                  data-iapm-confirm=" Delete &quot;Policy 35649&quot;? Its 0 notification action(s) and 0 assignment(s) are deleted with it, and any interfaces they matched stop being covered until another assignment picks them up. This cannot be undone.">\n
+                <input type="hidden" name="_token" value="uIL6zerkCIjPn9DpfujDejSszYTSVssp2X1wTmgC" autocomplete="off"> <input type="hidden" name="_method" value="DELETE">                                <p class="iapm-hint">This policy has no active incidents. Its 0 action(s) and 0 assignment(s) are deleted with it.</p>\n
+                                <button class="btn btn-danger"><i class="fa fa-trash"></i> Delete policy</button>\n
             </form>\n
-        </div>\n
-                <div id="iapm-cache-progress" class="alert alert-info" style="margin:10px 0 0;display:none;"></div>\n
             </div>\n
 </div>\n
-\n
-<div class="iapm-result-bar">\n
-    <p class="iapm-result-count" data-iapm-total="1">\n
-                    Showing <strong>1</strong>&ndash;<strong>1</strong>\n
-            of <strong>1</strong> interface.\n
-            </p>\n
-    \n
-        <span class="iapm-per-page">\n
-        <label for="iapm-per-page-interface">Rows per page</label>\n
-        <select class="form-control input-sm" id="iapm-per-page-interface" data-iapm-navigate>\n
-                        <option value="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?per_page=25&amp;page=1" >25</option>\n
-                        <option value="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?per_page=50&amp;page=1" selected>50</option>\n
-                        <option value="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?per_page=100&amp;page=1" >100</option>\n
-                        <option value="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?per_page=250&amp;page=1" >250</option>\n
-                    </select>\n
-    </span>\n
-    </div>\n
-\n
-<form method="post" action="http://localhost/plugin/interface-alert-policy-manager/interface-matrix/bulk"><input type="hidden" name="_token" value="c1KS5G0Q8IZezZBkuUHCzu1A8omnZzzjDgu45lRC" autocomplete="off">\n
-<div class="panel panel-default iapm-bulk-bar">\n
-    <div class="panel-heading"><i class="fa fa-tasks"></i> Bulk action <span class="iapm-hint">&mdash; applies to the interfaces ticked below</span></div>\n
-    <div class="panel-body">\n
-        <div class="iapm-field-grid">\n
-            <div class="form-group">\n
-                <label for="iapm-bulk-op">Operation</label>\n
-                <select class="form-control" id="iapm-bulk-op" name="operation"><option value="assign">Assign policy</option><option value="remove_assignment">Remove explicit assignment</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select>\n
-            </div>\n
-            <div class="form-group">\n
-                <label for="iapm-bulk-policy">Policy to assign</label>\n
-                <select class="form-control" id="iapm-bulk-policy" name="policy_id"><option value="">Choose policy</option></select>\n
-            </div>\n
-            <div class="form-group">\n
-                <label for="iapm-bulk-muted">Mute until</label>\n
-                <input type="datetime-local" class="form-control" id="iapm-bulk-muted" name="muted_until" aria-describedby="iapm-bulk-muted-help">\n
-                <p class="iapm-hint" id="iapm-bulk-muted-help">Required for Mute. Notifications resume after this time.</p>\n
-            </div>\n
-            <div class="form-group">\n
-                <label class="iapm-invisible-label" for="iapm-bulk-apply">Apply</label>\n
-                <button class="btn btn-warning form-control" id="iapm-bulk-apply" data-iapm-bulk-button="matrix" disabled data-iapm-confirm="Apply this operation to the selected interfaces?">Apply to selected<span data-iapm-bulk-count></span></button>\n
-            </div>\n
-        </div>\n
-    </div>\n
-</div><div class="iapm-table-wrap" data-iapm-bulk-scope="matrix"><table class="table table-hover table-condensed iapm-sticky"><thead><tr>\n
-<th><input type="checkbox" aria-label="Select all interfaces on this page" data-iapm-toggle-all=".iapm-port"></th>\n
-<th class="iapm-num" >\n
-    <a href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?sort=port_id&amp;direction=asc&amp;page=1"\n
-       title="Sort by port_id (ascending)">\n
-        port_id\n
-                    <i class="fa fa-sort iapm-sort-idle" aria-hidden="true"></i>\n
-            </a>\n
-</th>\n
-<th class="" >\n
-    <a href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?sort=hostname&amp;direction=asc&amp;page=1"\n
-       title="Sort by Device (ascending)">\n
-        Device\n
-                    <i class="fa fa-sort iapm-sort-idle" aria-hidden="true"></i>\n
-            </a>\n
-</th>\n
-<th class="" >\n
-    <a href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?sort=ifName&amp;direction=asc&amp;page=1"\n
-       title="Sort by Interface (ascending)">\n
-        Interface\n
-                    <i class="fa fa-sort iapm-sort-idle" aria-hidden="true"></i>\n
-            </a>\n
-</th>\n
-<th class="" >\n
-    <a href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?sort=ifAlias&amp;direction=asc&amp;page=1"\n
-       title="Sort by Description (ascending)">\n
-        Description\n
-                    <i class="fa fa-sort iapm-sort-idle" aria-hidden="true"></i>\n
-            </a>\n
-</th>\n
-<th>Location</th>\n
-<th class="" >\n
-    <a href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?sort=admin&amp;direction=asc&amp;page=1"\n
-       title="Sort by Admin (ascending)">\n
-        Admin\n
-                    <i class="fa fa-sort iapm-sort-idle" aria-hidden="true"></i>\n
-            </a>\n
-</th>\n
-<th class="" >\n
-    <a href="http://localhost/plugin/interface-alert-policy-manager/interface-matrix?sort=oper&amp;direction=asc&amp;page=1"\n
-       title="Sort by Oper (ascending)">\n
-        Oper\n
-                    <i class="fa fa-sort iapm-sort-idle" aria-hidden="true"></i>\n
-            </a>\n
-</th>\n
-<th>Policy</th><th>Assignment source</th><th>Incident</th><th>Tools</th>\n
-</tr></thead><tbody>\n
-\n
-<tr>\n
-<td><input class="iapm-port" type="checkbox" name="port_ids[]" value="357" aria-label="Select olson-fay-macejkovic.pollich.com xe-0/0/4031"></td>\n
-<td class="iapm-num"><code>357</code> <button type="button" class="btn btn-link btn-xs" data-iapm-copy-text="357" title="Copy port_id 357" aria-label="Copy port_id 357"><i class="fa fa-copy"></i></button></td>\n
-<td><a href="http://localhost/device/103">olson-fay-macejkovic.pollich.com</a></td>\n
-<td><a href="http://localhost/device/device=103/tab=port/port=357" title="Open xe-0/0/4031 in LibreNMS">xe-0/0/4031</a></td>\n
-<td class="iapm-truncate" title="CUST: Example customer">CUST: Example customer</td>\n
-<td></td>\n
-<td>up</td>\n
-<td>down</td>\n
-<td><span class="text-warning">No policy</span></td>\n
-<td title=""><span class="iapm-hint">&mdash;</span></td>\n
-<td></td>\n
-<td class="iapm-actions" style="white-space:nowrap;">\n
-    <a class="btn btn-default btn-xs" href="http://localhost/plugin/interface-alert-policy-manager/policy-test?port_id=357" title="Policy Test for port_id 357" aria-label="Policy Test for xe-0/0/4031"><i class="fa fa-flask"></i></a>\n
-    <a class="btn btn-default btn-xs" href="http://localhost/plugin/interface-alert-policy-manager/tools/simulate?port_id=357" title="Simulate an alert for port_id 357" aria-label="Simulate an alert for xe-0/0/4031"><i class="fa fa-bolt"></i></a>\n
-    <a class="btn btn-default btn-xs" href="http://localhost/device/device=103/tab=port/port=357" title="Open in LibreNMS" aria-label="Open xe-0/0/4031 in LibreNMS"><i class="fa fa-external-link"></i></a>\n
-</td>\n
-</tr></tbody></table></div>\n
-</form>\n
+</div>\n
 <script>\n
 (function () {\n
-    // Watch for both UI-triggered and hourly scheduled rebuilds. When a new\n
-    // rebuilt_at value appears, reload this same URL so the table and active\n
-    // filters immediately read the newly materialized cache.\n
-    var panel = document.getElementById('iapm-cache-panel');\n
-    if (! panel) { return; }\n
-    var progress = document.getElementById('iapm-cache-progress');\n
-    var state = document.getElementById('iapm-cache-state');\n
-    var button = document.getElementById('iapm-cache-rebuild');\n
-    var timer = null;\n
-    var observedRebuiltAt = null;\n
-    var activePollMilliseconds = 2000;\n
-    var idlePollMilliseconds = 30000;\n
-\n
-    function render(data) {\n
-        if (data.status === 'stalled') {\n
-            progress.className = 'alert alert-danger';\n
-            progress.style.display = '';\n
-            progress.textContent = data.status_message || 'The rebuild stopped making progress. Retry it.';\n
-            button.disabled = false;\n
-            return idlePollMilliseconds;\n
-        }\n
-        if (data.running) {\n
-            progress.className = 'alert alert-info';\n
-            progress.style.display = '';\n
-            progress.textContent = data.total\n
-                ? 'Rebuilding… ' + data.progress.toLocaleString() + ' of ' + data.total.toLocaleString() + ' interfaces.'\n
-                : 'Rebuilding…';\n
-            button.disabled = true;\n
-            return activePollMilliseconds;\n
-        }\n
-        button.disabled = false;\n
-        if (data.status === 'failed') {\n
-            progress.className = 'alert alert-danger';\n
-            progress.style.display = '';\n
-            progress.textContent = 'Rebuild failed: ' + (data.error || 'unknown error');\n
-            return idlePollMilliseconds;\n
-        }\n
-        if (data.status === 'complete') {\n
-            if (data.rebuilt_at && observedRebuiltAt && data.rebuilt_at !== observedRebuiltAt) {\n
-                progress.className = 'alert alert-success';\n
-                progress.style.display = '';\n
-                progress.textContent = 'Rebuild complete. Refreshing the matrix…';\n
-                window.setTimeout(function () { window.location.reload(); }, 600);\n
-                return null;\n
-            }\n
-            if (data.rebuilt_at && ! observedRebuiltAt) {\n
-                window.location.reload();\n
-                return null;\n
-            }\n
-            progress.className = 'alert alert-success';\n
-            progress.style.display = 'none';\n
-            if (state && data.rebuilt_at_human) { state.textContent = 'Last rebuilt ' + data.rebuilt_at_human + '.'; }\n
-            return idlePollMilliseconds;\n
-        }\n
-        progress.style.display = 'none';\n
-        return idlePollMilliseconds;\n
+    function humanize(v) {\n
+        var s = parseInt(v, 10);\n
+        if (!s || s <= 0) return '';\n
+        if (s < 60) return '= ' + s + 's';\n
+        if (s < 3600) return '≈ ' + (Math.round(s / 6) / 10) + ' min';\n
+        return '≈ ' + (Math.round(s / 360) / 10) + ' h';\n
     }\n
-\n
-    function poll() {\n
-        fetch('http://localhost/plugin/interface-alert-policy-manager/interface-matrix/cache-status', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })\n
-            .then(function (r) { return r.json(); })\n
-            .then(function (data) {\n
-                var delay = render(data);\n
-                if (delay !== null) { timer = window.setTimeout(poll, delay); }\n
-            })\n
-            .catch(function () { timer = window.setTimeout(poll, idlePollMilliseconds); });\n
-    }\n
-\n
-    timer = window.setTimeout(poll, 30000);\n
-    if (button) {\n
-        button.form.addEventListener('submit', function () {\n
-            window.clearTimeout(timer);\n
-            timer = window.setTimeout(poll, 1500);\n
-        });\n
-    }\n
+    document.querySelectorAll('.iapm-seconds').forEach(function (inp) {\n
+        var hint = inp.parentNode.querySelector('.iapm-seconds-hint');\n
+        if (!hint) return;\n
+        function upd() { hint.textContent = humanize(inp.value); }\n
+        inp.addEventListener('input', upd); upd();\n
+    });\n
 })();\n
 </script>\n
-</div>\n
+\n
 \n
 \n
 </body>\n
 </html>\n
-' [UTF-8](length: 107467) contains "/device/device=103/tab=port/port=357/" [ASCII](length: 37).
+' [UTF-8](length: 104573) contains "data-iapm-bulk-button="assignments" disabled" [ASCII](length: 44).
 
-/package/tests/Feature/InterfaceMatrixRowActionsTest.php:45
-/package/vendor/phpunit/phpunit/phpunit:104
-
-3) LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature\MessageTemplateTest::test_sms_gateway_receives_the_complete_rendered_template_without_truncation
-An expected request was not recorded.
-Failed asserting that false is true.
-
-/opt/librenms/vendor/laravel/framework/src/Illuminate/Http/Client/Factory.php:395
-/opt/librenms/vendor/laravel/framework/src/Illuminate/Support/Facades/Facade.php:363
-/package/tests/Feature/MessageTemplateTest.php:85
-/package/vendor/phpunit/phpunit/phpunit:104
-
-4) LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature\NamePickerTest::test_every_recorded_object_type_is_offered_as_a_filter
-AuditService records object_type 'sms_content_filters' but the filter does not offer it.
-Failed asserting that an array contains 'sms_content_filters'.
-
-/package/tests/Feature/NamePickerTest.php:231
-/package/vendor/phpunit/phpunit/phpunit:104
-
-5) LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature\SettingsAndConsistencyTest::test_bulk_delete_buttons_start_disabled
-Expected response status code [200] but received 302.
-Failed asserting that 302 is identical to 200.
-
-/opt/librenms/vendor/laravel/framework/src/Illuminate/Testing/TestResponseAssert.php:45
-/opt/librenms/vendor/laravel/framework/src/Illuminate/Testing/TestResponse.php:175
-/opt/librenms/vendor/laravel/framework/src/Illuminate/Testing/Concerns/AssertsStatusCodes.php:16
-/package/tests/Feature/SettingsAndConsistencyTest.php:178
+/package/tests/Feature/SettingsAndConsistencyTest.php:188
 /package/vendor/phpunit/phpunit/phpunit:104
 
 FAILURES!
-Tests: 539, Assertions: 3584, Failures: 5.
+Tests: 539, Assertions: 3589, Failures: 2.
 Error: Process completed with exit code 1.
