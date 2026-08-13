@@ -68,12 +68,12 @@ class MessageTemplates
     public static function default(string $phase): string
     {
         return match ($phase) {
-            'recovery' => "RECOVERED: Interface restored\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nOutage: {{ outage_duration }}\nIncident: {{ incident_id }}",
+            'recovery' => "RECOVERED: Interface restored\nDevice: {{ hostname }}\nPort: {{ ifName }}\nOutage: {{ outage_duration }}\nIncident: {{ incident_id }}\nDescription: {{ ifAlias }}",
             'acknowledged' => "ACKNOWLEDGED: Interface down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nBy: {{ acknowledgement_user }}\nIncident: {{ incident_id }}",
-            'escalation' => "ESCALATION: Interface still down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nDown since: {{ first_seen_at }}\nIncident: {{ incident_id }}",
+            'escalation' => "ESCALATION: Interface still down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDown since: {{ first_seen_at }}\nIncident: {{ incident_id }}\nDescription: {{ ifAlias }}",
             'reminder' => "REMINDER: Interface still down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDown since: {{ first_seen_at }}\nIncident: {{ incident_id }}",
-            'flapping' => "FLAPPING: Interface unstable\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nFurther alerts dampened until stable.\nIncident: {{ incident_id }}",
-            default => "CRITICAL: Interface down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nDescription: {{ ifAlias }}\nLocation: {{ location }}\nDown since: {{ first_seen_at }}\nPolicy: {{ policy_name }}\nIncident: {{ incident_id }}",
+            'flapping' => "FLAPPING: Interface unstable\nDevice: {{ hostname }}\nPort: {{ ifName }}\nFurther alerts dampened until stable.\nIncident: {{ incident_id }}\nDescription: {{ ifAlias }}",
+            default => "CRITICAL: Interface down\nDevice: {{ hostname }}\nPort: {{ ifName }}\nLocation: {{ location }}\nDown since: {{ first_seen_at }}\nPolicy: {{ policy_name }}\nIncident: {{ incident_id }}\nDescription: {{ ifAlias }}",
         };
     }
 }

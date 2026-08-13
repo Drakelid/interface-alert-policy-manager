@@ -5,7 +5,6 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
-use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class MessageTemplateTest extends IntegrationTestCase
@@ -50,7 +49,7 @@ class MessageTemplateTest extends IntegrationTestCase
         Http::assertSent(fn ($request) => $request['message'] === 'Circuit Customer A');
     }
 
-    public function test_generic_webhook_templates_are_not_truncated_by_sms_limits(): void
+    public function test_generic_webhook_receives_the_complete_rendered_template(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);
         $destination = Destination::create([
@@ -73,23 +72,31 @@ class MessageTemplateTest extends IntegrationTestCase
         Http::assertSent(fn ($request) => $request['message'] === $message);
     }
 
-    public function test_sms_truncation_does_not_add_an_incident_identifier_missing_from_the_template(): void
+    public function test_sms_gateway_receives_the_complete_rendered_template_without_truncation(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);
         $policy = $this->policy();
-        $this->triggerAction($policy, $this->smsDestination(), ['message_template' => str_repeat('x', 300)]);
+        $message = "Device information first\n".str_repeat('Complete useful description details ', 20)."\nFinal information";
+        $this->triggerAction($policy, $this->smsDestination(), ['message_template' => $message]);
         $this->incident($policy, $this->downPort($this->device()));
 
         $this->artisan('iapm:process-actions');
 
-        Http::assertSent(function ($request): bool {
-            $message = (string) $request['message'];
+        Http::assertSent(fn ($request) => $request['message'] === $message);
+    }
 
-            return ! str_contains($message, 'Incident:')
-                && str_ends_with($message, '...')
-                && app(SafeTemplateRenderer::class)
-                    ->smsMetrics($message)['segments'] === 1;
-        });
+    public function test_interface_description_decoration_is_removed_before_sms_delivery(): void
+    {
+        Http::fake(['*' => Http::response('ok', 200)]);
+        $policy = $this->policy();
+        $this->triggerAction($policy, $this->smsDestination(), ['message_template' => 'Description: {{ ifAlias }}']);
+        $this->incident($policy, $this->downPort($this->device(), [
+            'ifAlias' => '### Bundle-Ether10 to Oslo distribution switch ###',
+        ]));
+
+        $this->artisan('iapm:process-actions');
+
+        Http::assertSent(fn ($request) => $request['message'] === 'Description: Oslo distribution switch');
     }
 
     public function test_saving_a_valid_template_persists(): void

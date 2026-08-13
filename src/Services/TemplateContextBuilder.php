@@ -20,7 +20,10 @@ class TemplateContextBuilder
 
     private ?string $urlBase = null;
 
-    public function __construct(private readonly SettingStore $settings) {}
+    public function __construct(
+        private readonly SettingStore $settings,
+        private readonly InterfaceDescriptionCleaner $descriptions,
+    ) {}
 
     public function forIncident(Incident $incident): array
     {
@@ -123,7 +126,7 @@ class TemplateContextBuilder
             'display_name' => (string) (($context['displayName'] ?? '') ?: $hostname),
             'ifName' => (string) ($context['ifName'] ?? ''),
             'ifDescr' => (string) ($context['ifDescr'] ?? ''),
-            'ifAlias' => (string) ($context['ifAlias'] ?? ''),
+            'ifAlias' => $this->descriptions->clean((string) ($context['ifAlias'] ?? '')),
             'ifAdminStatus' => (string) ($context['adminStatus'] ?? ''),
             'ifOperStatus' => (string) ($context['operStatus'] ?? ''),
             'interface_type' => (string) ($context['ifType'] ?? ''),

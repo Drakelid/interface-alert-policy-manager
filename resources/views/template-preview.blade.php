@@ -6,5 +6,5 @@
     <div class="form-group"><label for="iapm-tp-template">Template</label><textarea required name="template" id="iapm-tp-template" rows="14" class="form-control" data-iapm-sms-counter>{{ old('template',$defaultTemplate) }}</textarea></div>
     <button class="btn btn-primary">Preview without sending</button>
 </form>
-@if($warning)<div class="alert alert-warning">{{ $warning }}</div>@endif
+@if($warning)<div class="alert {{ $rendered === null ? 'alert-danger' : 'alert-info' }}">{{ $warning }}</div>@endif
 @if($rendered!==null)<h2>Rendered SMS</h2><pre>{{ $rendered }}</pre>@endif</div>@endsection

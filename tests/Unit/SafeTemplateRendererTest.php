@@ -50,34 +50,13 @@ class SafeTemplateRendererTest extends TestCase
         (new SafeTemplateRenderer)->render('{{#if ifAlias}}Alias', ['ifAlias' => 'Customer A']);
     }
 
-    public function test_character_truncation_does_not_add_an_incident_identifier(): void
-    {
-        $v = (new SafeTemplateRenderer)->render(str_repeat('x', 100), ['incident_id' => 42], 30);
-        self::assertLessThanOrEqual(30, mb_strlen($v));
-        self::assertStringEndsWith('...', $v);
-        self::assertStringNotContainsString('Incident:', $v);
-    }
-
-    public function test_gsm_and_unicode_segment_sizes_are_calculated_correctly(): void
+    public function test_rendering_does_not_truncate_long_messages(): void
     {
         $renderer = new SafeTemplateRenderer;
+        $template = str_repeat('x', 300)."\nDescription: remote distribution switch with complete useful details";
+        $message = $renderer->render($template, ['incident_id' => 42]);
 
-        self::assertSame(['encoding' => 'GSM-7', 'units' => 160, 'segments' => 1, 'single_limit' => 160], $renderer->smsMetrics(str_repeat('a', 160)));
-        self::assertSame(2, $renderer->smsMetrics(str_repeat('a', 161))['segments']);
-        self::assertSame(160, $renderer->smsMetrics(str_repeat('^', 80))['units'], 'GSM extension-table characters use two septets.');
-        self::assertSame('GSM-7', $renderer->smsMetrics('æøå ÆØÅ é')['encoding']);
-        self::assertSame(['encoding' => 'Unicode', 'units' => 70, 'segments' => 1, 'single_limit' => 70], $renderer->smsMetrics(str_repeat('漢', 70)));
-        self::assertSame(2, $renderer->smsMetrics(str_repeat('漢', 71))['segments']);
-        self::assertSame(2, $renderer->smsMetrics('😀')['units'], 'Emoji consume a UTF-16 surrogate pair.');
-    }
-
-    public function test_single_sms_rendering_does_not_add_an_incident_identifier(): void
-    {
-        $renderer = new SafeTemplateRenderer;
-        $message = $renderer->renderSingleSms(str_repeat('x', 300), ['incident_id' => 42]);
-
-        self::assertSame(1, $renderer->smsMetrics($message)['segments']);
-        self::assertStringEndsWith('...', $message);
-        self::assertStringNotContainsString('Incident:', $message);
+        self::assertSame($template, $message);
+        self::assertGreaterThan(300, mb_strlen($message));
     }
 }

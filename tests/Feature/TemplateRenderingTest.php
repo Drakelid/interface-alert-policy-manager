@@ -77,6 +77,18 @@ class TemplateRenderingTest extends IntegrationTestCase
         self::assertSame('Groups: Core routers, Production', app(SafeTemplateRenderer::class)->render('Groups: {{ device_groups }}', $values));
     }
 
+    public function test_interface_alias_placeholder_removes_bundle_decoration_only(): void
+    {
+        $port = $this->downPort($this->device(), [
+            'ifAlias' => '### Bundle to Oslo distribution switch ###',
+        ]);
+
+        $values = app(TemplateContextBuilder::class)->forPreview(app(InterfaceContextService::class)->forPort($port));
+
+        self::assertSame('Oslo distribution switch', $values['ifAlias']);
+        self::assertSame('Oslo distribution switch', $port->ifAlias, 'LibreNMS inventory data must remain unchanged.');
+    }
+
     public function test_the_acknowledgement_user_resolves_to_a_username(): void
     {
         $admin = $this->admin();
@@ -94,19 +106,26 @@ class TemplateRenderingTest extends IntegrationTestCase
         app(SafeTemplateRenderer::class)->render('Down: {{ not_a_placeholder }}', $values);
     }
 
-    public function test_an_over_long_message_is_truncated_without_adding_template_content(): void
+    public function test_an_over_long_message_is_rendered_in_full(): void
     {
         $incident = $this->incident($this->policy(), $this->downPort($this->device()));
         $values = app(TemplateContextBuilder::class)->forIncident($incident);
 
         $template = str_repeat('detail ', 200).'{{ incident_id }}';
-        $first = app(SafeTemplateRenderer::class)->render($template, $values, 160);
-        $second = app(SafeTemplateRenderer::class)->render($template, $values, 160);
+        $first = app(SafeTemplateRenderer::class)->render($template, $values);
+        $second = app(SafeTemplateRenderer::class)->render($template, $values);
 
-        self::assertLessThanOrEqual(160, mb_strlen($first));
-        self::assertSame($first, $second, 'Truncation must be deterministic.');
-        self::assertStringEndsWith('...', $first);
-        self::assertStringNotContainsString('Incident:', $first);
+        self::assertSame($first, $second, 'Rendering must be deterministic.');
+        self::assertSame(str_repeat('detail ', 200).$incident->id, $first);
+    }
+
+    public function test_built_in_templates_put_the_verbose_description_after_core_information(): void
+    {
+        foreach (['trigger', 'recovery', 'escalation', 'flapping'] as $phase) {
+            $template = MessageTemplates::default($phase);
+
+            self::assertGreaterThan(strpos($template, 'Incident:'), strpos($template, 'Description:'), "$phase must put the potentially verbose description last.");
+        }
     }
 
     public function test_preview_values_cover_the_same_placeholders_as_delivery(): void

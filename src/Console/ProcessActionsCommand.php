@@ -311,7 +311,7 @@ class ProcessActionsCommand extends Command
                 continue;
             }
             try {
-                $message = $this->renderMessage($this->messages->resolveDigest(), $values, $destination->type);
+                $message = $this->templates->render($this->messages->resolveDigest(), $values);
             } catch (\Throwable $e) {
                 $this->dispatcher->configurationFailure($first, $destination, $action, 'digest', 'Digest template error: '.$e->getMessage());
 
@@ -377,7 +377,7 @@ class ProcessActionsCommand extends Command
             return false;
         }
         try {
-            $message = $this->renderMessage($templateOverride ?? ($action->message_template ?: $this->messages->resolve($phase)), $this->placeholders->forIncident($incident), $destination->type);
+            $message = $this->templates->render($templateOverride ?? ($action->message_template ?: $this->messages->resolve($phase)), $this->placeholders->forIncident($incident));
         } catch (\Throwable $e) {
             $this->dispatcher->configurationFailure($incident, $destination, $action, $phase, 'Template error: '.$e->getMessage());
 
@@ -393,19 +393,6 @@ class ProcessActionsCommand extends Command
         }
 
         return $attempted;
-    }
-
-    private function renderMessage(string $template, array $values, string $destinationType): string
-    {
-        if ($destinationType === 'sms_gateway') {
-            if ((bool) config('iapm.sms.single_segment', true)) {
-                return $this->templates->renderSingleSms($template, $values);
-            }
-
-            return $this->templates->render($template, $values, (int) config('iapm.sms.message_length', 480));
-        }
-
-        return $this->templates->render($template, $values);
     }
 
     private function digestDelivered(Incident $incident, int $destinationId, string $receiver): bool

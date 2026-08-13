@@ -24,18 +24,8 @@ class TemplatePreviewController extends Controller
             $port = Port::with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']);
             $values = $placeholders->forPreview($contexts->forPort($port));
             try {
-                $full = $renderer->render($data['template'], $values);
-                if ((bool) config('iapm.sms.single_segment', true)) {
-                    $metrics = $renderer->smsMetrics($full);
-                    $warning = $metrics['segments'] > 1
-                        ? "The rendered {$metrics['encoding']} message would use {$metrics['segments']} SMS segments, so it was truncated to one {$metrics['single_limit']}-unit segment."
-                        : "The rendered message fits in one {$metrics['encoding']} SMS segment.";
-                    $rendered = $renderer->limitToSingleSms($full);
-                } else {
-                    $limit = (int) config('iapm.sms.message_length', 480);
-                    $warning = mb_strlen($full) > $limit ? 'Rendered message is '.mb_strlen($full)." characters; it will be deterministically truncated to $limit." : null;
-                    $rendered = $renderer->render($data['template'], $values, $limit);
-                }
+                $rendered = $renderer->render($data['template'], $values);
+                $warning = 'Rendered length: '.mb_strlen($rendered).' characters. IAPM sends this complete message unchanged; the SMS gateway controls final length and segmentation.';
             } catch (\Throwable $e) {
                 $warning = $e->getMessage();
             }

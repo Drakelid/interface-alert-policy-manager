@@ -209,8 +209,8 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
     });
 
     // --- Template source-length counter (P4-4) ---
-    // Segment count can only be known after placeholders and conditional blocks
-    // render. Delivery enforces one GSM-7 or Unicode SMS segment server-side.
+    // This counts template source characters only. Placeholder values and
+    // conditional branches affect the rendered length shown by Preview.
     document.querySelectorAll('[data-iapm-sms-counter]').forEach(function (field) {
         var readout = document.createElement('p');
         readout.className = 'iapm-hint iapm-sms-counter';
@@ -219,7 +219,7 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
         function update() {
             var length = field.value.length;
             if (! length) { readout.textContent = 'Empty — the built-in default for this phase is used.'; return; }
-            readout.textContent = length + ' template character' + (length === 1 ? '' : 's') + ' · delivery is capped at one SMS segment after rendering.';
+            readout.textContent = length + ' template character' + (length === 1 ? '' : 's') + ' · IAPM sends the complete rendered message to the gateway.';
         }
         field.addEventListener('input', update);
         update();
