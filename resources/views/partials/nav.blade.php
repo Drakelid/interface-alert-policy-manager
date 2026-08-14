@@ -20,16 +20,14 @@
                 <li><a href="{{ route('iapm.stats') }}"><i class="fa fa-line-chart fa-fw" aria-hidden="true"></i> Statistics &amp; SLA</a></li>
             </ul>
         </li>
-        <li class="dropdown {{ $iapmActive('iapm.policies.index','iapm.policies.create','iapm.policies.edit','iapm.destinations.index','iapm.destinations.create','iapm.destinations.edit') }}">
+        <li class="dropdown {{ $iapmActive('iapm.policies.index','iapm.policies.create','iapm.policies.edit','iapm.destinations.index','iapm.destinations.create','iapm.destinations.edit','iapm.message-templates','iapm.sms-content-filters.edit') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#"><i class="fa fa-sliders fa-fw" aria-hidden="true"></i> Configure <span class="caret"></span></a>
             <ul class="dropdown-menu">
-                <li class="dropdown-header">Follow in order</li>
-                {{-- P2-8: this used to link to /settings with no fragment, dropping
-                     the operator at the top of a long single-column page. --}}
-                <li><a href="{{ route('iapm.settings.edit') }}#ingestion-token"><i class="fa fa-key fa-fw" aria-hidden="true"></i> 0. Generate ingestion token</a></li>
-                <li><a href="{{ route('iapm.destinations.index') }}"><i class="fa fa-paper-plane fa-fw" aria-hidden="true"></i> 1. Destinations</a></li>
-                <li><a href="{{ route('iapm.policies.index') }}"><i class="fa fa-list-alt fa-fw" aria-hidden="true"></i> 2. Policies</a></li>
-                <li><a href="{{ route('iapm.setup-helper') }}"><i class="fa fa-plug fa-fw" aria-hidden="true"></i> 3. LibreNMS setup helper</a></li>
+                <li><a href="{{ route('iapm.destinations.index') }}"><i class="fa fa-paper-plane fa-fw" aria-hidden="true"></i> Destinations</a></li>
+                <li><a href="{{ route('iapm.policies.index') }}"><i class="fa fa-list-alt fa-fw" aria-hidden="true"></i> Policies</a></li>
+                <li role="separator" class="divider"></li>
+                <li><a href="{{ route('iapm.message-templates') }}"><i class="fa fa-comment fa-fw" aria-hidden="true"></i> Message Templates</a></li>
+                @can('manage iapm settings')<li><a href="{{ route('iapm.sms-content-filters.edit') }}"><i class="fa fa-filter fa-fw" aria-hidden="true"></i> SMS Content Filters</a></li>@endcan
             </ul>
         </li>
         <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.message-templates','iapm.sms-content-filters.edit','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.real-simulations.index','iapm.import.form') }}">
