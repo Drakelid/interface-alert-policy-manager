@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\IngestionInbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class MaintenanceCommandsTest extends IntegrationTestCase
@@ -73,6 +74,32 @@ class MaintenanceCommandsTest extends IntegrationTestCase
         $this->artisan('iapm:cleanup --force')->assertExitCode(0);
 
         self::assertSame(0, DB::table('iapm_incident_events')->where('incident_id', $old->id)->count());
+    }
+
+    public function test_cleanup_never_deletes_retryable_ingestion_work(): void
+    {
+        $this->settings->put('retention_days', 30);
+        $attributes = [
+            'device_id' => $this->device()->device_id,
+            'fault_count' => 1,
+            'payload_encrypted' => ['device_id' => 1, 'state' => 1, 'faults' => []],
+            'available_at' => now()->subDays(59),
+            'created_at' => now()->subDays(60),
+            'updated_at' => now()->subDays(60),
+        ];
+        $retryable = IngestionInbox::create($attributes + [
+            'idempotency_key' => hash('sha256', 'retryable'),
+            'status' => 'failed',
+        ]);
+        $terminal = IngestionInbox::create($attributes + [
+            'idempotency_key' => hash('sha256', 'terminal'),
+            'status' => 'dead',
+        ]);
+
+        $this->artisan('iapm:cleanup --force')->assertExitCode(0);
+
+        self::assertNotNull($retryable->fresh(), 'A failed inbox row must remain available for retry.');
+        self::assertNull($terminal->fresh(), 'A terminal inbox row may be removed after retention expires.');
     }
 
     public function test_test_policy_explains_the_effective_policy(): void

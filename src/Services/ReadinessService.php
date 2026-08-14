@@ -70,8 +70,16 @@ class ReadinessService
             return true;
         }
 
-        return DB::table('iapm_assignments')->where('assignment_type', 'default')->where('enabled', true)->exists()
-            || filled($this->settings->get('default_policy_id'));
+        $enabledDefaultAssignment = DB::table('iapm_assignments')
+            ->join('iapm_policies', 'iapm_policies.id', '=', 'iapm_assignments.policy_id')
+            ->where('iapm_assignments.assignment_type', 'default')
+            ->where('iapm_assignments.enabled', true)
+            ->where('iapm_policies.enabled', true)
+            ->exists();
+        $configuredDefault = $this->settings->get('default_policy_id');
+
+        return $enabledDefaultAssignment
+            || (filled($configuredDefault) && Policy::whereKey($configuredDefault)->where('enabled', true)->exists());
     }
 
     private function hasReceiver(): bool

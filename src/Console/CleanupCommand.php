@@ -33,7 +33,10 @@ class CleanupCommand extends Command
         $auditCount = DB::table('iapm_audit_logs')->where('created_at', '<', $cutoff)->count();
         $outageCount = DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff)->count();
         $outboxCount = DB::table('iapm_notification_outbox')->whereIn('incident_id', (clone $recovered)->select('id'))->count();
-        $inboxCount = DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'failed', 'dead'])->where('created_at', '<', $cutoff)->count();
+        // `failed` is retryable durable work, not history. Deleting it would
+        // discard an alert previously accepted with HTTP 202 before it was ever
+        // applied. Only terminal inbox rows are eligible for retention cleanup.
+        $inboxCount = DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'dead'])->where('created_at', '<', $cutoff)->count();
         $simulationCount = Schema::hasTable('iapm_simulations') ? DB::table('iapm_simulations')->whereIn('status', ['recovered', 'failed'])->where('created_at', '<', $cutoff)->count() : 0;
         $this->table(['Record type', 'Eligible'], [['Recovered incidents', $incidentCount], ['Incident events', $eventCount], ['Delivery logs', $deliveryCount], ['Notification outbox', $outboxCount], ['Ingestion inbox', $inboxCount], ['Simulation records', $simulationCount], ['Audit logs', $auditCount], ['Outage records', $outageCount]]);
         if (! $this->option('force')) {
@@ -47,7 +50,7 @@ class CleanupCommand extends Command
         $this->deadline = microtime(true) + max(10, (int) config('iapm.processing.cleanup_max_seconds', 300));
         $this->purge(fn () => DB::table('iapm_audit_logs')->where('created_at', '<', $cutoff));
         $this->purge(fn () => DB::table('iapm_outages')->whereNotNull('recovered_at')->where('recovered_at', '<', $cutoff));
-        $this->purge(fn () => DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'failed', 'dead'])->where('created_at', '<', $cutoff));
+        $this->purge(fn () => DB::table('iapm_ingestion_inbox')->whereIn('status', ['processed', 'dead'])->where('created_at', '<', $cutoff));
         if (Schema::hasTable('iapm_simulations')) {
             $this->purge(fn () => DB::table('iapm_simulations')->whereIn('status', ['recovered', 'failed'])->where('created_at', '<', $cutoff));
         }

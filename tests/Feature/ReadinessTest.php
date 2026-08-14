@@ -55,6 +55,19 @@ class ReadinessTest extends IntegrationTestCase
         self::assertTrue($this->keyed()['default_policy']);
     }
 
+    public function test_disabled_policies_do_not_satisfy_default_coverage(): void
+    {
+        $assigned = $this->defaultPolicy(['enabled' => false]);
+        self::assertFalse($this->keyed()['default_policy'], 'A default assignment on a disabled policy cannot provide coverage.');
+
+        $assigned->assignments()->delete();
+        $this->settings->put('default_policy_id', $assigned->id);
+        self::assertFalse($this->keyed()['default_policy'], 'A disabled configured default policy cannot provide coverage.');
+
+        $assigned->update(['enabled' => true]);
+        self::assertTrue($this->keyed()['default_policy']);
+    }
+
     public function test_the_alert_source_check_is_informational_not_a_setup_gate(): void
     {
         $this->settings->put('ingestion_token', 'a-token');
