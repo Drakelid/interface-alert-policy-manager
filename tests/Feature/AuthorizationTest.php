@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Http;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\Models\Permission;
 
 class AuthorizationTest extends IntegrationTestCase
 {
@@ -50,6 +51,32 @@ class AuthorizationTest extends IntegrationTestCase
             ->assertForbidden();
 
         Http::assertNothingSent();
+    }
+
+    public function test_a_view_only_user_cannot_open_destination_configuration_forms(): void
+    {
+        Permission::findOrCreate('view iapm', 'web');
+        $viewer = User::factory()->create(['enabled' => true]);
+        $viewer->givePermissionTo('view iapm');
+        $destination = $this->smsDestination([
+            'url' => 'https://example.test/messages',
+            'headers' => ['X-Api-Key' => 'must-not-be-disclosed'],
+        ]);
+
+        $this->actingAs($viewer)
+            ->get('/plugin/interface-alert-policy-manager/destinations')
+            ->assertOk()
+            ->assertDontSee('must-not-be-disclosed')
+            ->assertDontSee('/destinations/create', false)
+            ->assertDontSee("/destinations/{$destination->id}/edit", false);
+
+        $this->actingAs($viewer)
+            ->get('/plugin/interface-alert-policy-manager/destinations/create')
+            ->assertForbidden();
+
+        $this->actingAs($viewer)
+            ->get("/plugin/interface-alert-policy-manager/destinations/{$destination->id}/edit")
+            ->assertForbidden();
     }
 
     public function test_an_administrator_can_acknowledge_and_unacknowledge_an_incident(): void

@@ -47,8 +47,10 @@ class DestinationController extends Controller
         return redirect()->route('iapm.destinations.index')->with($skipped ? 'error' : 'status', $msg);
     }
 
-    public function create(SettingStore $settings)
+    public function create(Request $request, SettingStore $settings)
     {
+        abort_unless($request->user()->can('manage iapm destinations'), 403);
+
         return view('iapm::destinations.form', [
             'destination' => new Destination,
             'configuration' => [
@@ -69,8 +71,10 @@ class DestinationController extends Controller
         return redirect()->route('iapm.destinations.edit', $d)->with('status', 'Destination created.');
     }
 
-    public function edit(Destination $destination)
+    public function edit(Request $request, Destination $destination)
     {
+        abort_unless($request->user()->can('manage iapm destinations'), 403);
+
         $c = (array) $destination->configuration_encrypted;
         unset($c['password'],$c['bearer_token']);
 
