@@ -6,7 +6,9 @@
 # Keep the composer/Packagist dist install lean — these are dev-only and are
 # excluded from `git archive` (what Composer downloads), but stay in a git clone.
 /tests            export-ignore
-/tools            export-ignore
+/tools/loadtest   export-ignore
+/tools/mock-gateway export-ignore
+/tools/phpunit-librenms.php export-ignore
 /.github          export-ignore
 AUDIT_REPORT.md   export-ignore
 phpunit.xml       export-ignore
