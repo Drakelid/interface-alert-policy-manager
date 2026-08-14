@@ -15,7 +15,7 @@ class TestPolicyCommand extends Command
 
     public function handle(InterfaceContextService $contexts, PolicyResolver $resolver): int
     {
-        $port = Port::find($this->option('port'));
+        $port = Port::query()->whereHas('device')->find($this->option('port'));
         if (! $port) {
             $this->error('Port not found.');
 

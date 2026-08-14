@@ -3,6 +3,7 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Schedule;
@@ -54,6 +55,43 @@ class ToolsTest extends IntegrationTestCase
         $this->actingAs(User::factory()->create(['enabled' => true]))
             ->post('/plugin/interface-alert-policy-manager/tools/simulate', ['port_id' => $port->port_id, 'state' => 'down'])
             ->assertForbidden();
+    }
+
+    public function test_tools_reject_an_orphaned_port_instead_of_crashing(): void
+    {
+        $port = $this->downPort($this->device(), ['ifOperStatus' => 'up']);
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        try {
+            DB::table('ports')->where('port_id', $port->port_id)->update(['device_id' => 2147483647]);
+        } finally {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
+
+        $admin = $this->admin();
+        $base = '/plugin/interface-alert-policy-manager';
+
+        $this->actingAs($admin)->get("{$base}/policy-test?port_id={$port->port_id}")
+            ->assertRedirect()
+            ->assertSessionHasErrors('port_id');
+
+        $this->actingAs($admin)->post("{$base}/template-preview", [
+            'port_id' => $port->port_id,
+            'template' => '{{ ifName }}',
+        ])->assertSessionHasErrors('port_id');
+
+        $this->actingAs($admin)->post("{$base}/tools/simulate", [
+            'port_id' => $port->port_id,
+            'state' => 'down',
+        ])->assertSessionHasErrors('port_id');
+
+        $this->actingAs($admin)->post("{$base}/tools/real-simulations", [
+            'port_id' => $port->port_id,
+            'duration_seconds' => 600,
+            'simulated_admin_status' => 'up',
+            'simulated_oper_status' => 'down',
+        ])->assertSessionHasErrors('port_id');
+
+        self::assertSame(0, Incident::count());
     }
 
     public function test_configuration_exports_and_reimports(): void

@@ -150,11 +150,22 @@ class ConfigurationImportPlanner
 
     private function matchAssignment(Policy $policy, array $assignment): ?Assignment
     {
-        return $policy->assignments()
+        $query = $policy->assignments()
             ->where('assignment_type', $assignment['assignment_type'] ?? '')
             ->where('assignment_reference', $assignment['assignment_reference'] ?? null)
-            ->where('match_expression', $assignment['match_expression'] ?? null)
-            ->first();
+            ->where('match_expression', $assignment['match_expression'] ?? null);
+
+        if (($assignment['assignment_type'] ?? null) !== 'device_group') {
+            return $query->first();
+        }
+
+        $wanted = collect($assignment['device_group_ids'] ?? [])->map(fn ($id) => (int) $id)->sort()->values()->all();
+
+        return $query->with('deviceGroups')->get()->first(function (Assignment $candidate) use ($wanted): bool {
+            $current = $candidate->deviceGroups->pluck('device_group_id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+
+            return $current === $wanted;
+        });
     }
 
     private function assignmentLabel(array $assignment): string

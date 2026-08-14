@@ -6,6 +6,7 @@ use App\Models\Port;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests\IngestAlertRequest;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 
 /**
@@ -29,7 +30,7 @@ class SimulationController extends Controller
     {
         abort_unless($request->user()->can('manage iapm policies'), 403);
         $data = $request->validate([
-            'port_id' => ['required', 'integer', 'exists:ports,port_id'],
+            'port_id' => ['required', 'integer', new PortHasDevice],
             'state' => ['required', 'in:down,up'],
         ]);
 

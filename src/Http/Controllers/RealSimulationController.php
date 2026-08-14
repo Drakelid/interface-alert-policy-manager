@@ -8,6 +8,7 @@ use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Simulation;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\QueueHeartbeat;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\RealSimulationService;
@@ -44,7 +45,7 @@ class RealSimulationController extends Controller
     {
         abort_unless($request->user()->can('manage iapm policies'), 403);
         $data = $request->validate([
-            'port_id' => ['required', 'integer', 'exists:ports,port_id'],
+            'port_id' => ['required', 'integer', new PortHasDevice],
             'duration_seconds' => ['required', 'integer', 'between:60,86400'],
             'simulated_admin_status' => ['required', 'string', 'in:up,down'],
             'simulated_oper_status' => ['required', 'string', 'in:up,down'],

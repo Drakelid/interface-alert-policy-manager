@@ -3,6 +3,7 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use App\Models\Device;
+use App\Models\DeviceGroup;
 use Illuminate\Http\UploadedFile;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
@@ -86,6 +87,36 @@ class ImportPreviewAndUpdateTest extends IntegrationTestCase
         $policy = Policy::where('name', 'Imported policy')->firstOrFail();
         self::assertCount(1, $policy->actions()->get());
         self::assertCount(1, $policy->assignments()->get());
+    }
+
+    public function test_distinct_device_group_assignments_survive_import_and_update(): void
+    {
+        $first = DeviceGroup::factory()->create();
+        $second = DeviceGroup::factory()->create();
+        $document = json_decode($this->document(), true);
+        $document['policies'][0]['assignments'] = [
+            [
+                'assignment_type' => 'device_group', 'assignment_reference' => null,
+                'match_expression' => null, 'match_mode' => 'any', 'priority' => 20, 'enabled' => true,
+                'metadata_json' => ['receivers' => []], 'device_group_ids' => [$first->id],
+            ],
+            [
+                'assignment_type' => 'device_group', 'assignment_reference' => null,
+                'match_expression' => null, 'match_mode' => 'any', 'priority' => 10, 'enabled' => true,
+                'metadata_json' => ['receivers' => []], 'device_group_ids' => [$second->id],
+            ],
+        ];
+        $json = json_encode($document, JSON_THROW_ON_ERROR);
+
+        $this->applyDocument($json);
+        $this->applyDocument($json, updateExisting: true);
+
+        $assignments = Policy::where('name', 'Imported policy')->firstOrFail()->assignments()->with('deviceGroups')->get();
+        self::assertCount(2, $assignments);
+        self::assertEqualsCanonicalizing(
+            [[$first->id], [$second->id]],
+            $assignments->map(fn ($assignment) => $assignment->deviceGroups->pluck('device_group_id')->all())->all()
+        );
     }
 
     /** An import must not remove alerting the document simply does not mention. */

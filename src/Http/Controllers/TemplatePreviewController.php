@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 use App\Models\Port;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
@@ -21,7 +22,7 @@ class TemplatePreviewController extends Controller
         $port = null;
 
         if ($request->isMethod('post')) {
-            $data = $request->validate(['port_id' => ['required', 'integer', 'exists:ports,port_id'], 'template' => ['required', 'string', 'max:10000']]);
+            $data = $request->validate(['port_id' => ['required', 'integer', new PortHasDevice], 'template' => ['required', 'string', 'max:10000']]);
             $port = Port::with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']);
             $values = $placeholders->forPreview($contexts->forPort($port));
             try {
