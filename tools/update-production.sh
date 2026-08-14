@@ -85,7 +85,11 @@ id "$LIBRENMS_USER" >/dev/null 2>&1 || fail "User '$LIBRENMS_USER' does not exis
 [[ -d "$LIBRENMS_DIR" ]] || fail "LibreNMS directory not found: $LIBRENMS_DIR"
 cd "$LIBRENMS_DIR"
 
-for required in php artisan lnms scripts/composer_wrapper.php composer.json; do
+command -v php >/dev/null 2>&1 || fail "PHP is not available on PATH."
+command -v sudo >/dev/null 2>&1 || fail "sudo is not available on PATH."
+command -v systemctl >/dev/null 2>&1 || fail "systemctl is not available on PATH."
+
+for required in artisan lnms scripts/composer_wrapper.php composer.json; do
     [[ -e "$required" ]] || fail "Required LibreNMS file is missing: $LIBRENMS_DIR/$required"
 done
 [[ -x scripts/composer_wrapper.php ]] || fail "scripts/composer_wrapper.php is not executable."
