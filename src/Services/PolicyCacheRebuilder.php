@@ -48,7 +48,7 @@ class PolicyCacheRebuilder
     {
         $this->settings->put(self::STATUS, 'queued');
         $this->settings->put(self::PROGRESS, 0);
-        $this->settings->put(self::TOTAL, Port::count());
+        $this->settings->put(self::TOTAL, Port::whereHas('device')->count());
         $now = now()->toIso8601String();
         $this->settings->put(self::STARTED_AT, $now);
         $this->settings->put(self::ACTIVITY_AT, $now);

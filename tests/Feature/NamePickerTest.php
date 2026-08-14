@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 use App\Models\DeviceGroup;
 use App\Models\User;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\AuditLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
@@ -68,6 +69,22 @@ class NamePickerTest extends IntegrationTestCase
                 ->assertOk()
                 ->assertJsonFragment(['id' => (int) $port->port_id]);
         }
+    }
+
+    public function test_the_port_lookup_excludes_ports_without_a_device(): void
+    {
+        $port = $this->downPort($this->device(), ['ifName' => 'orphaned-test-port']);
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        try {
+            DB::table('ports')->where('port_id', $port->port_id)->update(['device_id' => 2147483647]);
+        } finally {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
+
+        $this->actingAs($this->admin())
+            ->getJson(self::BASE.'/lookup/ports?q=orphaned-test-port')
+            ->assertOk()
+            ->assertExactJson(['items' => [], 'has_more' => false, 'next_offset' => 0]);
     }
 
     public function test_the_port_lookup_pages_through_every_matching_interface(): void

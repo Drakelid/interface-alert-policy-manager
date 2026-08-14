@@ -70,8 +70,10 @@ class AssignmentMatchCounter
 
     private function activePorts(): Builder
     {
-        // Mirror the alert rule's baseline: only ports that still exist.
-        return Port::query()->where('ports.deleted', 0);
+        // Mirror the alert rule's baseline: only ports that still exist and
+        // belong to a current LibreNMS device. Orphan rows have no resolvable
+        // policy context and must not inflate assignment previews.
+        return Port::query()->where('ports.deleted', 0)->whereHas('device');
     }
 
     private function deviceGroupQuery(array $assignment): Builder

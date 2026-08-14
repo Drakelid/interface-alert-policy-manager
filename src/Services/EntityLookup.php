@@ -44,6 +44,7 @@ class EntityLookup
 
         return Port::query()
             ->with('device:device_id,hostname')
+            ->whereHas('device')
             ->when($deviceId, fn ($q) => $q->where('ports.device_id', $deviceId))
             ->where(function ($q) use ($term): void {
                 $q->where('ifName', 'like', $this->like($term))
