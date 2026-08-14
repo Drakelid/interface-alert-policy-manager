@@ -30,7 +30,7 @@
                 @can('manage iapm settings')<li><a href="{{ route('iapm.sms-content-filters.edit') }}"><i class="fa fa-filter fa-fw" aria-hidden="true"></i> SMS Content Filters</a></li>@endcan
             </ul>
         </li>
-        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.message-templates','iapm.sms-content-filters.edit','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.real-simulations.index','iapm.import.form') }}">
+        <li class="dropdown {{ $iapmActive('iapm.policy-test','iapm.template-preview','iapm.comparison-report','iapm.setup-helper','iapm.simulate','iapm.real-simulations.index','iapm.import.form') }}">
             <a class="dropdown-toggle" data-toggle="dropdown" href="#"><i class="fa fa-wrench fa-fw" aria-hidden="true"></i> Tools <span class="caret"></span></a>
             <ul class="dropdown-menu">
                 <li class="dropdown-header">Templates</li>

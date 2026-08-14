@@ -59,12 +59,19 @@ class SettingsAndConsistencyTest extends IntegrationTestCase
         self::assertStringContainsString('data-iapm-total="4"', $body, 'The open view should list the four non-recovered incidents.');
     }
 
-    /** P2-8: the menu item dropped the operator at the top of a long page. */
-    public function test_the_token_menu_item_deep_links_to_its_section(): void
+    public function test_the_configure_menu_contains_only_current_configuration_links(): void
     {
         $body = (string) $this->actingAs($this->admin())->get(self::BASE)->assertOk()->getContent();
 
-        self::assertStringContainsString(route('iapm.settings.edit').'#ingestion-token', $body);
+        self::assertSame(1, preg_match('/>\s*Configure\s*<span class="caret"><\/span><\/a>\s*<ul class="dropdown-menu">(.*?)<\/ul>/s', $body, $matches));
+        $menu = $matches[1];
+
+        self::assertStringNotContainsString(route('iapm.settings.edit').'#ingestion-token', $menu);
+        self::assertStringNotContainsString(route('iapm.setup-helper'), $menu);
+        self::assertStringContainsString(route('iapm.destinations.index'), $menu);
+        self::assertStringContainsString(route('iapm.policies.index'), $menu);
+        self::assertStringContainsString(route('iapm.message-templates'), $menu);
+        self::assertStringContainsString(route('iapm.sms-content-filters.edit'), $menu);
     }
 
     public function test_settings_sections_have_anchors_and_a_jump_list(): void
