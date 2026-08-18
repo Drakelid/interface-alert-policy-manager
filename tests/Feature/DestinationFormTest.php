@@ -99,6 +99,8 @@ class DestinationFormTest extends IntegrationTestCase
         $body = (string) $this->actingAs($this->admin())->get(self::BASE."/destinations/{$destination->id}/edit")->assertOk()->getContent();
 
         self::assertStringContainsString('data-iapm-confirm', $body);
-        self::assertStringContainsString('stored credentials are erased', $body);
+        self::assertStringContainsString('stored credentials', $body);
+        self::assertStringContainsString('test-delivery records are erased', $body);
+        self::assertStringContainsString('Deletion is refused', $body);
     }
 }
