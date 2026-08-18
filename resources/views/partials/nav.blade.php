@@ -34,8 +34,6 @@
             <a class="dropdown-toggle" data-toggle="dropdown" href="#"><i class="fa fa-wrench fa-fw" aria-hidden="true"></i> Tools <span class="caret"></span></a>
             <ul class="dropdown-menu">
                 <li class="dropdown-header">Templates</li>
-                <li><a href="{{ route('iapm.message-templates') }}"><i class="fa fa-comment fa-fw" aria-hidden="true"></i> Message Templates</a></li>
-                @can('manage iapm settings')<li><a href="{{ route('iapm.sms-content-filters.edit') }}"><i class="fa fa-filter fa-fw" aria-hidden="true"></i> SMS Content Filters</a></li>@endcan
                 <li><a href="{{ route('iapm.template-preview') }}"><i class="fa fa-eye fa-fw" aria-hidden="true"></i> Template Preview</a></li>
                 <li role="separator" class="divider"></li>
                 <li class="dropdown-header">Test &amp; validate</li>

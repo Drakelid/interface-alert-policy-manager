@@ -29,19 +29,19 @@ class DestinationController extends Controller
         $deleted = 0;
         $skipped = [];
         DB::transaction(function () use ($ids, &$deleted, &$skipped) {
-            foreach (Destination::whereIn('id', $ids)->withCount('actions')->get() as $destination) {
-                if ($destination->actions_count > 0) {
+            foreach (Destination::whereIn('id', $ids)->get() as $destination) {
+                if ($this->deletionBlocker($destination) !== null) {
                     $skipped[] = $destination->name;
 
                     continue;
-                }$destination->delete();
+                }$this->purge($destination);
                 $deleted++;
             }
         });
         $audit->record($r, 'bulk_deleted', 'destination', null, null, ['deleted' => $deleted, 'skipped' => $skipped]);
         $msg = "Deleted {$deleted} destination(s).";
         if ($skipped) {
-            $msg .= ' Skipped (used by policy actions): '.implode(', ', $skipped).'.';
+            $msg .= ' Skipped (in use, or still holding notification history): '.implode(', ', $skipped).'.';
         }
 
         return redirect()->route('iapm.destinations.index')->with($skipped ? 'error' : 'status', $msg);
@@ -100,13 +100,53 @@ class DestinationController extends Controller
     public function destroy(Request $r, Destination $destination, AuditService $audit)
     {
         abort_unless($r->user()->can('manage iapm destinations'), 403);
-        if ($destination->actions()->exists()) {
-            return back()->withErrors('Destination is used by policy actions.');
+        if ($blocker = $this->deletionBlocker($destination)) {
+            return back()->withErrors($blocker);
         }$before = ['name' => $destination->name, 'type' => $destination->type];
-        $destination->delete();
+        $this->purge($destination);
         $audit->record($r, 'deleted', 'destination', $destination->id, $before, null);
 
-        return redirect()->route('iapm.destinations.index');
+        return redirect()->route('iapm.destinations.index')->with('status', 'Destination deleted.');
+    }
+
+    /**
+     * Why this destination cannot be deleted yet, or null when it can be.
+     *
+     * Delivery logs and outbox rows are both restrictOnDelete, but destroy() only ever
+     * checked policy actions -- so a still-referenced destination raised a bare
+     * QueryException ("Whoops, looks like something went wrong") instead of an
+     * explanation. Real history blocks deletion and is left for iapm:cleanup to remove
+     * with its incident once retention lapses.
+     */
+    private function deletionBlocker(Destination $destination): ?string
+    {
+        if ($destination->actions()->exists()) {
+            return 'Destination is used by policy actions. Remove or repoint those actions first.';
+        }
+        if ($destination->outboxEntries()->exists()) {
+            return 'Destination still has notification work in the outbox. It can be deleted once that work finishes and retention cleanup removes it.';
+        }
+        if ($destination->deliveryLogs()->whereNotNull('incident_id')->exists()) {
+            return 'Destination has delivery history for incidents. It can be deleted once retention cleanup (iapm:cleanup) removes those incidents.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Delete the destination together with its incident-less delivery rows.
+     *
+     * Those come from the Test button, which logs a delivery with a null incident_id.
+     * iapm:cleanup only reaches delivery logs by cascading from a recovered incident,
+     * so nothing else ever prunes them -- leaving them in place would make every
+     * destination that was tested once permanently undeletable.
+     */
+    private function purge(Destination $destination): void
+    {
+        DB::transaction(function () use ($destination) {
+            $destination->deliveryLogs()->whereNull('incident_id')->delete();
+            $destination->delete();
+        });
     }
 
     public function test(Request $r, Destination $destination, NotificationDispatcher $dispatcher, AuditService $audit)

@@ -3,7 +3,7 @@
 <h1 class="iapm-page-title">Destinations @can('manage iapm destinations')<a class="btn btn-primary btn-sm" href="{{ route('iapm.destinations.create') }}"><i class="fa fa-plus"></i> Create</a>@endcan</h1>
 @include('iapm::partials.step-header',['step'=>1,'total'=>2,'title'=>'Create a delivery destination','desc'=>'A destination is where notifications are sent — the SMS gateway, or a generic webhook. Create this first: policy actions send to a destination. Secrets are encrypted; you can send a test after saving.','nextRoute'=>route('iapm.policies.index'),'nextLabel'=>'Policies'])
 @if($destinations->count())
-@can('manage iapm destinations')<form id="iapm-bulk-destinations" method="post" action="{{ route('iapm.destinations.bulk-destroy') }}" data-iapm-confirm="Delete the selected destinations? Their stored credentials are erased. Any still used by policy actions are skipped.">@csrf @method('DELETE')
+@can('manage iapm destinations')<form id="iapm-bulk-destinations" method="post" action="{{ route('iapm.destinations.bulk-destroy') }}" data-iapm-confirm="Delete the selected destinations? Their stored credentials and test-delivery records are erased. Any still referenced by policy actions, outbox work, or incident delivery history are skipped.">@csrf @method('DELETE')
     <button class="btn btn-danger btn-sm" style="margin-bottom:8px;" data-iapm-bulk-button="destinations" disabled><i class="fa fa-trash"></i> Delete selected<span data-iapm-bulk-count></span></button>
 </form>@endcan
 <div class="table-responsive" data-iapm-bulk-scope="destinations"><table class="table table-hover">

@@ -109,7 +109,7 @@
             </form>
         </div>
     </div>
-    <form method="post" action="{{ route('iapm.destinations.destroy',$destination) }}" data-iapm-confirm="Delete the destination &quot;{{ $destination->name }}&quot;? Its stored credentials are erased and cannot be recovered. Policy actions still using it will stop delivering." style="margin-top:10px;">@csrf @method('DELETE')<button class="btn btn-danger"><i class="fa fa-trash"></i> Delete destination</button></form>
+    <form method="post" action="{{ route('iapm.destinations.destroy',$destination) }}" data-iapm-confirm="Delete the destination &quot;{{ $destination->name }}&quot;? Its stored credentials and its test-delivery records are erased and cannot be recovered. Deletion is refused while policy actions, outbox work, or incident delivery history still reference it." style="margin-top:10px;">@csrf @method('DELETE')<button class="btn btn-danger"><i class="fa fa-trash"></i> Delete destination</button></form>
     @endif
 </div>
 

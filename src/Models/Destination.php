@@ -22,4 +22,16 @@ class Destination extends Model
     {
         return $this->hasMany(PolicyAction::class);
     }
+
+    /** @return HasMany<DeliveryLog, $this> */
+    public function deliveryLogs(): HasMany
+    {
+        return $this->hasMany(DeliveryLog::class);
+    }
+
+    /** @return HasMany<NotificationOutbox, $this> */
+    public function outboxEntries(): HasMany
+    {
+        return $this->hasMany(NotificationOutbox::class);
+    }
 }
