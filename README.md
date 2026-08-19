@@ -1,5 +1,11 @@
 # Interface Alert Policy Manager (IAPM)
 
+![Interface Alert Policy Manager — Statistics & SLA dashboard showing outage counts, MTTA/MTTR, noisiest interfaces, and per-policy breakdown](docs/images/showcase.png)
+
+[![CI](https://github.com/Drakelid/interface-alert-policy-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/Drakelid/interface-alert-policy-manager/actions/workflows/ci.yml)
+[![Packagist](https://img.shields.io/packagist/v/drakelid/interface-alert-policy-manager)](https://packagist.org/packages/drakelid/interface-alert-policy-manager)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+
 IAPM is a LibreNMS package plugin that turns one broad interface-down alert into independently managed per-`port_id` incidents. It resolves policy assignments, records decisions and delivery attempts, reconciles current port state, and owns SMS/webhook delivery.
 
 ## Quick start
@@ -14,7 +20,7 @@ cd /opt/librenms
 sudo -u librenms tee composer.plugins.json >/dev/null <<'JSON'
 {
     "require": {
-        "drakelid/interface-alert-policy-manager": "^1.4"
+        "drakelid/interface-alert-policy-manager": "^1.7"
     }
 }
 JSON
@@ -78,7 +84,7 @@ cat composer.plugins.json 2>/dev/null
 sudo -u librenms tee composer.plugins.json >/dev/null <<'JSON'
 {
     "require": {
-        "drakelid/interface-alert-policy-manager": "^1.4"
+        "drakelid/interface-alert-policy-manager": "^1.7"
     }
 }
 JSON
@@ -87,7 +93,7 @@ JSON
 sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php require drakelid/interface-alert-policy-manager
 ```
 
-<sub>Verify the first step took effect with `sudo -u librenms php daily.php -f composer_get_plugins`; it must print `drakelid/interface-alert-policy-manager:^1.4`. If it prints nothing, `daily.sh` will remove the plugin on its next run. `composer_wrapper.php` is only a wrapper around composer itself — it writes to `composer.json`, never to `composer.plugins.json`. `^1.4` tracks 1.x releases from 1.4 up; pin it tighter (`~1.4.0`) if you want patch-only updates.</sub>
+<sub>Verify the first step took effect with `sudo -u librenms php daily.php -f composer_get_plugins`; it must print `drakelid/interface-alert-policy-manager:^1.7`. If it prints nothing, `daily.sh` will remove the plugin on its next run. `composer_wrapper.php` is only a wrapper around composer itself — it writes to `composer.json`, never to `composer.plugins.json`. `^1.7` tracks 1.x releases from 1.7 up; pin it tighter (`~1.7.0`) if you want patch-only updates.</sub>
 
 ### 2. Migrate and enable
 
@@ -165,7 +171,7 @@ For a **production-hardened** setup (supervised, boot-persistent, auto-restartin
 
 With dry-run still on, fire a synthetic alert and confirm the pipeline without sending anything:
 
-- **Tools → Simulate Alert** for one interface, then check the **Delivery Log** (rows show `dry_run`).
+- **Tools → Synthetic Simulation** for one interface, then check the **Delivery Log** (rows show `dry_run`).
 - **Tools → Policy Test** shows the effective policy and *who would be paged* for a given `port_id`.
 
 ### 7. Go live
@@ -256,7 +262,7 @@ sudo systemctl enable --now iapm-worker@{1..6}
 
 `daily.sh` reinstalls the package from `composer.plugins.json`, so updates are automatic within your version constraint. After any update that changes code, restart the workers so they load it:
 
-For a guarded end-to-end production update, copy `tools/update-production.sh` to the server and run `sudo bash update-production.sh`. It defaults to the latest compatible `^1.7` release; pass an exact release such as `sudo bash update-production.sh 1.7.3` to pin it. The script preserves other `composer.plugins.json` entries, backs up Composer metadata, stops and restores systemd IAPM workers, updates the package, migrates, clears caches, reloads PHP-FPM, queues a policy-cache rebuild, and runs both operational checks. Take a verified database backup first.
+For a guarded end-to-end production update, copy `tools/update-production.sh` to the server and run `sudo bash update-production.sh`. It defaults to the latest compatible `^1.7` release; pass an exact release such as `sudo bash update-production.sh 1.7.8` to pin it. The script preserves other `composer.plugins.json` entries, backs up Composer metadata, stops and restores systemd IAPM workers, updates the package, migrates, clears caches, reloads PHP-FPM, queues a policy-cache rebuild, and runs both operational checks. Take a verified database backup first.
 
 ```bash
 sudo -u librenms php artisan migrate --force
@@ -364,6 +370,8 @@ The available placeholders are `incident_id`, `severity`, `state`, `hostname`, `
 
 Destination tests are explicit administrator actions: they send even while dry-run mode is enabled, and every attempt is written to the delivery log with phase `test` and no incident.
 
+Deleting a destination is refused, with the reason shown, while anything still references it: a policy action, unfinished outbox work, or delivery history belonging to an incident. Incident history is never deleted to make a destination removable — it leaves with its incident when `iapm:cleanup` passes `retention_days`. The incident-less `test` rows above are the exception: nothing else ever prunes them, so they are deleted together with the destination, and the confirmation says so. Bulk delete applies the same rules per row and skips the ones that are still referenced instead of failing the batch.
+
 ## Alert rule and transport
 
 Create one LibreNMS rule whose fault query selects ports where the device is up, `ifAdminStatus = up`, `ifOperStatus != up`, and `ignore`, `disabled`, and `deleted` are false. Verify field names in the rule builder for the installed version.
@@ -409,10 +417,11 @@ php artisan iapm:cache-rebuild [--device=DEVICE_ID]
 php artisan iapm:drain-outbox [--limit=N]        # scheduled every minute; republishes due outbox rows
 php artisan iapm:drain-ingestion [--limit=N] [--worker=N]   # scheduled; replays the durable ingestion inbox
 php artisan iapm:queue-heartbeat   # scheduler runs this every minute; safe to run by hand
+php artisan iapm:recover-simulations   # scheduled; restores port state left behind by a Real Simulation
 php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external monitoring)
 ```
 
-`reconcile`, `process-actions`, `drain-outbox`, `drain-ingestion`, `queue-heartbeat`, the hourly `cache-rebuild`, and the nightly `cleanup --force` all run from the LibreNMS scheduler already; the entries above are for manual inspection and troubleshooting.
+`reconcile`, `process-actions`, `drain-outbox`, `drain-ingestion`, `queue-heartbeat`, `recover-simulations`, the hourly `cache-rebuild`, and the nightly `cleanup --force` all run from the LibreNMS scheduler already; the entries above are for manual inspection and troubleshooting.
 
 ## Noise control, monitoring, and tooling
 
