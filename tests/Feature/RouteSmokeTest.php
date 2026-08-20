@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
+use App\Models\DeviceGroup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class RouteSmokeTest extends IntegrationTestCase
@@ -132,6 +133,26 @@ class RouteSmokeTest extends IntegrationTestCase
             ->assertOk()
             ->assertSee('Interface assignments')
             ->assertSee('Edit assignment #'.$assignment->id);
+    }
+
+    public function test_device_groups_are_selected_with_checkboxes(): void
+    {
+        $policy = $this->defaultPolicy();
+        $group = DeviceGroup::factory()->create(['name' => 'Core routers']);
+
+        $body = (string) $this->actingAs($this->admin())
+            ->get(self::BASE."/policies/{$policy->id}/edit?assignment=new")
+            ->assertOk()
+            ->getContent();
+
+        self::assertMatchesRegularExpression(
+            '#<input[^>]+type="checkbox"[^>]+name="device_group_ids\[\]"[^>]+value="'.$group->id.'"#',
+            $body
+        );
+        self::assertStringNotContainsString('<select name="device_group_ids[]"', $body);
+        self::assertStringContainsString('id="iapm-save-assignment"', $body);
+        self::assertMatchesRegularExpression('#form="iapm-policy-form"[^>]+disabled#', $body);
+        self::assertStringContainsString('Finish the open assignment', $body);
     }
 
     /** Every GET route in the plugin, with fixtures materialised on demand. */

@@ -94,8 +94,8 @@ $fields = [
 @endif
 
 @if($assignmentEditor)
-<div class="panel panel-default" style="margin-top:14px;">
-    <div class="panel-heading"><strong>{{ $assignmentEditor->exists ? 'Edit assignment #'.$assignmentEditor->id : 'Add assignment' }}</strong></div>
+<div class="panel panel-primary" style="margin-top:14px;" id="iapm-assignment-editor">
+    <div class="panel-heading"><strong>{{ $assignmentEditor->exists ? 'Edit assignment #'.$assignmentEditor->id : 'Add assignment' }}</strong><br><small>Save or cancel this assignment to continue.</small></div>
     <div class="panel-body">@include('iapm::assignments.form',$assignmentFormData)</div>
 </div>
 @endif
@@ -103,10 +103,14 @@ $fields = [
 <hr>
 <h2>Manage this policy</h2>
 <div class="iapm-form-footer" style="margin-bottom:14px;">
-    <button type="submit" form="iapm-policy-form" class="btn btn-primary"><i class="fa fa-save"></i> Save policy</button>
+    <button type="submit" form="iapm-policy-form" class="btn btn-primary" @if($assignmentEditor) disabled aria-describedby="iapm-policy-save-blocked" @endif><i class="fa fa-save"></i> Save policy</button>
     <a class="btn btn-default" href="{{ route('iapm.policies.index') }}">Cancel</a>
     <form method="post" action="{{ route('iapm.policies.clone',$policy) }}" style="display:inline;">@csrf<button class="btn btn-default"><i class="fa fa-copy"></i> Clone policy</button></form>
-    <span class="iapm-hint">Save applies every policy field above. Clone creates a disabled copy with the same timing and actions.</span>
+    @if($assignmentEditor)
+        <span class="iapm-hint" id="iapm-policy-save-blocked">Finish the open assignment with <strong>Save assignment</strong> or <strong>Cancel</strong> first.</span>
+    @else
+        <span class="iapm-hint">Save applies every policy field above. Clone creates a disabled copy with the same timing and actions.</span>
+    @endif
 </div>
 
 {{-- P2-4: the confirmation used to read only "Delete this policy?" — it said
@@ -147,6 +151,15 @@ $fields = [
 @endif</div>
 <script>
 (function () {
+    var assignmentForm = document.getElementById('iapm-assignment-form');
+    var policyForm = document.getElementById('iapm-policy-form');
+    if (assignmentForm && policyForm) {
+        policyForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            document.getElementById('iapm-save-assignment').focus();
+        });
+    }
+
     function humanize(v) {
         var s = parseInt(v, 10);
         if (!s || s <= 0) return '';

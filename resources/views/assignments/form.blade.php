@@ -73,13 +73,19 @@
     <p class="iapm-hint">PCRE with delimiters, e.g. <code>/^xe-/</code>. Validated when you save.</p>
 </div>
 
-{{-- Device groups multi-select + mode --}}
+{{-- Device group checkboxes + mode --}}
 <div class="form-group iapm-field" data-types="device_group">
-    <label for="iapm-as-groups">Device groups</label>
-    <select name="device_group_ids[]" id="iapm-as-groups" class="form-control iapm-groupsel" multiple size="6" disabled>
-        @foreach($deviceGroups as $g)<option value="{{ $g->id }}" @selected(in_array((string)$g->id,$selectedGroups,true))>{{ $g->name }}</option>@endforeach
-    </select>
-    <p class="iapm-hint">Hold Ctrl/Cmd to select several. Mode below controls how multiple groups combine.</p>
+    <div id="iapm-as-groups-label"><strong>Device groups</strong></div>
+    <div id="iapm-as-groups" role="group" aria-labelledby="iapm-as-groups-label">
+        @forelse($deviceGroups as $g)
+            <div class="checkbox">
+                <label for="iapm-as-group-{{ $g->id }}"><input type="checkbox" name="device_group_ids[]" id="iapm-as-group-{{ $g->id }}" value="{{ $g->id }}" @checked(in_array((string)$g->id,$selectedGroups,true)) disabled> {{ $g->name }}</label>
+            </div>
+        @empty
+            <p class="iapm-hint">No device groups are available.</p>
+        @endforelse
+    </div>
+    <p class="iapm-hint">Select one or more groups. Mode below controls how multiple groups combine.</p>
 </div>
 
 <div class="form-group iapm-field" data-types="device_group">
@@ -107,7 +113,7 @@
 <input type="hidden" name="enabled" value="0">
 <div class="checkbox"><label for="iapm-as-enabled"><input type="checkbox" id="iapm-as-enabled" name="enabled" value="1" @checked(old('enabled',$assignment->exists?$assignment->enabled:true))> Enabled</label></div>
 
-<button class="btn btn-primary"><i class="fa fa-save"></i> Save assignment</button>
+<button type="submit" class="btn btn-primary" id="iapm-save-assignment"><i class="fa fa-save"></i> Save assignment</button>
 <a class="btn btn-default" href="{{ route('iapm.policies.edit',$policy) }}#assignments">Cancel</a>
 <button type="button" class="btn btn-default" id="iapm-preview-btn"><i class="fa fa-search"></i> Preview match count</button>
 <span id="iapm-preview-result" style="margin-left:8px;" aria-live="polite"></span>
