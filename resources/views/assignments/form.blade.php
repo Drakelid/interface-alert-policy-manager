@@ -76,7 +76,7 @@
 {{-- Device group checkboxes + mode --}}
 <div class="form-group iapm-field" data-types="device_group">
     <div id="iapm-as-groups-label"><strong>Device groups</strong></div>
-    <div id="iapm-as-groups" role="group" aria-labelledby="iapm-as-groups-label">
+    <div id="iapm-as-groups" class="iapm-assignment-group-grid" role="group" aria-labelledby="iapm-as-groups-label">
         @forelse($deviceGroups as $g)
             <div class="checkbox">
                 <label for="iapm-as-group-{{ $g->id }}"><input type="checkbox" name="device_group_ids[]" id="iapm-as-group-{{ $g->id }}" value="{{ $g->id }}" @checked(in_array((string)$g->id,$selectedGroups,true)) disabled> {{ $g->name }}</label>

@@ -18,6 +18,8 @@
 .iapm-field-grid label { display:block; margin-bottom:3px; font-weight:600; font-size:12px; }
 .iapm-checkbox-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; margin-top:12px; padding-top:10px; border-top:1px solid rgba(128,128,128,.25); }
 .iapm-checkbox-row .checkbox-inline { margin:0; padding-left:20px; }
+.iapm-assignment-group-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 18px; }
+.iapm-assignment-group-grid .checkbox { min-width:0; overflow-wrap:anywhere; }
 .iapm-filter-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
 /* Keeps a button aligned with the inputs beside it without an empty-looking gap. */
 .iapm-invisible-label { visibility:hidden; }
@@ -109,6 +111,7 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
     .iapm-nav .nav-pills > li { float:none; display:inline-block; }
     .iapm-hide-sm { display:none; }
     .iapm-truncate { max-width:130px; }
+    .iapm-assignment-group-grid { grid-template-columns:1fr; }
 }
 /* Sticky header for long tables (opt in with .iapm-sticky on the table) */
 .iapm-sticky thead th { position:sticky; top:0; z-index:2; }

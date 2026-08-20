@@ -150,6 +150,7 @@ class RouteSmokeTest extends IntegrationTestCase
             $body
         );
         self::assertStringNotContainsString('<select name="device_group_ids[]"', $body);
+        self::assertStringContainsString('class="iapm-assignment-group-grid"', $body);
         self::assertStringContainsString('id="iapm-save-assignment"', $body);
         self::assertMatchesRegularExpression('#form="iapm-policy-form"[^>]+disabled#', $body);
         self::assertStringContainsString('Finish the open assignment', $body);
