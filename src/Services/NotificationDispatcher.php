@@ -209,7 +209,7 @@ class NotificationDispatcher
             $outbox->incident->events()->create(['event_type' => 'notification_failed', 'event_message' => ucfirst($outbox->phase).' notification failed after '.$attempts.' attempt(s).', 'event_data' => ['destination_id' => $outbox->destination_id, 'outbox_id' => $outbox->id, 'error' => $safeError]]);
         }
 
-        Log::channel('iapm')->log($result->successful ? 'info' : 'error', 'Notification delivery completed.', ['incident_id' => $outbox->incident_id, 'outbox_id' => $outbox->id, 'destination_id' => $outbox->destination_id, 'phase' => $outbox->phase, 'successful' => $result->successful, 'attempts' => $attempt]);
+        Log::channel('iapm')->log($result->successful ? 'info' : 'error', 'Notification delivery completed.', ['incident_id' => $outbox->incident_id, 'outbox_id' => $outbox->id, 'destination_id' => $outbox->destination_id, 'phase' => $outbox->phase, 'successful' => $result->successful, 'attempts' => (int) $outbox->attempt_count]);
 
         return $result;
     }

@@ -15,8 +15,15 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\TemplateContextBuilder
 
 class PolicyActionController extends Controller
 {
-    public function create(Policy $policy)
+    /**
+     * Gated like store()/update(): the form carries the action's receiver overrides
+     * and the destination list, which a `view iapm` user must not read. The route
+     * group only requires `view iapm`, so the check belongs here.
+     */
+    public function create(Request $r, Policy $policy)
     {
+        abort_unless($r->user()->can('manage iapm policies'), 403);
+
         return view('iapm::actions.form', ['policy' => $policy, 'action' => new PolicyAction, 'destinations' => Destination::where('enabled', true)->orderBy('name')->get()]);
     }
 
@@ -29,8 +36,10 @@ class PolicyActionController extends Controller
         return redirect()->route('iapm.policies.edit', $policy)->with('status', 'Action created.');
     }
 
-    public function edit(PolicyAction $action)
+    public function edit(Request $r, PolicyAction $action)
     {
+        abort_unless($r->user()->can('manage iapm policies'), 403);
+
         return view('iapm::actions.form', ['policy' => $action->policy, 'action' => $action, 'destinations' => Destination::orderBy('name')->get()]);
     }
 

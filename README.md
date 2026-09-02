@@ -264,6 +264,8 @@ sudo systemctl enable --now iapm-worker@{1..6}
 
 For a guarded end-to-end production update, copy `tools/update-production.sh` to the server and run `sudo bash update-production.sh`. It defaults to the latest compatible `^1.7` release; pass an exact release such as `sudo bash update-production.sh 1.7.8` to pin it. The script preserves other `composer.plugins.json` entries, backs up Composer metadata, stops and restores systemd IAPM workers, updates the package, migrates, clears caches, reloads PHP-FPM, queues a policy-cache rebuild, and runs both operational checks. Take a verified database backup first.
 
+<sub>The script requires **systemd** — it drives the `iapm-worker@` units and the PHP-FPM reload through `systemctl`, and exits with an explanation if `systemctl` is missing. Use the manual commands below on a non-systemd host. Its backup covers `composer.json`, `composer.lock` and `composer.plugins.json` only; it does **not** copy `.env`, so preserving `APP_KEY` is your own backup step, exactly as the script's pre-flight summary states.</sub>
+
 ```bash
 sudo -u librenms php artisan migrate --force
 sudo -u librenms php artisan optimize:clear

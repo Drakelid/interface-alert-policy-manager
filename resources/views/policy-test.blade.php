@@ -9,7 +9,7 @@
     <button class="btn btn-primary"><i class="fa fa-flask"></i> Evaluate</button>
 </form>
 @if($port)<h2>{{ $port->device->hostname }} / {{ $port->ifName }}</h2>
-@if($resolution->policy)<div class="alert alert-success">Effective policy: <strong><a href="{{ route('iapm.policies.edit',$resolution->policy) }}">{{ $resolution->policy->name }}</a></strong>. @if($resolution->winner)Selected by the {{ $resolution->winner->assignment_type->value }} <a href="{{ route('iapm.policies.edit',['policy'=>$resolution->policy,'assignment'=>$resolution->winner->id]) }}#assignments">assignment</a>.@else Selected by the configured default-policy setting.@endif</div>@else<div class="alert alert-warning"><strong>No effective policy.</strong> This interface would not notify anyone. Open a policy and add an assignment covering it, or a default assignment covering everything unmatched.</div>@endif
+@if($resolution->policy)<div class="alert alert-success">Effective policy: <strong>@can('manage iapm policies')<a href="{{ route('iapm.policies.edit',$resolution->policy) }}">{{ $resolution->policy->name }}</a>@else{{ $resolution->policy->name }}@endcan</strong>. @if($resolution->winner)Selected by the {{ $resolution->winner->assignment_type->value }} @can('manage iapm policies')<a href="{{ route('iapm.policies.edit',['policy'=>$resolution->policy,'assignment'=>$resolution->winner->id]) }}#assignments">assignment</a>@else{{ 'assignment' }}@endcan.@else Selected by the configured default-policy setting.@endif</div>@else<div class="alert alert-warning"><strong>No effective policy.</strong> This interface would not notify anyone. Open a policy and add an assignment covering it, or a default assignment covering everything unmatched.</div>@endif
 
 @if($resolution->policy)
 <div class="panel panel-default">
@@ -23,8 +23,9 @@
             {{-- Keep the else branch on its own line. Blade matches a directive only when
                  its '@' is not preceded by a word character, so closing a loop and opening
                  the else branch with no separator makes the else render as literal text. --}}
-            <td>@if(count($d['receivers']))@foreach($d['receivers'] as $rcv)<span class="label label-info">{{ $rcv }}</span> @endforeach
-            @else<span class="label label-danger" title="No receiver resolves — this action would fail configuration">no receiver</span>@endif</td>
+            <td>@if(! $d['has_receivers'])<span class="label label-danger" title="No receiver resolves — this action would fail configuration">no receiver</span>
+            @elseif($canSeeReceivers)@foreach($d['receivers'] as $rcv)<span class="label label-info">{{ $rcv }}</span> @endforeach
+            @else<span class="label label-default" title="A receiver resolves, but viewing it requires permission to manage policies or destinations">hidden</span>@endif</td>
         </tr>@endforeach</tbody></table>
         @else
         <p class="text-warning" style="margin-bottom:12px;"><i class="fa fa-bell-slash"></i> This policy has no enabled notification action — matched interfaces would trigger silently.</p>
@@ -34,4 +35,4 @@
 @endif
 <h2>Why this policy won</h2>
 <p class="iapm-hint">Every assignment that matches this interface, most specific first. Precedence is port, port group, device, device group, location, ifAlias regex, ifName regex, interface type, then default; ties break on assignment priority, then policy priority, then the newest assignment.</p>
-<table class="table"><thead><tr><th>Winner</th><th>Assignment</th><th>Type</th><th>Assignment priority</th><th>Policy</th><th>Policy priority</th><th>Updated</th></tr></thead><tbody>@foreach($resolution->candidates as $candidate)<tr><td>@if($candidate->id===$resolution->winner?->id)<span class="label label-success">Yes</span>@endif</td><td><a href="{{ route('iapm.policies.edit',['policy'=>$candidate->policy,'assignment'=>$candidate->id]) }}#assignments">#{{ $candidate->id }}</a></td><td>{{ $candidate->assignment_type->value }}</td><td>{{ $candidate->priority }}</td><td><a href="{{ route('iapm.policies.edit',$candidate->policy) }}">{{ $candidate->policy->name }}</a></td><td>{{ $candidate->policy->priority }}</td><td>@include('iapm::partials.time',['at'=>$candidate->updated_at])</td></tr>@endforeach</tbody></table>@endif</div>@endsection
+<table class="table"><thead><tr><th>Winner</th><th>Assignment</th><th>Type</th><th>Assignment priority</th><th>Policy</th><th>Policy priority</th><th>Updated</th></tr></thead><tbody>@foreach($resolution->candidates as $candidate)<tr><td>@if($candidate->id===$resolution->winner?->id)<span class="label label-success">Yes</span>@endif</td><td>@can('manage iapm policies')<a href="{{ route('iapm.policies.edit',['policy'=>$candidate->policy,'assignment'=>$candidate->id]) }}#assignments">#{{ $candidate->id }}</a>@else#{{ $candidate->id }}@endcan</td><td>{{ $candidate->assignment_type->value }}</td><td>{{ $candidate->priority }}</td><td>@can('manage iapm policies')<a href="{{ route('iapm.policies.edit',$candidate->policy) }}">{{ $candidate->policy->name }}</a>@else{{ $candidate->policy->name }}@endcan</td><td>{{ $candidate->policy->priority }}</td><td>@include('iapm::partials.time',['at'=>$candidate->updated_at])</td></tr>@endforeach</tbody></table>@endif</div>@endsection

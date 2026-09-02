@@ -1,4 +1,13 @@
-@extends('layouts.librenmsv1') @section('title','IAPM Interface Matrix') @section('content')<div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">Interface Matrix</h1>
+@extends('layouts.librenmsv1') @section('title','IAPM Interface Matrix') @section('content')
+{{-- The controller authorizes every write on this page (rebuild-cache and the
+     assign/mute halves of the bulk action), but the controls themselves were
+     rendered to anyone with `view iapm`, so a read-only user was offered
+     buttons that could only ever 403. Gate the affordances to match. --}}
+@php($iapmCanAssign = (bool) auth()->user()?->can('manage iapm assignments'))
+@php($iapmCanMute = (bool) auth()->user()?->can('mute iapm incidents'))
+@php($iapmCanBulk = $iapmCanAssign || $iapmCanMute)
+@php($iapmCanManagePolicies = (bool) auth()->user()?->can('manage iapm policies'))
+<div class="container-fluid">@include('iapm::partials.nav')<h1 class="iapm-page-title">Interface Matrix</h1>
 <p class="iapm-hint" style="max-width:70em;">Every interface LibreNMS knows about, and <strong>which policy would apply to it</strong>. Use it to find interfaces nothing covers, to bulk-assign a policy, and to look up a <code>port_id</code> for the tools that need one. Policy, assignment-source and no-policy filtering reads the materialized cache below.</p>
 {{-- P1-2: device group, device and location were free-text numeric boxes asking
      for internal primary keys. Groups and locations are small enough to
@@ -75,9 +84,11 @@
                     <span class="iapm-hint">Never rebuilt.</span>
                 @endif
             </span>
+            @if($iapmCanAssign)
             <form method="post" action="{{ route('iapm.matrix.rebuild-cache') }}" data-iapm-busy style="display:inline;">@csrf
                 <button class="btn btn-default btn-sm" id="iapm-cache-rebuild" data-busy="Starting…" @disabled($cache['running'])><i class="fa fa-refresh"></i> Rebuild cache</button>
             </form>
+            @endif
         </div>
         @if($cache['stale'])
         <div class="alert alert-warning" style="margin:10px 0 0;">
@@ -97,13 +108,19 @@
      separated only by a full-width banner, so the two groups read as one row.
      They are now a labelled panel of their own, and the date input says what
      it is instead of being an unexplained datetime box. --}}
+@if($iapmCanBulk)
 <div class="panel panel-default iapm-bulk-bar">
     <div class="panel-heading"><i class="fa fa-tasks"></i> Bulk action <span class="iapm-hint">&mdash; applies to the interfaces ticked below</span></div>
     <div class="panel-body">
         <div class="iapm-field-grid">
             <div class="form-group">
                 <label for="iapm-bulk-op">Operation</label>
-                <select class="form-control" id="iapm-bulk-op" name="operation"><option value="assign">Assign policy</option><option value="remove_assignment">Remove explicit assignment</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select>
+                {{-- The controller requires a different ability per half of this
+                     list, so only offer the operations this user can perform. --}}
+                <select class="form-control" id="iapm-bulk-op" name="operation">
+                    @if($iapmCanAssign)<option value="assign">Assign policy</option><option value="remove_assignment">Remove explicit assignment</option>@endif
+                    @if($iapmCanMute)<option value="mute">Mute</option><option value="unmute">Unmute</option>@endif
+                </select>
             </div>
             <div class="form-group">
                 <label for="iapm-bulk-policy">Policy to assign</label>
@@ -120,8 +137,10 @@
             </div>
         </div>
     </div>
-</div><div class="iapm-table-wrap" data-iapm-bulk-scope="matrix"><table class="table table-hover table-condensed iapm-sticky"><thead><tr>
-<th><input type="checkbox" aria-label="Select all interfaces on this page" data-iapm-toggle-all=".iapm-port"></th>
+</div>
+@endif
+<div class="iapm-table-wrap" data-iapm-bulk-scope="matrix"><table class="table table-hover table-condensed iapm-sticky"><thead><tr>
+@if($iapmCanBulk)<th><input type="checkbox" aria-label="Select all interfaces on this page" data-iapm-toggle-all=".iapm-port"></th>@endif
 @include('iapm::partials.sort-header',['column'=>'port_id','label'=>'port_id','numeric'=>true])
 @include('iapm::partials.sort-header',['column'=>'hostname','label'=>'Device'])
 @include('iapm::partials.sort-header',['column'=>'ifName','label'=>'Interface'])
@@ -135,7 +154,7 @@
      checkbox, yet Simulate Alert, Policy Test and Template Preview all demand
      it. It is now shown, copyable, and wired into per-row shortcuts. --}}
 @foreach($rows as $row)@php($p=$row['port'])@php($portUrl=\LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\LibreNmsRoutes::port($p->device_id,$p->port_id))<tr>
-<td><input class="iapm-port" type="checkbox" name="port_ids[]" value="{{ $p->port_id }}" aria-label="Select {{ $p->device->hostname }} {{ $p->ifName }}"></td>
+@if($iapmCanBulk)<td><input class="iapm-port" type="checkbox" name="port_ids[]" value="{{ $p->port_id }}" aria-label="Select {{ $p->device->hostname }} {{ $p->ifName }}"></td>@endif
 <td class="iapm-num"><code>{{ $p->port_id }}</code> <button type="button" class="btn btn-link btn-xs" data-iapm-copy-text="{{ $p->port_id }}" title="Copy port_id {{ $p->port_id }}" aria-label="Copy port_id {{ $p->port_id }}"><i class="fa fa-copy"></i></button></td>
 <td><a href="{{ \LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\LibreNmsRoutes::device($p->device_id) }}">{{ $p->device->hostname }}</a></td>
 <td><a href="{{ $portUrl }}" title="Open {{ $p->ifName }} in LibreNMS">{{ $p->ifName }}</a></td>
@@ -143,8 +162,12 @@
 <td>{{ $p->device->location?->location }}</td>
 <td>{{ $p->ifAdminStatus?->value }}</td>
 <td>{{ $p->ifOperStatus?->value }}</td>
-<td>@if($row['policy'])<a href="{{ route('iapm.policies.edit',$row['policy']) }}">{{ $row['policy']->name }}</a>@else<span class="text-warning">No policy</span>@endif</td>
-<td title="{{ collect($row['candidates'])->map(fn($a)=>$a->policy->name)->implode(', ') }}">@if($row['winner'])<a href="{{ route('iapm.policies.edit',['policy'=>$row['winner']->policy,'assignment'=>$row['winner']->id]) }}#assignments">{{ $row['winner']->assignment_type->value }}</a>@else<span class="iapm-hint">&mdash;</span>@endif</td>
+<td>@if(! $row['policy'])<span class="text-warning">No policy</span>
+@elseif($iapmCanManagePolicies)<a href="{{ route('iapm.policies.edit',$row['policy']) }}">{{ $row['policy']->name }}</a>
+@else{{ $row['policy']->name }}@endif</td>
+<td title="{{ collect($row['candidates'])->map(fn($a)=>$a->policy->name)->implode(', ') }}">@if(! $row['winner'])<span class="iapm-hint">&mdash;</span>
+@elseif($iapmCanManagePolicies)<a href="{{ route('iapm.policies.edit',['policy'=>$row['winner']->policy,'assignment'=>$row['winner']->id]) }}#assignments">{{ $row['winner']->assignment_type->value }}</a>
+@else{{ $row['winner']->assignment_type->value }}@endif</td>
 <td>@if($row['incident'])<a href="{{ route('iapm.incidents.show',$row['incident']) }}">@include('iapm::partials.state-label',['state'=>$row['incident']->state->value])</a>@endif</td>
 <td class="iapm-actions" style="white-space:nowrap;">
     <a class="btn btn-default btn-xs" href="{{ route('iapm.policy-test',['port_id'=>$p->port_id]) }}" title="Policy Test for port_id {{ $p->port_id }}" aria-label="Policy Test for {{ $p->ifName }}"><i class="fa fa-flask"></i></a>

@@ -79,6 +79,110 @@ class AuthorizationTest extends IntegrationTestCase
             ->assertForbidden();
     }
 
+    /**
+     * The policy, action and Policy Test pages all surface receiver values —
+     * `Policy::default_receiver` is bound as an input on the policy form,
+     * `PolicyAction::receivers_json` on the action form, `Assignment::metadata_json`
+     * on the assignment editor, and Policy Test resolves through to the
+     * destination's `default_receiver`. All four are the same secret the
+     * destination form already withholds, so a view-only user must not reach them.
+     */
+    public function test_a_view_only_user_cannot_open_policy_or_action_configuration_forms(): void
+    {
+        $viewer = $this->viewer();
+        $policy = $this->policy(['default_receiver' => '+4712345678']);
+        $action = $policy->actions()->create([
+            'destination_id' => $this->smsDestination()->id,
+            'phase' => 'trigger',
+            'delay_seconds' => 0,
+            'sort_order' => 0,
+            'enabled' => true,
+            'receivers_json' => ['+4798765432'],
+        ]);
+        $assignment = $policy->assignments()->create([
+            'assignment_type' => 'default',
+            'match_mode' => 'any',
+            'priority' => 0,
+            'enabled' => true,
+            'metadata_json' => ['receivers' => ['+4711112222']],
+        ]);
+
+        foreach ([
+            "/plugin/interface-alert-policy-manager/policies/{$policy->id}/edit",
+            "/plugin/interface-alert-policy-manager/policies/{$policy->id}/edit?assignment={$assignment->id}",
+            "/plugin/interface-alert-policy-manager/policies/{$policy->id}/edit?assignment=new",
+            '/plugin/interface-alert-policy-manager/policies/create',
+            "/plugin/interface-alert-policy-manager/policies/{$policy->id}/actions/create",
+            "/plugin/interface-alert-policy-manager/actions/{$action->id}/edit",
+        ] as $path) {
+            $this->actingAs($viewer)->get($path)->assertForbidden();
+        }
+
+        // The list stays readable, but without a link into the gated form.
+        $this->actingAs($viewer)
+            ->get('/plugin/interface-alert-policy-manager/policies')
+            ->assertOk()
+            ->assertSee($policy->name)
+            ->assertDontSee('+4712345678')
+            ->assertDontSee("/policies/{$policy->id}/edit", false);
+    }
+
+    public function test_policy_test_hides_resolved_receivers_from_a_view_only_user(): void
+    {
+        $viewer = $this->viewer();
+        $port = $this->downPort($this->device());
+        $policy = $this->defaultPolicy();
+        $policy->actions()->create([
+            'destination_id' => $this->smsDestination(['default_receiver' => '+4700000001'])->id,
+            'phase' => 'trigger',
+            'delay_seconds' => 0,
+            'sort_order' => 0,
+            'enabled' => true,
+        ]);
+
+        $response = $this->actingAs($viewer)
+            ->get('/plugin/interface-alert-policy-manager/policy-test?port_id='.$port->port_id)
+            ->assertOk();
+
+        // The operational verdict survives; only the value is withheld. Assert on
+        // the masking control's own copy — a bare "hidden" also matches
+        // `type="hidden"` and `aria-hidden` elsewhere in the layout.
+        $response->assertSee($policy->name)
+            ->assertSee('viewing it requires permission to manage policies or destinations')
+            ->assertDontSee('+4700000001');
+
+        $this->actingAs($this->admin())
+            ->get('/plugin/interface-alert-policy-manager/policy-test?port_id='.$port->port_id)
+            ->assertOk()
+            ->assertSee('+4700000001');
+    }
+
+    public function test_the_interface_matrix_hides_write_controls_from_a_view_only_user(): void
+    {
+        $this->downPort($this->device());
+
+        $this->actingAs($this->viewer())
+            ->get('/plugin/interface-alert-policy-manager/interface-matrix')
+            ->assertOk()
+            ->assertDontSee('/interface-matrix/rebuild-cache', false)
+            ->assertDontSee('data-iapm-bulk-button="matrix"', false);
+
+        $this->actingAs($this->admin())
+            ->get('/plugin/interface-alert-policy-manager/interface-matrix')
+            ->assertOk()
+            ->assertSee('/interface-matrix/rebuild-cache', false)
+            ->assertSee('data-iapm-bulk-button="matrix"', false);
+    }
+
+    private function viewer(): User
+    {
+        Permission::findOrCreate('view iapm', 'web');
+        $viewer = User::factory()->create(['enabled' => true]);
+        $viewer->givePermissionTo('view iapm');
+
+        return $viewer;
+    }
+
     public function test_an_administrator_can_acknowledge_and_unacknowledge_an_incident(): void
     {
         $admin = $this->admin();

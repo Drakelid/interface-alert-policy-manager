@@ -2,10 +2,18 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 class UrlGuard
 {
+    /**
+     * Whether this process has already reported that connection pinning is
+     * unavailable. The warning describes a static property of the runtime, so
+     * repeating it once per delivery would flood the log during a storm.
+     */
+    private static bool $reportedUnpinned = false;
+
     public function assertAllowed(string $url, bool $allowPrivate = false): void
     {
         $parts = parse_url($url);
@@ -47,7 +55,20 @@ class UrlGuard
         // CURLOPT_RESOLVE expects the bracket-free host and, for IPv6, a bracketed address.
         $pinned = str_contains($ip, ':') ? "[$ip]" : $ip;
 
-        return defined('CURLOPT_RESOLVE') ? ['allow_redirects' => false, 'curl' => [constant('CURLOPT_RESOLVE') => ["{$parts['host']}:$port:$pinned"]]] : ['allow_redirects' => false];
+        if (! defined('CURLOPT_RESOLVE')) {
+            // Without ext-curl, Guzzle falls back to the PHP stream handler and the
+            // connection cannot be pinned to the address just validated. Redirects
+            // stay disabled and the pre-flight check still runs, but a hostile DNS
+            // server can now answer differently for the request itself. Deliveries
+            // continue — refusing them would break otherwise working installations
+            // on a curl-less runtime — but the weakened guarantee is recorded once
+            // rather than degrading silently.
+            $this->reportMissingPinning();
+
+            return ['allow_redirects' => false];
+        }
+
+        return ['allow_redirects' => false, 'curl' => [constant('CURLOPT_RESOLVE') => ["{$parts['host']}:$port:$pinned"]]];
     }
 
     /**
@@ -114,6 +135,19 @@ class UrlGuard
         }
 
         return true;
+    }
+
+    private function reportMissingPinning(): void
+    {
+        if (self::$reportedUnpinned) {
+            return;
+        }
+        self::$reportedUnpinned = true;
+        try {
+            Log::channel('iapm')->warning('Outbound connections cannot be pinned to the validated IP: ext-curl is unavailable, so CURLOPT_RESOLVE is not defined. Redirects remain disabled and destination addresses are still checked before each request, but DNS rebinding between the check and the request is no longer prevented. Install ext-curl on the LibreNMS host to restore pinning.');
+        } catch (\Throwable) {
+            // Never let a logging failure block a notification.
+        }
     }
 
     private function normalizeHost(string $host): string

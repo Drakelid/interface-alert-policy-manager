@@ -47,8 +47,10 @@ class PolicyController extends Controller
         return redirect()->route('iapm.policies.index')->with($skipped ? 'error' : 'status', $msg);
     }
 
-    public function create()
+    public function create(Request $r)
     {
+        abort_unless($r->user()->can('manage iapm policies'), 403);
+
         return view('iapm::policies.form', ['policy' => new Policy]);
     }
 
@@ -60,8 +62,22 @@ class PolicyController extends Controller
         return redirect()->route('iapm.policies.edit', $p)->with('status', 'Policy created.');
     }
 
+    /**
+     * Gated like update(). The form binds the policy's `default_receiver` as an
+     * input, and `?assignment=` additionally opens the assignment editor, which
+     * renders that assignment's `metadata_json['receivers']` overrides. Both are
+     * receiver values a `view iapm` user must not read — the same rule the
+     * destination form already applies. The route group only requires
+     * `view iapm`, so the check belongs here.
+     *
+     * Callers that linked here as a read-only reference (incidents, the
+     * Interface Matrix, Policy Test, the policy list) now show the policy name
+     * as plain text for users without the ability.
+     */
     public function edit(Request $request, Policy $policy, AssignmentFormData $assignmentForms)
     {
+        abort_unless($request->user()->can('manage iapm policies'), 403);
+
         $assignment = null;
         if ($request->query('assignment') === 'new') {
             $assignment = new Assignment(['policy_id' => $policy->id]);

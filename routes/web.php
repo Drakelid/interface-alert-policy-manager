@@ -30,7 +30,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Middleware\EnsurePluginEna
 
 // Throttle is listed before authentication so an invalid-token flood is rate
 // limited before it reaches the DB read + decrypt performed by AuthenticateIngestion.
-Route::post('plugin/interface-alert-policy-manager/api/v1/alerts', IngestionController::class)->middleware([EnsurePluginEnabled::class, 'throttle:'.config('iapm.ingestion.rate_limit', '120,1'), AuthenticateIngestion::class])->name('iapm.ingest');
+Route::post('plugin/interface-alert-policy-manager/api/v1/alerts', IngestionController::class)->middleware([EnsurePluginEnabled::class, 'throttle:'.config('iapm.ingestion.rate_limit', '20000,1'), AuthenticateIngestion::class])->name('iapm.ingest');
 Route::middleware([EnsurePluginEnabled::class, 'web', 'auth', 'can:view iapm'])->prefix('plugin/interface-alert-policy-manager')->name('iapm.')->group(function (): void {
     Route::get('/', OverviewController::class)->name('overview');
     Route::delete('policies-bulk', [PolicyController::class, 'bulkDestroy'])->name('policies.bulk-destroy');

@@ -72,7 +72,9 @@
         </div>
 
         <div class="row">
-            <div class="col-sm-3 form-group"><label for="iapm-dest-connect">Connect timeout (s)</label><input class="form-control" id="iapm-dest-connect" type="number" min="1" max="300" name="connect_timeout" value="{{ old('connect_timeout',$configuration['connect_timeout']??5) }}"></div>
+            {{-- max must match DestinationRequest's `between:1,60`; it said 300, so
+                 61-300 passed browser validation and was rejected server-side. --}}
+            <div class="col-sm-3 form-group"><label for="iapm-dest-connect">Connect timeout (s)</label><input class="form-control" id="iapm-dest-connect" type="number" min="1" max="60" name="connect_timeout" value="{{ old('connect_timeout',$configuration['connect_timeout']??5) }}"></div>
             <div class="col-sm-3 form-group"><label for="iapm-dest-timeout">Request timeout (s)</label><input class="form-control" id="iapm-dest-timeout" type="number" min="1" max="300" name="timeout" value="{{ old('timeout',$configuration['timeout']??15) }}"></div>
             <div class="col-sm-3 form-group"><label for="iapm-dest-retries">Retry count</label><input class="form-control" id="iapm-dest-retries" type="number" min="0" max="10" name="retry_count" value="{{ old('retry_count',$configuration['retry_count']??2) }}"></div>
             <div class="col-sm-3 form-group"><label for="iapm-dest-retrydelay">Retry delay (ms)</label><input class="form-control" id="iapm-dest-retrydelay" type="number" min="0" max="60000" name="retry_delay_ms" value="{{ old('retry_delay_ms',$configuration['retry_delay_ms']??500) }}"></div>

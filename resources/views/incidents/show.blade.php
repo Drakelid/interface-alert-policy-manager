@@ -7,7 +7,9 @@
 <dl class="dl-horizontal">
     <dt>Interface</dt><dd>{{ $ctx['hostname'] ?? $incident->device_id }} — {{ $ctx['ifName'] ?? ('port '.$incident->port_id) }}</dd>
     <dt>Description</dt><dd>{{ $ctx['ifAlias'] ?? '—' }}</dd>
-    <dt>Policy</dt><dd>@if($incident->policy)<a href="{{ route('iapm.policies.edit',$incident->policy) }}">{{ $incident->policy->name }}</a>@else<span class="text-warning">none</span>@endif</dd>
+    <dt>Policy</dt><dd>@if(! $incident->policy)<span class="text-warning">none</span>
+    @elseif(auth()->user()?->can('manage iapm policies'))<a href="{{ route('iapm.policies.edit',$incident->policy) }}">{{ $incident->policy->name }}</a>
+    @else{{ $incident->policy->name }}@endif</dd>
     <dt>Severity</dt><dd>{{ $incident->severity->value }}</dd>
     <dt>Suppression</dt><dd>{{ $incident->suppression_reason ?: '—' }}</dd>
     <dt>First seen</dt><dd>@include('iapm::partials.time',['at'=>$incident->first_seen_at])</dd>

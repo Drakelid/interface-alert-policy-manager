@@ -7,9 +7,17 @@
 #   sudo bash update-production.sh 1.7.3       # install an exact release
 #   sudo bash update-production.sh '^1.7' --yes
 #
+# Requires systemd: the script stops and restarts iapm-worker@ units and reloads
+# PHP-FPM through systemctl. On a host without systemd (a container image, for
+# example) follow the manual steps in the README's "Updating" section instead.
+#
 # The default constraint follows stable 1.x releases from 1.7 onward. Database
 # backup policy is installation-specific, so take and verify that backup before
-# running this script. This script backs up only the affected Composer metadata.
+# running this script. This script backs up only the affected Composer metadata;
+# it deliberately does NOT copy .env, because that file holds APP_KEY and the
+# database credentials, and an unmanaged plaintext copy per update accumulates
+# indefinitely. Preserving .env is the operator's own backup step, which the
+# pre-flight summary below asks for explicitly.
 
 set -Eeuo pipefail
 
@@ -87,7 +95,7 @@ cd "$LIBRENMS_DIR"
 
 command -v php >/dev/null 2>&1 || fail "PHP is not available on PATH."
 command -v sudo >/dev/null 2>&1 || fail "sudo is not available on PATH."
-command -v systemctl >/dev/null 2>&1 || fail "systemctl is not available on PATH."
+command -v systemctl >/dev/null 2>&1 || fail "systemctl is not available on PATH. This script manages the iapm-worker@ units and the PHP-FPM reload through systemd; on a non-systemd host follow the manual update steps in the README instead."
 
 for required in artisan lnms scripts/composer_wrapper.php composer.json; do
     [[ -e "$required" ]] || fail "Required LibreNMS file is missing: $LIBRENMS_DIR/$required"
@@ -135,7 +143,7 @@ fi
 
 BACKUP_DIR="/var/backups/iapm/update-$(date +%Y%m%d-%H%M%S)"
 install -d -m 0700 "$BACKUP_DIR"
-for file in composer.json composer.lock composer.plugins.json .env; do
+for file in composer.json composer.lock composer.plugins.json; do
     if [[ -f "$file" ]]; then
         cp --preserve=mode,timestamps "$file" "$BACKUP_DIR/$file"
     fi

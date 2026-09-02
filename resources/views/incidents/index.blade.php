@@ -1,5 +1,8 @@
 @extends('layouts.librenmsv1')
 @php
+// The policy form is gated on `manage iapm policies` (it binds default_receiver),
+// so link the policy name only for users who can actually open it.
+$iapmCanManagePolicies = (bool) auth()->user()?->can('manage iapm policies');
 // P2-7: the tab said "IAPM Incidents", the heading said "Active Incidents", the
 // default filter was "Open incidents", and the list happily showed acknowledged
 // rows. All three now describe the same thing, and the heading follows whatever
@@ -74,7 +77,9 @@ if (request('escalation') === 'pending') {
 <td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-incidents" name="incident_ids[]" value="{{ $i->id }}" aria-label="Select incident {{ $i->id }}"></td>
 <td><a href="{{ route('iapm.incidents.show',$i) }}">{{ $i->id }}</a></td>
 <td class="iapm-truncate" title="{{ ($c['hostname'] ?? $i->device_id).' — '.($c['ifAlias'] ?? '') }}"><a href="{{ route('device',$i->device_id) }}">{{ $c['hostname'] ?? $i->device_id }}</a> — {{ $c['ifName'] ?? $i->port_id }}</td>
-<td>@if($i->policy)<a href="{{ route('iapm.policies.edit',$i->policy) }}">{{ $i->policy->name }}</a>@else<span class="text-warning">none</span>@endif</td>
+<td>@if(! $i->policy)<span class="text-warning">none</span>
+@elseif($iapmCanManagePolicies)<a href="{{ route('iapm.policies.edit',$i->policy) }}">{{ $i->policy->name }}</a>
+@else{{ $i->policy->name }}@endif</td>
 <td>@include('iapm::partials.state-label',['state'=>$i->state->value])@if($i->muted_until && $i->muted_until->isFuture()) <i class="fa fa-volume-off iapm-hint" title="Muted until {{ $i->muted_until }}"></i>@endif</td>
 <td>{{ $i->severity->value }}</td>
 <td>@include('iapm::partials.time',['at'=>$i->first_seen_at])</td>

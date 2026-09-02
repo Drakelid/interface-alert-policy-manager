@@ -14,7 +14,9 @@ class GenericWebhookTransport implements NotificationTransport
     {
         try {
             $url = (string) ($configuration['url'] ?? '');
-            $networkOptions = $this->urls->pinnedOptions($url, (bool) ($configuration['allow_private_networks'] ?? false));
+            // Same fallback as SmsGatewayTransport: an unset per-destination flag
+            // defers to the global default rather than to a second, silent literal.
+            $networkOptions = $this->urls->pinnedOptions($url, (bool) ($configuration['allow_private_networks'] ?? config('iapm.http.allow_private_networks', false)));
             $client = $this->http->acceptJson()->asJson()->connectTimeout((int) ($configuration['connect_timeout'] ?? 5))->timeout((int) ($configuration['timeout'] ?? 15))->withOptions(array_merge($networkOptions, ['verify' => (bool) ($configuration['verify_tls'] ?? true)]));
             $headers = array_filter((array) ($configuration['headers'] ?? []), fn ($v, $k) => is_string($k) && is_scalar($v) && ! in_array(strtolower($k), ['authorization', 'host', 'content-length'], true), ARRAY_FILTER_USE_BOTH);
             if (! empty($configuration['_iapm_idempotency_key'])) {
