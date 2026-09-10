@@ -18,6 +18,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\IngestionInbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\DependencyResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IncidentLifecycleService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IngestionRejectionLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReceiverResolver;
@@ -33,10 +34,16 @@ class IngestionController extends Controller
         $state = $states->normalize($data['state']);
         $sourceEventAt = isset($data['timestamp']) ? CarbonImmutable::parse($data['timestamp'])->utc()->toIso8601String() : null;
         if ($state === 'recovered' && ! isset($data['alert_id']) && ! isset($data['alert_uid']) && ! isset($data['rule_id'])) {
+            // A recovery that cannot be correlated leaves incidents open forever,
+            // so the operator has to know the template dropped the identifiers.
+            app(IngestionRejectionLog::class)->record('correlation_required', $request->ip(), ['device_id' => (int) $data['device_id']]);
+
             return response()->json(['error' => ['code' => 'correlation_required', 'message' => 'Recovery payload requires alert_id, alert_uid, or rule_id.']], 422);
         }
         $device = Device::find($data['device_id']);
         if (! $device) {
+            app(IngestionRejectionLog::class)->record('device_not_found', $request->ip(), ['device_id' => (int) $data['device_id']]);
+
             return response()->json(['error' => ['code' => 'device_not_found', 'message' => 'Referenced device does not exist.']], 422);
         }
         $asyncThreshold = (int) config('iapm.ingestion.async_threshold', 1000);
@@ -49,6 +56,11 @@ class IngestionController extends Controller
             }
             $maxPending = max(1, (int) config('iapm.ingestion.inbox_max_pending', 10000));
             if (IngestionInbox::whereIn('status', ['pending', 'processing', 'failed'])->count() >= $maxPending) {
+                // Backpressure is shedding alerts. The inbox health check reports the
+                // backlog itself; this records that alerts were turned away because
+                // of it, which is the part an operator otherwise never sees.
+                app(IngestionRejectionLog::class)->record('ingestion_backlog_full', $request->ip(), ['device_id' => $device->device_id, 'max_pending' => $maxPending]);
+
                 return response()->json(['error' => ['code' => 'ingestion_backlog_full', 'message' => 'Durable ingestion backlog is full; retry later.']], 503, ['Retry-After' => '60']);
             }
             try {

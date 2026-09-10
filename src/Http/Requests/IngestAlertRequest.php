@@ -5,8 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IngestionRejectionLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\StateNormalizer;
 
 class IngestAlertRequest extends FormRequest
@@ -90,11 +89,10 @@ class IngestAlertRequest extends FormRequest
 
     protected function failedValidation(Validator $validator): void
     {
-        $logKey = 'iapm:invalid-payload-log:'.hash('sha256', (string) $this->ip());
-        if (! RateLimiter::tooManyAttempts($logKey, 1)) {
-            RateLimiter::hit($logKey, 60);
-            Log::channel('iapm')->warning('Ingestion payload validation failed.', ['ip' => $this->ip(), 'fields' => array_keys($validator->errors()->toArray())]);
-        }
+        // The failing field names are the diagnosis: device_id/state/faults all
+        // missing means the body was never the IAPM payload (no template on the
+        // rule, or the transport posting a form), not a bad value in one field.
+        app(IngestionRejectionLog::class)->record('validation_failed', $this->ip(), ['fields' => implode(',', array_keys($validator->errors()->toArray()))]);
         throw new HttpResponseException(response()->json(['error' => ['code' => 'validation_failed', 'message' => 'The alert payload is invalid.', 'fields' => $validator->errors()]], 422));
     }
 }

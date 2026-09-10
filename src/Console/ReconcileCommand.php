@@ -24,6 +24,14 @@ class ReconcileCommand extends Command
 
     protected $description = 'Reconcile open IAPM incidents with current LibreNMS port state';
 
+    /**
+     * How stale an incident's last_seen_at may become before reconciliation
+     * refreshes it. Reconciliation runs every minute, so an unconditional
+     * refresh would rewrite every open incident 1,440 times a day to say
+     * nothing new; five minutes keeps the stamp honest at 1/5th the writes.
+     */
+    public const LIVENESS_REFRESH_SECONDS = 300;
+
     public function handle(InterfaceContextService $contexts, PolicyResolver $resolver, SuppressionService $suppression, SettingStore $settings, DependencyResolver $dependencies, ReceiverResolver $receivers, IncidentLifecycleService $lifecycle): int
     {
         if ($this->pluginDisabled()) {
@@ -144,14 +152,24 @@ class ReconcileCommand extends Command
                     $data['observation_count'] = min((int) $policy->down_observations, (int) ($data['observation_count'] ?? 0) + 1);
                     $data['assignment_receivers'] = $receivers->assignmentReceivers($resolution);
                     $data['assignment_source'] = $resolution->winner?->assignment_type->value ?? 'configured_default';
+                    // Confirming the port is still down is evidence the incident is
+                    // still real, and for a long outage it is the *only* evidence:
+                    // LibreNMS re-notifies an open alert with an unchanging
+                    // timestamp, so ingestion dedupes every repeat on fingerprint
+                    // and stops touching the row. Without this, last_seen_at froze
+                    // at first ingestion — and the Overview, which orders by it,
+                    // buried live incidents beneath stale ones. Throttled, because
+                    // an unconditional write here is one row per open incident per
+                    // minute for the life of every outage.
+                    $liveness = $this->livenessDue($incident) ? ['last_seen_at' => now()] : [];
                     if ((int) $incident->policy_id !== (int) $policy->id && ! $this->option('dry-run')) {
                         $incident->update(['policy_id' => $policy->id, 'severity' => $policy->severity]);
                     }
                     // Honour an operator acknowledgement while the interface stays down —
                     // don't bounce it through suppressed/active. Recovery (port up) still clears it above.
                     if ($incident->state === IncidentState::Acknowledged) {
-                        if (! $this->option('dry-run') && $data !== (array) $incident->context_json) {
-                            $incident->update(['context_json' => $data]);
+                        if (! $this->option('dry-run') && ($liveness !== [] || $data !== (array) $incident->context_json)) {
+                            $incident->update($liveness + ['context_json' => $data]);
                         }
 
                         continue;
@@ -159,26 +177,26 @@ class ReconcileCommand extends Command
                     $reason = $suppression->reason($policy, $context, ! (bool) $port->device->status, SuppressionService::maintenanceSuppresses($port->device), SuppressionService::anyParentDown($port->device->parents), $dependencies->uplinkDown($port->device, $port->port_id));
                     if ($reason) {
                         if ($incident->state !== IncidentState::Suppressed || $incident->suppression_reason !== $reason) {
-                            $this->transition($incident, IncidentState::Suppressed, "Suppressed during reconciliation: $reason", ['suppression_reason' => $reason, 'context_json' => $data]);
+                            $this->transition($incident, IncidentState::Suppressed, "Suppressed during reconciliation: $reason", $liveness + ['suppression_reason' => $reason, 'context_json' => $data]);
                             $changed++;
-                        } elseif (! $this->option('dry-run') && $data !== (array) $incident->context_json) {
-                            $incident->update(['context_json' => $data]);
+                        } elseif (! $this->option('dry-run') && ($liveness !== [] || $data !== (array) $incident->context_json)) {
+                            $incident->update($liveness + ['context_json' => $data]);
                         }
 
                         continue;
                     }
                     if ($incident->state === IncidentState::Suppressed) {
                         $target = $this->requirementsMet($incident, $policy, $data['observation_count']) ? IncidentState::Active : IncidentState::Pending;
-                        $this->transition($incident, $target, 'Suppression condition cleared.', ['suppression_reason' => null, 'context_json' => $data, 'triggered_at' => $target === IncidentState::Active ? ($incident->triggered_at ?? now()) : null]);
+                        $this->transition($incident, $target, 'Suppression condition cleared.', $liveness + ['suppression_reason' => null, 'context_json' => $data, 'triggered_at' => $target === IncidentState::Active ? ($incident->triggered_at ?? now()) : null]);
                         $changed++;
 
                         continue;
                     }
                     if ($incident->state === IncidentState::Pending && $this->requirementsMet($incident, $policy, $data['observation_count'])) {
-                        $this->transition($incident, IncidentState::Active, 'Trigger requirements satisfied during reconciliation.', ['triggered_at' => now(), 'context_json' => $data]);
+                        $this->transition($incident, IncidentState::Active, 'Trigger requirements satisfied during reconciliation.', $liveness + ['triggered_at' => now(), 'context_json' => $data]);
                         $changed++;
-                    } elseif (! $this->option('dry-run') && $data !== (array) $incident->context_json) {
-                        $incident->update(['context_json' => $data]);
+                    } elseif (! $this->option('dry-run') && ($liveness !== [] || $data !== (array) $incident->context_json)) {
+                        $incident->update($liveness + ['context_json' => $data]);
                     }
                 } catch (\Throwable $e) {
                     $failed++;
@@ -197,6 +215,20 @@ class ReconcileCommand extends Command
         $this->info("Reconciled; {$changed} incident(s) changed, {$failed} failed.");
 
         return $failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * True when the incident's liveness stamp is old enough to be worth a write.
+     * A dry run never writes, so it is never due.
+     */
+    private function livenessDue(Incident $incident): bool
+    {
+        if ($this->option('dry-run')) {
+            return false;
+        }
+
+        return $incident->last_seen_at === null
+            || $incident->last_seen_at->addSeconds(self::LIVENESS_REFRESH_SECONDS)->isPast();
     }
 
     private function requirementsMet(Incident $incident, $policy, ?int $observations = null): bool

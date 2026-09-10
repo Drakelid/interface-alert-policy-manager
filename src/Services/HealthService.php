@@ -3,6 +3,7 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\IngestionInbox;
@@ -32,6 +33,21 @@ class HealthService
      */
     public const ABANDONED_ALERT_SECONDS = 86400;
 
+    /**
+     * Grace between LibreNMS logging an alert and that alert being expected to
+     * have arrived. LibreNMS evaluates rules every minute and the ingestion
+     * heartbeat is throttled to 30s, so five minutes absorbs both plus a slow
+     * run, without hiding a delivery path that has actually stopped.
+     */
+    public const INGESTION_SILENT_AFTER_SECONDS = 300;
+
+    /**
+     * How far back to look for rules that have delivered to IAPM before. Scanning
+     * every incident to collect distinct rule ids is a full table scan at fleet
+     * scale; the newest rows reach the same answer off the primary key.
+     */
+    public const DELIVERING_RULE_SAMPLE = 1000;
+
     public function __construct(
         private readonly SettingStore $settings,
         private readonly QueueHeartbeat $heartbeat,
@@ -43,6 +59,7 @@ class HealthService
         $checks = [
             $this->schedulerCheck('reconcile', 'Reconciliation running', 'last_reconcile_at'),
             $this->schedulerCheck('process_actions', 'Action processing running', 'last_process_actions_at'),
+            $this->ingestionFreshnessCheck(),
             $this->gatewayCheck(),
             $this->ingestionInboxCheck(),
             $this->backlogCheck(),
@@ -97,6 +114,72 @@ class HealthService
             : 'Last run '.$last->diffForHumans();
 
         return ['key' => $key, 'label' => $label, 'ok' => $ok, 'detail' => $detail];
+    }
+
+    /**
+     * Dead-man's switch for the *input* path.
+     *
+     * Every other check here watches what happens after a fault arrives. None of
+     * them notices when LibreNMS stops delivering faults at all — a rule that
+     * lost its alert operation, a rotated token, a poller that cannot reach the
+     * ingestion URL. That failure is invisible precisely because it produces no
+     * incidents, no notifications and no errors: the plugin looks idle, and idle
+     * looks like a quiet network.
+     *
+     * "Nothing ingested recently" cannot be the test, because a quiet network is
+     * supposed to be quiet. The signal is the *disagreement*: LibreNMS logged new
+     * alerts on rules that have reached IAPM before, and ingestion did not
+     * advance. That has no false positives on an idle fleet.
+     */
+    private function ingestionFreshnessCheck(): array
+    {
+        $label = 'Receiving alerts from LibreNMS';
+        $last = $this->timestamp('last_ingestion_at');
+        if ($last === null) {
+            // Never wired up rather than broken; the setup checklist owns this case.
+            return ['key' => 'ingestion', 'label' => $label, 'ok' => true, 'detail' => 'No alert has been ingested yet — finish the Setup Helper wiring.'];
+        }
+
+        try {
+            // Which rules count as "should have arrived" is derived from incidents
+            // IAPM actually recorded, not from alert_rules/alert_operations: those
+            // tables change shape between LibreNMS releases, whereas a rule that
+            // has delivered once is direct proof its wiring existed.
+            $ruleIds = Incident::query()
+                ->whereNotNull('source_rule_id')
+                ->orderByDesc('id')
+                ->limit(self::DELIVERING_RULE_SAMPLE)
+                ->pluck('source_rule_id')
+                ->unique()
+                ->values()
+                ->all();
+            if ($ruleIds === []) {
+                return ['key' => 'ingestion', 'label' => $label, 'ok' => true, 'detail' => 'Last ingestion '.$last->diffForHumans().'; no delivering alert rule observed yet.'];
+            }
+
+            // alert_log stores local wall-clock times, so compare in the app's zone
+            // rather than against an offset-bearing ISO string.
+            $zone = config('app.timezone') ?: 'UTC';
+            $cutoff = $last->addSeconds(self::INGESTION_SILENT_AFTER_SECONDS)->setTimezone($zone)->format('Y-m-d H:i:s');
+            $missed = DB::table('alert_log')->whereIn('rule_id', $ruleIds)->where('time_logged', '>', $cutoff)->count();
+        } catch (\Throwable $exception) {
+            // alert_log belongs to LibreNMS, not to IAPM. If it cannot be read the
+            // cross-check is merely unavailable — failing the whole health report
+            // (and any external monitor watching the exit code) over a foreign
+            // schema would be crying wolf.
+            Log::channel('iapm')->warning('Ingestion freshness cross-check unavailable.', ['error' => $exception->getMessage()]);
+
+            return ['key' => 'ingestion', 'label' => $label, 'ok' => true, 'detail' => 'Last ingestion '.$last->diffForHumans().'; LibreNMS alert history could not be read for cross-checking.'];
+        }
+
+        return [
+            'key' => 'ingestion',
+            'label' => $label,
+            'ok' => $missed === 0,
+            'detail' => $missed === 0
+                ? 'Last ingestion '.$last->diffForHumans().'.'
+                : "LibreNMS has logged {$missed} alert(s) on rules that deliver to IAPM since the last ingestion ".$last->diffForHumans().' — alerts are being raised but are not arriving. Check the rule\'s alert operation and transport, and that every poller can reach the ingestion URL.',
+        ];
     }
 
     private function gatewayCheck(): array
