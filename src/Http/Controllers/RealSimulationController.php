@@ -13,6 +13,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\QueueHeartbeat;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\RealSimulationService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\TimeText;
 
 class RealSimulationController extends Controller
 {
@@ -24,7 +25,7 @@ class RealSimulationController extends Controller
         try {
             $lastSimulationMaintenanceAt = is_string($lastSimulationMaintenance) ? CarbonImmutable::parse($lastSimulationMaintenance) : null;
             $simulationRecoveryReady = $lastSimulationMaintenanceAt?->addMinutes(10)->isFuture() ?? false;
-            $simulationRecoveryDetail = $lastSimulationMaintenanceAt ? 'Last safety pass '.$lastSimulationMaintenanceAt->diffForHumans().'.' : 'The recovery scheduler has not run yet.';
+            $simulationRecoveryDetail = $lastSimulationMaintenanceAt ? 'Last safety pass '.TimeText::exactWithRelative($lastSimulationMaintenanceAt).'.' : 'The recovery scheduler has not run yet.';
         } catch (\Throwable) {
             $simulationRecoveryReady = false;
             $simulationRecoveryDetail = 'The recovery scheduler timestamp is invalid.';

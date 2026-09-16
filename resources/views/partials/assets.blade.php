@@ -76,6 +76,8 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
 .iapm-toolbar .spacer { flex:1 1 auto; }
 .iapm-num { text-align:right; font-variant-numeric:tabular-nums; }
 .iapm-truncate { max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        /* Timestamps are one unit — never break "2026-09-16 14:03:11 UTC" across lines. */
+        .iapm-time { white-space:nowrap; }
 .iapm-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
 /* P4-1: nine tiles on a 12-column Bootstrap grid wrapped 5-then-4, and each
    had a large empty area to the right of its number, so nine figures consumed
@@ -526,6 +528,10 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
         var intervalSelect = ar.querySelector('[data-iapm-refresh-interval]');
         var stamp = ar.querySelector('.iapm-updated');
         var loadedAt = Date.now();
+        // The tables below this badge carry exact timestamps, so the badge names
+        // the exact load time too — "12s ago" alone cannot be lined up against a
+        // delivery row.
+        var loadedAtText = new Date(loadedAt).toLocaleTimeString();
         var timer = null;
 
         function interval() {
@@ -553,7 +559,7 @@ h1.iapm-page-title { font-size:24px; margin:0 0 10px; }
         function tick() {
             if (! stamp) { return; }
             var age = Math.round((Date.now() - loadedAt) / 1000);
-            var text = 'loaded ' + age + 's ago';
+            var text = 'loaded ' + loadedAtText + ' (' + age + 's ago)';
             if (box && box.checked) {
                 text += ' · next refresh in ' + Math.max(0, interval() - age) + 's';
             } else {

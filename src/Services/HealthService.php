@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Log;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\IngestionInbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\TimeText;
 
 /**
  * Self-monitoring / dead-man's switch. Silence from a paging system is only
@@ -111,7 +112,7 @@ class HealthService
         // from this UI, so state the condition rather than a command to paste.
         $detail = $last === null
             ? 'Has not run yet — IAPM relies on the LibreNMS scheduler running every minute. Confirm the standard LibreNMS cron entry is installed and running on the host.'
-            : 'Last run '.$last->diffForHumans();
+            : 'Last run '.TimeText::exactWithRelative($last).'.';
 
         return ['key' => $key, 'label' => $label, 'ok' => $ok, 'detail' => $detail];
     }
@@ -154,7 +155,7 @@ class HealthService
                 ->values()
                 ->all();
             if ($ruleIds === []) {
-                return ['key' => 'ingestion', 'label' => $label, 'ok' => true, 'detail' => 'Last ingestion '.$last->diffForHumans().'; no delivering alert rule observed yet.'];
+                return ['key' => 'ingestion', 'label' => $label, 'ok' => true, 'detail' => 'Last ingestion '.TimeText::exactWithRelative($last).'; no delivering alert rule observed yet.'];
             }
 
             // alert_log stores local wall-clock times, so compare in the app's zone
@@ -169,7 +170,7 @@ class HealthService
             // schema would be crying wolf.
             Log::channel('iapm')->warning('Ingestion freshness cross-check unavailable.', ['error' => $exception->getMessage()]);
 
-            return ['key' => 'ingestion', 'label' => $label, 'ok' => true, 'detail' => 'Last ingestion '.$last->diffForHumans().'; LibreNMS alert history could not be read for cross-checking.'];
+            return ['key' => 'ingestion', 'label' => $label, 'ok' => true, 'detail' => 'Last ingestion '.TimeText::exactWithRelative($last).'; LibreNMS alert history could not be read for cross-checking.'];
         }
 
         return [
@@ -177,8 +178,8 @@ class HealthService
             'label' => $label,
             'ok' => $missed === 0,
             'detail' => $missed === 0
-                ? 'Last ingestion '.$last->diffForHumans().'.'
-                : "LibreNMS has logged {$missed} alert(s) on rules that deliver to IAPM since the last ingestion ".$last->diffForHumans().' — alerts are being raised but are not arriving. Check the rule\'s alert operation and transport, and that every poller can reach the ingestion URL.',
+                ? 'Last ingestion '.TimeText::exactWithRelative($last).'.'
+                : "LibreNMS has logged {$missed} alert(s) on rules that deliver to IAPM since the last ingestion at ".TimeText::exactWithRelative($last).' — alerts are being raised but are not arriving. Check the rule\'s alert operation and transport, and that every poller can reach the ingestion URL.',
         ];
     }
 
@@ -197,7 +198,7 @@ class HealthService
             'key' => 'gateway',
             'label' => 'Gateway delivering',
             'ok' => ! $recentFailure,
-            'detail' => $recentFailure ? 'Recent delivery failures — check the destination and delivery log.' : ($success ? 'Last success '.$success->diffForHumans() : 'No deliveries yet.'),
+            'detail' => $recentFailure ? 'Recent delivery failures — check the destination and delivery log.' : ($success ? 'Last success '.TimeText::exactWithRelative($success).'.' : 'No deliveries yet.'),
         ];
     }
 

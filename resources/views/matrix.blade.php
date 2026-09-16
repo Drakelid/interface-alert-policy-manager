@@ -79,7 +79,7 @@
             <span class="spacer"></span>
             <span id="iapm-cache-state">
                 @if($cache['rebuilt_at'])
-                    Last rebuilt <span title="{{ $cache['rebuilt_at'] }}">{{ $cache['rebuilt_at_human'] }}</span>.
+                    Last rebuilt <span class="iapm-time" title="{{ $cache['rebuilt_at'] }}">{{ $cache['rebuilt_at_human'] }}</span>.
                 @else
                     <span class="iapm-hint">Never rebuilt.</span>
                 @endif

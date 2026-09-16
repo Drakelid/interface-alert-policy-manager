@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 use App\Models\Port;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\TimeText;
 
 /**
  * Rebuilds the materialized effective-policy cache the Interface Matrix filters
@@ -183,6 +184,7 @@ class PolicyCacheRebuilder
         $status = (string) ($this->settings->get(self::STATUS) ?? 'idle');
         $activityAt = $this->settings->get(self::ACTIVITY_AT) ?? $this->settings->get(self::STARTED_AT);
         $progress = (int) $this->settings->get(self::PROGRESS, 0);
+        $rebuiltAt = $this->rebuiltAt();
 
         // Queued means no worker picked it up; running means a worker started but
         // stopped between checkpoints (usually a timeout or forced restart).
@@ -194,8 +196,10 @@ class PolicyCacheRebuilder
             'status' => $stalled ? 'stalled' : $status,
             'progress' => $progress,
             'total' => (int) $this->settings->get(self::TOTAL, 0),
-            'rebuilt_at' => $this->rebuiltAt()?->toIso8601String(),
-            'rebuilt_at_human' => $this->rebuiltAt()?->diffForHumans(),
+            'rebuilt_at' => $rebuiltAt?->toIso8601String(),
+            // Exact first: "last rebuilt" is read to decide whether a rebuild
+            // predates a policy edit, which a relative phrase cannot settle.
+            'rebuilt_at_human' => $rebuiltAt !== null ? TimeText::exactWithRelative($rebuiltAt) : null,
             'stale' => $this->isStale(),
             'changed_at' => $this->configurationChangedAt()?->toIso8601String(),
             'error' => $this->settings->get(self::ERROR),

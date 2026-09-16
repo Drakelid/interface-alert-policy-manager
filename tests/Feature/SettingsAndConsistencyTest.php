@@ -197,14 +197,14 @@ class SettingsAndConsistencyTest extends IntegrationTestCase
         self::assertStringContainsString('data-iapm-bulk-count', $body);
     }
 
-    /** P2-10: one time presentation, relative text plus an exact title. */
+    /** P2-10: one time presentation, an exact timestamp plus a relative title. */
     public function test_times_carry_an_absolute_timestamp(): void
     {
         $incident = $this->incident($this->policy(), $this->downPort($this->device()));
 
         $body = (string) $this->actingAs($this->admin())->get(self::BASE."/incidents/{$incident->id}")->assertOk()->getContent();
 
-        self::assertMatchesRegularExpression('/<time datetime="[^"]+" title="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+">/', $body);
+        self::assertMatchesRegularExpression('/<time datetime="[^"]+" title="[^"]*" class="iapm-time">\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+<\/time>/', $body);
     }
 
     /** P2-6: the two buttons were rendering butted together. */

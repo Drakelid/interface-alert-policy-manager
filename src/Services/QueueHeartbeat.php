@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Log;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\QueueHeartbeatJob;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\TimeText;
 
 /**
  * Proof that a queue worker is alive.
@@ -162,10 +163,10 @@ class QueueHeartbeat
         $consumed = $this->consumedAt();
         $pending = $this->pendingSince();
         $delivery = $this->lastDeliveryAt();
-        $suffix = $delivery ? ' Last notification delivered '.$delivery->diffForHumans().'.' : '';
+        $suffix = $delivery ? ' Last notification delivered '.TimeText::exactWithRelative($delivery).'.' : '';
 
         if ($consumed !== null && $consumed->addSeconds($stale)->isFuture()) {
-            return ['ok' => true, 'state' => 'alive', 'detail' => 'Last worker heartbeat '.$consumed->diffForHumans().'.'.$suffix];
+            return ['ok' => true, 'state' => 'alive', 'detail' => 'Last worker heartbeat '.TimeText::exactWithRelative($consumed).'.'.$suffix];
         }
 
         // A worker has proven itself before and that proof has now expired. This is
@@ -178,7 +179,7 @@ class QueueHeartbeat
                 : [
                     'ok' => false,
                     'state' => 'unscheduled',
-                    'detail' => 'Last worker heartbeat '.$consumed->diffForHumans().' and no new heartbeat is queued — confirm the LibreNMS scheduler is running every minute.',
+                    'detail' => 'Last worker heartbeat '.TimeText::exactWithRelative($consumed).' and no new heartbeat is queued — confirm the LibreNMS scheduler is running every minute.',
                 ];
         }
 
@@ -188,7 +189,7 @@ class QueueHeartbeat
                 ? ['ok' => false, 'state' => 'stale', 'detail' => $this->stoppedWorkerDetail($pending)]
                 // Inside the startup grace window: normal for the first minute
                 // after enabling queued delivery or restarting workers.
-                : ['ok' => true, 'state' => 'waiting', 'detail' => 'Heartbeat queued '.$pending->diffForHumans().'; waiting for a worker to consume it.'.$suffix];
+                : ['ok' => true, 'state' => 'waiting', 'detail' => 'Heartbeat queued '.TimeText::exactWithRelative($pending).'; waiting for a worker to consume it.'.$suffix];
         }
 
         // Queued delivery was only just enabled; the scheduler enqueues the first
@@ -210,10 +211,11 @@ class QueueHeartbeat
             : ' Check the worker process or external supervisor (systemd, Supervisor, container).';
 
         return sprintf(
-            'No IAPM queue heartbeat has been consumed for %s.%s Workers must listen on queue "%s" using the "%s" connection. Switching Delivery dispatch to Synchronous in Settings sends inline without workers.',
+            'No IAPM queue heartbeat has been consumed for %s (since %s).%s Workers must listen on queue "%s" using the "%s" connection. Switching Delivery dispatch to Synchronous in Settings sends inline without workers.',
             // DIFF_ABSOLUTE so this reads "12 minutes", not "12 minutes ago"
             // inside a sentence that already supplies the tense.
             $since->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE),
+            TimeText::exact($since),
             $workerAdvice,
             (string) config('iapm.queue.name', 'iapm'),
             $this->connectionName()
