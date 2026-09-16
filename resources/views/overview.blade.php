@@ -54,15 +54,16 @@ $tile = function ($label, $value, $href, $accent = '', $hot = false) {
     <div class="panel panel-default">
         <div class="panel-heading">Recent incidents <a class="pull-right" href="{{ route('iapm.incidents.index') }}">All incidents →</a></div>
         <div class="iapm-table-wrap"><table class="table table-hover table-condensed">
-        <thead><tr><th>ID</th><th>Interface</th><th>State</th><th>Severity</th><th>Last seen</th><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>Interface</th><th>State</th><th>Severity</th><th>Down</th><th>Last seen</th><th></th></tr></thead>
         <tbody>@forelse($incidents as $incident)@php($c=(array)$incident->context_json)<tr>
         <td><a href="{{ route('iapm.incidents.show',$incident) }}">{{ $incident->id }}</a></td>
         <td class="iapm-truncate"><a href="{{ route('device',$incident->device_id) }}">{{ $c['hostname'] ?? $incident->device_id }}</a> — {{ $c['ifName'] ?? $incident->port_id }}</td>
         <td>@include('iapm::partials.state-label',['state'=>$incident->state->value])</td>
         <td>{{ $incident->severity->value }}</td>
+        <td>@include('iapm::partials.time',['at'=>$incident->first_seen_at])</td>
         <td>@include('iapm::partials.time',['at'=>$incident->last_seen_at])</td>
         <td class="iapm-actions">@if($incident->state->value!=='acknowledged' && $incident->state->value!=='recovered')<form method="post" action="{{ route('iapm.incidents.acknowledge',$incident) }}">@csrf<button class="btn btn-default btn-xs" title="Acknowledge" aria-label="Acknowledge incident {{ $incident->id }}"><i class="fa fa-check"></i></button></form>@endif</td>
-        </tr>@empty<tr><td colspan="6" class="iapm-hint">No incidents recorded yet. Once LibreNMS posts an alert it will appear here.</td></tr>@endforelse</tbody></table></div>
+        </tr>@empty<tr><td colspan="7" class="iapm-hint">No incidents recorded yet. Once LibreNMS posts an alert it will appear here.</td></tr>@endforelse</tbody></table></div>
     </div>
     {{ $incidents->links() }}
 </div>
