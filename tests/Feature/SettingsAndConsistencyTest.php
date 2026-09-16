@@ -204,7 +204,7 @@ class SettingsAndConsistencyTest extends IntegrationTestCase
 
         $body = (string) $this->actingAs($this->admin())->get(self::BASE."/incidents/{$incident->id}")->assertOk()->getContent();
 
-        self::assertMatchesRegularExpression('/<time datetime="[^"]+" title="[^"]*" class="iapm-time">\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+<\/time>/', $body);
+        self::assertMatchesRegularExpression('/<time datetime="[^"]+" title="[^"]*" class="iapm-time">\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{2}:\d{2}<\/time>/', $body);
     }
 
     /** P2-6: the two buttons were rendering butted together. */

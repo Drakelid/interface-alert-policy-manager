@@ -10,4 +10,4 @@
     Expects: $at (?DateTimeInterface).
 --}}
 @php($iapmTime = ($at ?? null) instanceof \DateTimeInterface ? $at : null)
-@if($iapmTime)<time datetime="{{ $iapmTime->format(DATE_ATOM) }}" title="{{ $iapmTime->diffForHumans() }}" class="iapm-time">{{ $iapmTime->format('Y-m-d H:i:s T') }}</time>@else<span class="iapm-hint">&mdash;</span>@endif
+@if($iapmTime)<time datetime="{{ $iapmTime->format(DATE_ATOM) }}" title="{{ $iapmTime->diffForHumans() }}" class="iapm-time">{{ \LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\TimeText::exact($iapmTime) }}</time>@else<span class="iapm-hint">&mdash;</span>@endif

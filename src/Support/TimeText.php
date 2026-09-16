@@ -17,11 +17,21 @@ use Carbon\CarbonInterface;
  */
 class TimeText
 {
-    /** The format the whole plugin shows times in — matches `partials.time` and the CSV exports. */
-    public const FORMAT = 'Y-m-d H:i:s T';
+    /**
+     * The one format the plugin shows times in; `partials.time` and the CSV
+     * exports render through this constant so a row on screen and the same row
+     * in an export are byte-identical.
+     *
+     * `P` (+02:00), not `T`: `T` only produces a zone name ("CEST") when the
+     * application timezone is a named zone, and falls back to "GMT+0200" when it
+     * is a bare offset — so the suffix changed shape between installations. A
+     * numeric offset is stable everywhere, and unlike an abbreviation it is
+     * unambiguous when correlating against a poller run or a LibreNMS alert.
+     */
+    public const FORMAT = 'Y-m-d H:i:s P';
 
     /**
-     * "2026-09-16 14:03:11 UTC (21 hours ago)".
+     * "2026-09-15 17:04:22 +02:00 (21 hours ago)".
      */
     public static function exactWithRelative(\DateTimeInterface $at): string
     {
@@ -31,7 +41,7 @@ class TimeText
     }
 
     /**
-     * "2026-09-16 14:03:11 UTC".
+     * "2026-09-15 17:04:22 +02:00".
      */
     public static function exact(\DateTimeInterface $at): string
     {

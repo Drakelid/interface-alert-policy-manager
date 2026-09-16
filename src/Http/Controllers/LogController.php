@@ -11,6 +11,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\AuditLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\TimeText;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LogController extends Controller
@@ -96,7 +97,7 @@ class LogController extends Controller
         return $this->streamCsv('iapm-delivery-log', ['time', 'incident_id', 'destination', 'phase', 'status', 'http_status', 'error'],
             $this->deliveryQuery($r)->latest(),
             fn (DeliveryLog $row) => [
-                $row->created_at?->format('Y-m-d H:i:s T'),
+                $row->created_at ? TimeText::exact($row->created_at) : null,
                 $row->incident_id,
                 $destinations[$row->destination_id] ?? $row->destination_id,
                 $row->phase,
@@ -114,7 +115,7 @@ class LogController extends Controller
         return $this->streamCsv('iapm-audit-log', ['time', 'user', 'action', 'object_type', 'object_id', 'source_ip'],
             $this->auditQuery($r)->latest('created_at'),
             fn (AuditLog $row) => [
-                $row->created_at?->format('Y-m-d H:i:s T'),
+                $row->created_at ? TimeText::exact($row->created_at) : null,
                 $row->user_id ? ($users[$row->user_id] ?? 'user '.$row->user_id) : 'system',
                 $row->action,
                 $row->object_type,
