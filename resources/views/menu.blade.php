@@ -1,8 +1,8 @@
 {{--
     LibreNMS renders MenuEntryHook views inside Overview > Plugins and does not
-    currently provide plugins with a server-side slot in the primary navbar.
-    Keep this ordinary link as a no-JavaScript fallback, then promote a clone to
-    the primary navbar once its markup is available.
+    currently provide plugins with a server-side slot in the Alerts dropdown.
+    Keep this ordinary link as a no-JavaScript fallback, then add a clone to
+    the Alerts dropdown once its markup is available.
 --}}
 <a id="iapm-plugin-menu-fallback"
    href="{{ route('iapm.overview') }}"
@@ -14,34 +14,35 @@
 (function () {
     'use strict';
 
-    function addIapmTopNavigation() {
-        if (document.getElementById('iapm-top-navigation')) {
+    function addIapmAlertsNavigation() {
+        if (document.getElementById('iapm-alerts-navigation')) {
             return;
         }
 
         var source = document.getElementById('iapm-plugin-menu-fallback');
-        var navbar = document.querySelector('#navHeaderCollapse > ul.navbar-nav');
-        if (!source || !navbar) {
+        var alertsIcon = document.querySelector('#navHeaderCollapse > ul.navbar-nav > li.dropdown > a.dropdown-toggle > i.fa-exclamation-circle');
+        var alertsMenu = alertsIcon && alertsIcon.closest('li.dropdown').querySelector('ul.dropdown-menu');
+        if (!source || !alertsMenu) {
             return;
         }
 
         var item = document.createElement('li');
-        item.id = 'iapm-top-navigation';
+        item.id = 'iapm-alerts-navigation';
 
         var link = source.cloneNode(true);
-        link.id = 'iapm-top-navigation-link';
+        link.id = 'iapm-alerts-navigation-link';
         link.setAttribute('aria-label', 'Interface Alert Policy Manager');
-        link.querySelector('i').className = 'fa fa-bell-o fa-fw fa-lg fa-nav-icons';
+        link.querySelector('i').className = 'fa fa-bell-o fa-fw fa-lg';
         link.querySelector('[data-iapm-menu-label]').textContent = 'Dispatch';
 
         item.appendChild(link);
-        navbar.appendChild(item);
+        alertsMenu.appendChild(item);
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', addIapmTopNavigation, {once: true});
+        document.addEventListener('DOMContentLoaded', addIapmAlertsNavigation, {once: true});
     } else {
-        addIapmTopNavigation();
+        addIapmAlertsNavigation();
     }
 })();
 </script>

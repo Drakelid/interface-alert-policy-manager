@@ -17,7 +17,7 @@ class UiTest extends IntegrationTestCase
             ->assertSeeText('IAPM '.app(PluginVersion::class)->display());
     }
 
-    public function test_the_plugin_publishes_a_dedicated_librenms_top_navigation_link(): void
+    public function test_the_plugin_publishes_a_dispatch_link_in_the_librenms_alerts_menu(): void
     {
         $body = $this->actingAs($this->admin())
             ->get('/plugin/interface-alert-policy-manager')
@@ -25,7 +25,9 @@ class UiTest extends IntegrationTestCase
             ->getContent();
 
         self::assertStringContainsString('id="iapm-plugin-menu-fallback"', (string) $body);
-        self::assertStringContainsString("item.id = 'iapm-top-navigation'", (string) $body);
+        self::assertStringContainsString("item.id = 'iapm-alerts-navigation'", (string) $body);
+        self::assertStringContainsString('alertsMenu.appendChild(item)', (string) $body);
+        self::assertStringNotContainsString('iapm-top-navigation', (string) $body);
         self::assertStringContainsString("textContent = 'Dispatch'", (string) $body);
         self::assertStringNotContainsString("item.className = 'active'", (string) $body);
     }
