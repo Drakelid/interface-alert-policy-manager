@@ -26,6 +26,7 @@ class UiTest extends IntegrationTestCase
 
         self::assertStringContainsString('id="iapm-plugin-menu-fallback"', (string) $body);
         self::assertStringContainsString("item.id = 'iapm-alerts-navigation'", (string) $body);
+        self::assertStringContainsString('notificationsLink.closest(\'ul.dropdown-menu\')', (string) $body);
         self::assertStringContainsString('alertsMenu.appendChild(item)', (string) $body);
         self::assertStringNotContainsString('iapm-top-navigation', (string) $body);
         self::assertStringContainsString("textContent = 'Dispatch'", (string) $body);
