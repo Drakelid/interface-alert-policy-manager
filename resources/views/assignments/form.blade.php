@@ -26,6 +26,15 @@
     <p class="iapm-hint" id="iapm-dev-help">Start typing and pick a device from the list. All interfaces on the selected device.</p>
 </div>
 
+<div class="form-group iapm-field" data-types="device">
+    <label for="iapm-device-mode">Device alert behavior</label>
+    <select name="match_mode" id="iapm-device-mode" class="form-control" aria-describedby="iapm-device-mode-help" disabled>
+        <option value="any" @selected(old('match_mode',$assignment->match_mode ?? 'any')!=='exclude')>Apply this policy</option>
+        <option value="exclude" @selected(old('match_mode',$assignment->match_mode)==='exclude')>Exclude from alerts</option>
+    </select>
+    <p class="iapm-hint" id="iapm-device-mode-help">Excludes all interfaces on this device from IAPM alerts, overriding other assignments and the default policy. The exclusion applies while this assignment and its policy are enabled. Disable or delete it to allow alerts again.</p>
+</div>
+
 {{-- Port group dropdown --}}
 <div class="form-group iapm-field" data-types="port_group">
     <label for="iapm-as-portgroup">Port group</label>
@@ -96,7 +105,7 @@
         <option value="exclude" @selected(old('match_mode',$assignment->match_mode)==='exclude')>EXCLUDE selected groups</option>
     </select>
 </div>
-{{-- match_mode still needs a value for non-group types --}}
+{{-- match_mode still needs a value for types without a mode selector --}}
 <input type="hidden" name="match_mode" id="iapm-mode-fallback" value="any" disabled>
 
 <div class="form-group iapm-field" data-types="port,port_group,device,device_group,location,ifalias_regex,ifname_regex,interface_type">
@@ -146,11 +155,16 @@
             // Disable hidden inputs so their (stale) values are not submitted.
             el.querySelectorAll('input,select,textarea').forEach(function (i) { i.disabled = ! show; });
         });
-        // match_mode: the group select owns it for device_group; otherwise submit a hidden default.
-        document.getElementById('iapm-mode-fallback').disabled = (type === 'device_group');
+        // Group and device selectors own their modes; other types use the default.
+        document.getElementById('iapm-mode-fallback').disabled = (type === 'device_group' || type === 'device');
+        var excluded = type === 'device' && document.getElementById('iapm-device-mode').value === 'exclude';
+        var receivers = document.getElementById('iapm-as-receivers');
+        receivers.closest('.iapm-field').style.display = excluded || type === 'default' ? 'none' : '';
+        receivers.disabled = excluded || type === 'default';
     }
 
     typeSelect.addEventListener('change', sync);
+    document.getElementById('iapm-device-mode').addEventListener('change', sync);
     sync();
 
     // Device type-ahead: query the search endpoint and store the chosen device_id in
@@ -206,7 +220,8 @@
             if (res.d.error) { result.textContent = res.d.error; return; }
 
             var devices = (res.d.devices || 0) + ' device(s)';
-            result.textContent = 'Matches ' + res.d.count + ' interface(s) across ' + devices + (res.d.capped ? ' (sampled; real total is higher)' : '') + '.';
+            var excluded = typeSelect.value === 'device' && document.getElementById('iapm-device-mode').value === 'exclude';
+            result.textContent = (excluded ? 'Excludes ' : 'Matches ') + res.d.count + ' interface(s) across ' + devices + (res.d.capped ? ' (sampled; real total is higher)' : '') + '.';
             // Zero matches is exactly when the operator most needs to see that
             // the preview ran, so keep the message and just show no table.
             var samples = res.d.samples || [];

@@ -85,7 +85,7 @@ $fields = [
 <td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-assignments" name="ids[]" value="{{ $a->id }}" aria-label="Select assignment {{ $a->id }}"></td>
 <td>{{ str_replace('_',' ',$a->assignment_type->value) }}</td>
 <td>{{ $a->assignment_reference ?: $a->match_expression ?: ($a->deviceGroups->count() ? $a->deviceGroups->count().' device group(s)' : '—') }}</td>
-<td>{{ $a->match_mode }}</td><td>{{ $a->priority }}</td>
+<td>{{ $a->assignment_type->value === 'device' && $a->match_mode === 'exclude' ? 'Excluded from alerts' : $a->match_mode }}</td><td>{{ $a->priority }}</td>
 <td>@if($a->enabled)<span class="label label-success">Enabled</span>@else<span class="label label-default">Disabled</span>@endif</td>
 <td><a class="btn btn-default btn-xs" href="{{ route('iapm.policies.edit',['policy'=>$policy,'assignment'=>$a->id]) }}#assignments"><i class="fa fa-pencil"></i> Edit</a></td>
 </tr>@endforeach</tbody></table></div>

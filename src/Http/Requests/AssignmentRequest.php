@@ -15,7 +15,11 @@ class AssignmentRequest extends FormRequest
 
     public function rules(): array
     {
-        return ['policy_id' => ['required', 'exists:iapm_policies,id'], 'assignment_type' => ['required', Rule::in(['port', 'device', 'device_group', 'port_group', 'location', 'ifalias_regex', 'ifname_regex', 'interface_type', 'default'])], 'assignment_reference' => ['nullable', 'string', 'max:255'], 'match_expression' => ['nullable', 'string', 'max:1000', function (string $a, mixed $v, Closure $fail) {
+        $referenceRules = $this->input('assignment_type') === 'device'
+            ? ['required', 'string', 'max:255', 'exists:devices,device_id']
+            : ['nullable', 'string', 'max:255'];
+
+        return ['policy_id' => ['required', 'exists:iapm_policies,id'], 'assignment_type' => ['required', Rule::in(['port', 'device', 'device_group', 'port_group', 'location', 'ifalias_regex', 'ifname_regex', 'interface_type', 'default'])], 'assignment_reference' => $referenceRules, 'match_expression' => ['nullable', 'string', 'max:1000', function (string $a, mixed $v, Closure $fail) {
             if (in_array($this->input('assignment_type'), ['ifalias_regex', 'ifname_regex'], true)) {
                 set_error_handler(static fn () => true);
                 try {

@@ -71,13 +71,16 @@ class PolicyResolver
         $appendRegex($index['ifname_regex'], $context->ifName);
         $append($index['interface_type'][$context->ifType] ?? []);
         $append($index['default']);
+        // Explicit device exclusions take precedence over every inclusion,
+        // including port assignments and the configured fallback policy.
+        $exclusions = array_values(array_filter($matches, fn (Assignment $assignment): bool => $assignment->assignment_type === AssignmentType::Device && $assignment->match_mode === 'exclude'));
         /** @var Assignment|null $winner */
-        $winner = $matches[0] ?? null;
+        $winner = $exclusions[0] ?? $matches[0] ?? null;
         if (! $winner && $this->configuredDefault === null) {
             $id = $this->settings->get('default_policy_id');
             $this->configuredDefault = $id ? (Policy::where('enabled', true)->find($id) ?: false) : false;
         }
-        $resolution = new PolicyResolution($winner?->policy ?? ($this->configuredDefault ?: null), $winner, $matches);
+        $resolution = new PolicyResolution($exclusions ? null : ($winner?->policy ?? ($this->configuredDefault ?: null)), $winner, $matches);
         // The policy cache is a materialised view for the UI matrix. Writing it on
         // every resolve means one upsert per fault on the ingestion hot path — heavy
         // during a storm. Callers on that path pass writeCache=false; the per-minute

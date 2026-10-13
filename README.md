@@ -427,6 +427,8 @@ php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external m
 
 ## Noise control, monitoring, and tooling
 
+- **Exclude individual devices.** Under a policy's Interface assignments, add a Device assignment, search for the device, and select **Exclude from alerts**. This excludes all its interfaces from IAPM alerts, overriding port assignments and default policies while both the assignment and its policy are enabled. Preview shows the affected interfaces. Disable or delete the exclusion to allow alerts again.
+
 - **Root-cause suppression.** Designate an *uplink port group* in Settings, then enable "suppress when uplink down" on a policy. When an uplink interface on a device is down, downstream customer interfaces on that device are suppressed (reason `uplink_down`) instead of storming.
 - **Flap dampening (per policy).** Set a flap threshold, window, and settle period. When an interface cycles down/up faster than the threshold, IAPM sends one `FLAPPING` notice and suppresses the routine churn until it settles.
 - **Device digest (storm control).** Set an *aggregate threshold* (and window) in Settings. When at least that many interfaces on the **same device** trigger within the window, IAPM sends one grouped "device down" message (device-level receivers) instead of an SMS per interface, so a linecard or downstream-switch failure produces one notification rather than a hundred. Wording is customisable on the Message Templates page. Set the threshold to `0` to always notify per interface. When an upstream LibreNMS acknowledgement arrives it acknowledges the incident rather than re-triggering it.
