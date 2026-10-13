@@ -73,7 +73,7 @@ $fields = [
 <h2>Interface assignments
     <a class="btn btn-primary btn-sm" href="{{ route('iapm.policies.edit',['policy'=>$policy,'assignment'=>'new']) }}#assignments"><i class="fa fa-plus"></i> Add assignment</a>
 </h2>
-<p class="iapm-hint">Assignments define which interfaces use this policy. Specific matches take precedence over broad ones: port, port group, device, device group, location, regex, interface type, then default.</p>
+<p class="iapm-hint">Assignments define which interfaces use this policy. Specific matches take precedence over broad ones: port, port group, device, device group, location, regex, interface type, then default. Device group assignments can exclude individual devices; other assignments and the default policy can still apply to them.</p>
 @if($policy->assignments->isNotEmpty())
 <form id="iapm-bulk-assignments" method="post" action="{{ route('iapm.assignments.bulk-destroy') }}" data-iapm-confirm="Delete the selected assignments? Interfaces they matched stop using this policy unless another assignment covers them.">@csrf @method('DELETE')
     <input type="hidden" name="policy_id" value="{{ $policy->id }}">
@@ -84,7 +84,7 @@ $fields = [
 <tbody>@foreach($policy->assignments->sortByDesc('priority') as $a)<tr>
 <td><input class="iapm-bulk" type="checkbox" form="iapm-bulk-assignments" name="ids[]" value="{{ $a->id }}" aria-label="Select assignment {{ $a->id }}"></td>
 <td>{{ str_replace('_',' ',$a->assignment_type->value) }}</td>
-<td>{{ $a->assignment_reference ?: $a->match_expression ?: ($a->deviceGroups->count() ? $a->deviceGroups->count().' device group(s)' : '—') }}</td>
+<td>{{ $a->assignment_reference ?: $a->match_expression ?: ($a->deviceGroups->count() ? $a->deviceGroups->count().' device group(s)' : '—') }}@if($a->assignment_type->value === 'device_group' && !empty($a->metadata_json['excluded_device_ids']))<br><small>{{ count($a->metadata_json['excluded_device_ids']) }} excluded device(s)</small>@endif</td>
 <td>{{ $a->assignment_type->value === 'device' && $a->match_mode === 'exclude' ? 'Excluded from alerts' : $a->match_mode }}</td><td>{{ $a->priority }}</td>
 <td>@if($a->enabled)<span class="label label-success">Enabled</span>@else<span class="label label-default">Disabled</span>@endif</td>
 <td><a class="btn btn-default btn-xs" href="{{ route('iapm.policies.edit',['policy'=>$policy,'assignment'=>$a->id]) }}#assignments"><i class="fa fa-pencil"></i> Edit</a></td>

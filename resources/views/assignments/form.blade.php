@@ -98,6 +98,28 @@
 </div>
 
 <div class="form-group iapm-field" data-types="device_group">
+    @include('iapm::partials.typeahead', [
+        'id' => 'iapm-excluded-device-search',
+        'name' => 'excluded_device_picker',
+        'endpoint' => route('iapm.devices.search'),
+        'label' => 'Excluded devices',
+        'placeholder' => 'Search for a device to exclude',
+        'help' => 'Pick a device, then click Add device. Exclusions affect only this assignment; another assignment or the default policy can still apply.',
+    ])
+    <button type="button" class="btn btn-default btn-sm" id="iapm-add-excluded-device">Add device</button>
+    <ul id="iapm-excluded-devices" class="list-unstyled" aria-label="Devices excluded from this assignment" style="margin-top:8px;">
+        @foreach($excludedDevices ?? [] as $excludedDevice)
+        <li style="margin-bottom:6px;">
+            <span>{{ $excludedDevice['label'] }}</span>
+            <input type="hidden" name="excluded_device_ids[]" value="{{ $excludedDevice['id'] }}">
+            <button type="button" class="btn btn-default btn-xs" data-remove-excluded-device aria-label="Remove {{ $excludedDevice['label'] }} from exclusions">Remove</button>
+        </li>
+        @endforeach
+    </ul>
+    <span id="iapm-excluded-device-status" class="iapm-hint" aria-live="polite"></span>
+</div>
+
+<div class="form-group iapm-field" data-types="device_group">
     <label for="iapm-as-mode">Group match mode</label>
     <select name="match_mode" id="iapm-as-mode" class="form-control">
         <option value="any" @selected(old('match_mode',$assignment->match_mode ?? 'any')==='any')>Match ANY selected group</option>
@@ -153,7 +175,7 @@
             var show = el.dataset.types.split(',').indexOf(type) !== -1;
             el.style.display = show ? '' : 'none';
             // Disable hidden inputs so their (stale) values are not submitted.
-            el.querySelectorAll('input,select,textarea').forEach(function (i) { i.disabled = ! show; });
+            el.querySelectorAll('input,select,textarea,button').forEach(function (i) { i.disabled = ! show; });
         });
         // Group and device selectors own their modes; other types use the default.
         document.getElementById('iapm-mode-fallback').disabled = (type === 'device_group' || type === 'device');
@@ -166,6 +188,35 @@
     typeSelect.addEventListener('change', sync);
     document.getElementById('iapm-device-mode').addEventListener('change', sync);
     sync();
+
+    var excludedList = document.getElementById('iapm-excluded-devices');
+    var excludedPicker = document.getElementById('iapm-excluded-device-search');
+    var excludedId = form.querySelector('[name="excluded_device_picker"]');
+    var excludedStatus = document.getElementById('iapm-excluded-device-status');
+    document.getElementById('iapm-add-excluded-device').addEventListener('click', function () {
+        var id = excludedId.value;
+        if (!id) { excludedStatus.textContent = 'Select a device from the search results first.'; return; }
+        var duplicate = Array.from(excludedList.querySelectorAll('input')).some(function (input) { return input.value === id; });
+        if (duplicate) { excludedStatus.textContent = 'This device is already excluded.'; return; }
+        var row = document.createElement('li');
+        row.style.marginBottom = '6px';
+        var label = document.createElement('span');
+        label.textContent = excludedPicker.value;
+        var input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'excluded_device_ids[]'; input.value = id;
+        var remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'btn btn-default btn-xs'; remove.textContent = 'Remove';
+        remove.setAttribute('data-remove-excluded-device', '');
+        remove.setAttribute('aria-label', 'Remove ' + excludedPicker.value + ' from exclusions');
+        row.appendChild(label); row.appendChild(input); row.appendChild(document.createTextNode(' ')); row.appendChild(remove);
+        excludedList.appendChild(row);
+        excludedStatus.textContent = excludedPicker.value + ' added to exclusions.';
+        excludedPicker.value = ''; excludedId.value = ''; excludedPicker.focus();
+    });
+    excludedList.addEventListener('click', function (event) {
+        var remove = event.target.closest('[data-remove-excluded-device]');
+        if (remove) { remove.closest('li').remove(); excludedStatus.textContent = 'Device removed from exclusions.'; }
+    });
 
     // Device type-ahead: query the search endpoint and store the chosen device_id in
     // a hidden field, so we never render every device into the page.

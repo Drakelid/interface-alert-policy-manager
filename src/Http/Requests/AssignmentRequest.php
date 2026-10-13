@@ -19,6 +19,8 @@ class AssignmentRequest extends FormRequest
             ? ['required', 'string', 'max:255', 'exists:devices,device_id']
             : ['nullable', 'string', 'max:255'];
 
+        $exclusionRules = [Rule::excludeIf($this->input('assignment_type') !== 'device_group'), 'array', 'max:1000'];
+
         return ['policy_id' => ['required', 'exists:iapm_policies,id'], 'assignment_type' => ['required', Rule::in(['port', 'device', 'device_group', 'port_group', 'location', 'ifalias_regex', 'ifname_regex', 'interface_type', 'default'])], 'assignment_reference' => $referenceRules, 'match_expression' => ['nullable', 'string', 'max:1000', function (string $a, mixed $v, Closure $fail) {
             if (in_array($this->input('assignment_type'), ['ifalias_regex', 'ifname_regex'], true)) {
                 set_error_handler(static fn () => true);
@@ -30,7 +32,7 @@ class AssignmentRequest extends FormRequest
                     $fail('The regular expression is invalid.');
                 }
             }
-        }], 'match_mode' => ['required', Rule::in(['any', 'all', 'exclude'])], 'priority' => ['required', 'integer', 'between:-100000,100000'], 'enabled' => ['boolean'], 'device_group_ids' => ['array', 'max:1000'], 'device_group_ids.*' => ['integer', 'exists:device_groups,id'], 'receivers' => ['array', 'max:100'], 'receivers.*' => ['string', 'max:128']];
+        }], 'match_mode' => ['required', Rule::in(['any', 'all', 'exclude'])], 'priority' => ['required', 'integer', 'between:-100000,100000'], 'enabled' => ['boolean'], 'device_group_ids' => ['array', 'max:1000'], 'device_group_ids.*' => ['integer', 'exists:device_groups,id'], 'excluded_device_ids' => $exclusionRules, 'excluded_device_ids.*' => ['integer', 'distinct', 'exists:devices,device_id'], 'receivers' => ['array', 'max:100'], 'receivers.*' => ['string', 'max:128']];
     }
 
     protected function prepareForValidation(): void

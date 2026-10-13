@@ -427,7 +427,8 @@ php artisan iapm:health   # non-zero exit when IAPM is unhealthy (for external m
 
 ## Noise control, monitoring, and tooling
 
-- **Exclude individual devices.** Under a policy's Interface assignments, add a Device assignment, search for the device, and select **Exclude from alerts**. This excludes all its interfaces from IAPM alerts, overriding port assignments and default policies while both the assignment and its policy are enabled. Preview shows the affected interfaces. Disable or delete the exclusion to allow alerts again.
+- **Exclude devices from a group assignment.** Choose **Device group(s)** under Interface assignments, select the groups, then search under **Excluded devices** and click **Add device** for each exception. Save the assignment to apply the list. Preview omits these devices. Exclusions affect only this assignment; another assignment or the default policy can still apply.
+- **Exclude individual devices globally.** Add a Device assignment, search for the device, and select **Exclude from alerts**. This excludes all its interfaces from IAPM alerts, overriding port assignments and default policies while both the assignment and its policy are enabled. Disable or delete the exclusion to allow alerts again.
 
 - **Root-cause suppression.** Designate an *uplink port group* in Settings, then enable "suppress when uplink down" on a policy. When an uplink interface on a device is down, downstream customer interfaces on that device are suppressed (reason `uplink_down`) instead of storming.
 - **Flap dampening (per policy).** Set a flap threshold, window, and settle period. When an interface cycles down/up faster than the threshold, IAPM sends one `FLAPPING` notice and suppresses the routine churn until it settles.

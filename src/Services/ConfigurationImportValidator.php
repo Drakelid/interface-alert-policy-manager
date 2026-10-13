@@ -74,6 +74,8 @@ class ConfigurationImportValidator
             'policies.*.assignments.*.metadata_json' => ['nullable', 'array'],
             'policies.*.assignments.*.metadata_json.receivers' => ['nullable', 'array', 'max:100'],
             'policies.*.assignments.*.metadata_json.receivers.*' => ['string', 'max:128'],
+            'policies.*.assignments.*.metadata_json.excluded_device_ids' => ['nullable', 'array', 'max:1000'],
+            'policies.*.assignments.*.metadata_json.excluded_device_ids.*' => ['integer'],
             'policies.*.assignments.*.device_group_ids' => ['nullable', 'array', 'max:1000'],
             'policies.*.assignments.*.device_group_ids.*' => ['integer'],
         ]);
@@ -99,6 +101,8 @@ class ConfigurationImportValidator
             $groupIds = $assignments->flatMap(fn (array $assignment) => $assignment['device_group_ids'] ?? [])->map(fn ($id) => (int) $id)->unique()->values()->all();
             $destinations = $this->existing('iapm_destinations', 'name', $destinationNames);
             $knownGroups = $this->existing('device_groups', 'id', $groupIds)->map(fn ($id) => (int) $id);
+            $excludedDeviceIds = $assignments->flatMap(fn (array $assignment) => (array) data_get($assignment, 'metadata_json.excluded_device_ids', []))->map(fn ($id) => (int) $id)->unique()->values()->all();
+            $knownExcludedDevices = $this->existing('devices', 'device_id', $excludedDeviceIds)->map(fn ($id) => (int) $id);
             // Resolve only identifiers referenced by this bounded document. Loading
             // every port id made import validation O(fleet size) and could exhaust
             // memory on a 500k-interface LibreNMS instance.
@@ -139,6 +143,11 @@ class ConfigurationImportValidator
                     foreach (($assignment['device_group_ids'] ?? []) as $groupId) {
                         if (! $knownGroups->contains((int) $groupId)) {
                             $validator->errors()->add("policies.{$policyIndex}.assignments.{$assignmentIndex}.device_group_ids", "Device group {$groupId} does not exist.");
+                        }
+                    }
+                    foreach ((array) data_get($assignment, 'metadata_json.excluded_device_ids', []) as $deviceId) {
+                        if (! $knownExcludedDevices->contains((int) $deviceId)) {
+                            $validator->errors()->add("policies.{$policyIndex}.assignments.{$assignmentIndex}.metadata_json.excluded_device_ids", 'An excluded device does not exist.');
                         }
                     }
                 }
