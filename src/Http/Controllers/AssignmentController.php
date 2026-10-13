@@ -75,8 +75,12 @@ class AssignmentController extends Controller
     public function store(AssignmentRequest $r, AuditService $audit)
     {
         $a = DB::transaction(function () use ($r) {
-            $d = $r->safe()->except(['device_group_ids', 'receivers', 'excluded_device_ids']);
-            $d['metadata_json'] = ['receivers' => $r->input('receivers', []), 'excluded_device_ids' => array_map('intval', $r->validated('excluded_device_ids', []))];
+            $d = $r->safe()->except(['device_group_ids', 'receivers', 'excluded_device_ids', 'excluded_port_ids']);
+            $d['metadata_json'] = [
+                'receivers' => $r->input('receivers', []),
+                'excluded_device_ids' => array_map('intval', $r->validated('excluded_device_ids', [])),
+                'excluded_port_ids' => array_map('intval', $r->validated('excluded_port_ids', [])),
+            ];
             $a = Assignment::create($d);
             foreach ($r->input('device_group_ids', []) as $id) {
                 $a->deviceGroups()->create(['device_group_id' => $id, 'inclusion_mode' => $r->input('match_mode') === 'exclude' ? 'exclude' : 'include']);
@@ -101,8 +105,12 @@ class AssignmentController extends Controller
     {
         $before = $assignment->toArray();
         DB::transaction(function () use ($r, $assignment) {
-            $d = $r->safe()->except(['device_group_ids', 'receivers', 'excluded_device_ids']);
-            $d['metadata_json'] = ['receivers' => $r->input('receivers', []), 'excluded_device_ids' => array_map('intval', $r->validated('excluded_device_ids', []))];
+            $d = $r->safe()->except(['device_group_ids', 'receivers', 'excluded_device_ids', 'excluded_port_ids']);
+            $d['metadata_json'] = [
+                'receivers' => $r->input('receivers', []),
+                'excluded_device_ids' => array_map('intval', $r->validated('excluded_device_ids', [])),
+                'excluded_port_ids' => array_map('intval', $r->validated('excluded_port_ids', [])),
+            ];
             $assignment->update($d);
             $assignment->deviceGroups()->delete();
             foreach ($r->input('device_group_ids', []) as $id) {

@@ -25,6 +25,8 @@ class AssignmentFormData
         $port = $portRef ? Port::with('device')->find($portRef) : null;
         $excludedIds = array_slice((array) old('excluded_device_ids', $assignment->metadata_json['excluded_device_ids'] ?? []), 0, 1000);
         $excludedIds = array_filter($excludedIds, fn ($id) => is_int($id) || (is_string($id) && ctype_digit($id)));
+        $excludedPortIds = array_slice((array) old('excluded_port_ids', $assignment->metadata_json['excluded_port_ids'] ?? []), 0, 1000);
+        $excludedPortIds = array_filter($excludedPortIds, fn ($id) => is_int($id) || (is_string($id) && ctype_digit($id)));
 
         return [
             'assignment' => $assignment,
@@ -36,6 +38,8 @@ class AssignmentFormData
             'excludedDevices' => Device::whereIn('device_id', $excludedIds)
                 ->orderBy('hostname')->get(['device_id', 'hostname', 'sysName'])
                 ->map(fn ($excluded) => ['id' => (int) $excluded->device_id, 'label' => app(EntityLookup::class)->deviceLabel($excluded)])->all(),
+            'excludedPorts' => Port::with('device')->whereIn('port_id', $excludedPortIds)->orderBy('port_id')->get()
+                ->map(fn ($excluded) => ['id' => (int) $excluded->port_id, 'label' => app(EntityLookup::class)->portLabel($excluded)])->all(),
         ];
     }
 }

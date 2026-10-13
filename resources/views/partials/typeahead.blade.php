@@ -8,7 +8,8 @@
     Required: $name (submitted field), $endpoint (JSON [{id,label}]), $label.
     Optional: $value (current id), $valueLabel (current name), $placeholder,
               $help, $id (defaults to a slug of $name), $inline (compact layout),
-              $dependsOn (id of another field whose value is sent as device_id).
+              $dependsOn (id of another field whose value is sent as device_id),
+              $valueId (optional id for the hidden selected-value field).
 --}}
 @php($iapmFieldId = $id ?? 'iapm-ta-'.\Illuminate\Support\Str::slug($name))
 <div class="{{ ($inline ?? false) ? 'form-group' : 'form-group' }} iapm-typeahead" style="position:relative;"
@@ -20,7 +21,7 @@
            placeholder="{{ $placeholder ?? $label }}" value="{{ $valueLabel ?? '' }}"
            data-iapm-typeahead-input
            @isset($help) aria-describedby="{{ $iapmFieldId }}-help" @endisset>
-    <input type="hidden" name="{{ $name }}" value="{{ $value ?? '' }}" data-iapm-typeahead-value>
+    <input type="hidden" name="{{ $name }}" value="{{ $value ?? '' }}" data-iapm-typeahead-value @isset($valueId) id="{{ $valueId }}" @endisset>
     <div id="{{ $iapmFieldId }}-results" class="list-group iapm-typeahead-results" role="listbox" data-iapm-typeahead-results></div>
     @isset($help)<p class="iapm-hint" id="{{ $iapmFieldId }}-help">{{ $help }}</p>@endisset
 </div>

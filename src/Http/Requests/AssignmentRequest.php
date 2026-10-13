@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
 
 class AssignmentRequest extends FormRequest
 {
@@ -32,7 +33,7 @@ class AssignmentRequest extends FormRequest
                     $fail('The regular expression is invalid.');
                 }
             }
-        }], 'match_mode' => ['required', Rule::in(['any', 'all', 'exclude'])], 'priority' => ['required', 'integer', 'between:-100000,100000'], 'enabled' => ['boolean'], 'device_group_ids' => ['array', 'max:1000'], 'device_group_ids.*' => ['integer', 'exists:device_groups,id'], 'excluded_device_ids' => $exclusionRules, 'excluded_device_ids.*' => ['integer', 'distinct', 'exists:devices,device_id'], 'receivers' => ['array', 'max:100'], 'receivers.*' => ['string', 'max:128']];
+        }], 'match_mode' => ['required', Rule::in(['any', 'all', 'exclude'])], 'priority' => ['required', 'integer', 'between:-100000,100000'], 'enabled' => ['boolean'], 'device_group_ids' => ['array', 'max:1000'], 'device_group_ids.*' => ['integer', 'exists:device_groups,id'], 'excluded_device_ids' => $exclusionRules, 'excluded_device_ids.*' => ['integer', 'distinct', 'exists:devices,device_id'], 'excluded_port_ids' => $exclusionRules, 'excluded_port_ids.*' => ['bail', 'integer', 'distinct', new PortHasDevice], 'receivers' => ['array', 'max:100'], 'receivers.*' => ['string', 'max:128']];
     }
 
     protected function prepareForValidation(): void

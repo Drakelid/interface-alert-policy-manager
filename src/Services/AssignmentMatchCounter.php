@@ -29,7 +29,7 @@ class AssignmentMatchCounter
     public const SAMPLE_LIMIT = 10;
 
     /**
-     * @param  array{assignment_type:string, assignment_reference?:string|int|null, match_expression?:string|null, match_mode?:string|null, device_group_ids?:array<int|string>, excluded_device_ids?:array<int|string>}  $assignment
+     * @param  array{assignment_type:string, assignment_reference?:string|int|null, match_expression?:string|null, match_mode?:string|null, device_group_ids?:array<int|string>, excluded_device_ids?:array<int|string>, excluded_port_ids?:array<int|string>}  $assignment
      * @return array{count:int, devices:int, capped:bool, error:string|null}
      */
     public function count(array $assignment): array
@@ -85,17 +85,20 @@ class AssignmentMatchCounter
             return $this->activePorts()->whereRaw('1 = 0');
         }
 
-        return $this->activePorts()->whereNotIn('ports.device_id', (array) ($assignment['excluded_device_ids'] ?? []))->whereHas('device', function (Builder $query) use ($groups, $mode): void {
-            if ($mode === 'exclude') {
-                $query->whereDoesntHave('groups', fn (Builder $g) => $g->whereIn('device_groups.id', $groups));
-            } elseif ($mode === 'all') {
-                foreach ($groups as $group) {
-                    $query->whereHas('groups', fn (Builder $g) => $g->where('device_groups.id', $group));
+        return $this->activePorts()
+            ->whereNotIn('ports.device_id', (array) ($assignment['excluded_device_ids'] ?? []))
+            ->whereNotIn('ports.port_id', (array) ($assignment['excluded_port_ids'] ?? []))
+            ->whereHas('device', function (Builder $query) use ($groups, $mode): void {
+                if ($mode === 'exclude') {
+                    $query->whereDoesntHave('groups', fn (Builder $g) => $g->whereIn('device_groups.id', $groups));
+                } elseif ($mode === 'all') {
+                    foreach ($groups as $group) {
+                        $query->whereHas('groups', fn (Builder $g) => $g->where('device_groups.id', $group));
+                    }
+                } else {
+                    $query->whereHas('groups', fn (Builder $g) => $g->whereIn('device_groups.id', $groups));
                 }
-            } else {
-                $query->whereHas('groups', fn (Builder $g) => $g->whereIn('device_groups.id', $groups));
-            }
-        });
+            });
     }
 
     private function countQuery(Builder $query): array

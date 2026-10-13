@@ -44,7 +44,7 @@ class PolicyResolver
         $append = function (array $ids, bool $evaluate = false) use (&$matches, $index, $context): void {
             foreach ($ids as $id) {
                 $assignment = $index['all'][$id] ?? null;
-                if (isset($index['excluded_devices'][$id][$context->deviceId])) {
+                if (isset($index['excluded_devices'][$id][$context->deviceId]) || isset($index['excluded_ports'][$id][$context->portId])) {
                     continue;
                 }
                 if ($assignment instanceof Assignment && (! $evaluate || $this->matches($assignment, $context))) {
@@ -136,6 +136,7 @@ class PolicyResolver
             }
             if ($type === AssignmentType::DeviceGroup) {
                 $index['excluded_devices'][$assignment->id] = array_fill_keys(array_map('intval', (array) ($assignment->metadata_json['excluded_device_ids'] ?? [])), true);
+                $index['excluded_ports'][$assignment->id] = array_fill_keys(array_map('intval', (array) ($assignment->metadata_json['excluded_port_ids'] ?? [])), true);
                 if ($assignment->match_mode === 'any') {
                     foreach ($assignment->deviceGroups as $group) {
                         $index['device_group'][(int) $group->device_group_id][] = $assignment->id;

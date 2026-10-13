@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
+use App\Models\Port;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -76,6 +77,8 @@ class ConfigurationImportValidator
             'policies.*.assignments.*.metadata_json.receivers.*' => ['string', 'max:128'],
             'policies.*.assignments.*.metadata_json.excluded_device_ids' => ['nullable', 'array', 'max:1000'],
             'policies.*.assignments.*.metadata_json.excluded_device_ids.*' => ['integer'],
+            'policies.*.assignments.*.metadata_json.excluded_port_ids' => ['nullable', 'array', 'max:1000'],
+            'policies.*.assignments.*.metadata_json.excluded_port_ids.*' => ['integer'],
             'policies.*.assignments.*.device_group_ids' => ['nullable', 'array', 'max:1000'],
             'policies.*.assignments.*.device_group_ids.*' => ['integer'],
         ]);
@@ -103,6 +106,8 @@ class ConfigurationImportValidator
             $knownGroups = $this->existing('device_groups', 'id', $groupIds)->map(fn ($id) => (int) $id);
             $excludedDeviceIds = $assignments->flatMap(fn (array $assignment) => (array) data_get($assignment, 'metadata_json.excluded_device_ids', []))->map(fn ($id) => (int) $id)->unique()->values()->all();
             $knownExcludedDevices = $this->existing('devices', 'device_id', $excludedDeviceIds)->map(fn ($id) => (int) $id);
+            $excludedPortIds = $assignments->flatMap(fn (array $assignment) => (array) data_get($assignment, 'metadata_json.excluded_port_ids', []))->map(fn ($id) => (int) $id)->unique()->values()->all();
+            $knownExcludedPorts = Port::whereIn('port_id', $excludedPortIds)->whereHas('device')->pluck('port_id')->map(fn ($id) => (int) $id);
             // Resolve only identifiers referenced by this bounded document. Loading
             // every port id made import validation O(fleet size) and could exhaust
             // memory on a 500k-interface LibreNMS instance.
@@ -148,6 +153,11 @@ class ConfigurationImportValidator
                     foreach ((array) data_get($assignment, 'metadata_json.excluded_device_ids', []) as $deviceId) {
                         if (! $knownExcludedDevices->contains((int) $deviceId)) {
                             $validator->errors()->add("policies.{$policyIndex}.assignments.{$assignmentIndex}.metadata_json.excluded_device_ids", 'An excluded device does not exist.');
+                        }
+                    }
+                    foreach ((array) data_get($assignment, 'metadata_json.excluded_port_ids', []) as $portId) {
+                        if (! $knownExcludedPorts->contains((int) $portId)) {
+                            $validator->errors()->add("policies.{$policyIndex}.assignments.{$assignmentIndex}.metadata_json.excluded_port_ids", 'An excluded interface does not belong to an existing device.');
                         }
                     }
                 }

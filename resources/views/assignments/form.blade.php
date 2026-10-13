@@ -120,6 +120,39 @@
 </div>
 
 <div class="form-group iapm-field" data-types="device_group">
+    <h4>Excluded interfaces</h4>
+    @include('iapm::partials.typeahead', [
+        'id' => 'iapm-excluded-port-device-search',
+        'valueId' => 'iapm-excluded-port-device-id',
+        'name' => 'excluded_port_device_picker',
+        'endpoint' => route('iapm.devices.search'),
+        'label' => 'Device for interface search',
+        'placeholder' => 'Choose a device to find its interfaces',
+        'help' => 'Choosing a device here only filters the interface search; it does not exclude the whole device.',
+    ])
+    @include('iapm::partials.typeahead', [
+        'id' => 'iapm-excluded-port-search',
+        'name' => 'excluded_port_picker',
+        'endpoint' => route('iapm.lookup.ports'),
+        'dependsOn' => 'iapm-excluded-port-device-id',
+        'label' => 'Interface to exclude',
+        'placeholder' => 'Search by interface name or description',
+        'help' => 'Choose a device above, pick an interface, then click Add interface. Other interfaces on the device remain included. Exclusions affect only this assignment.',
+    ])
+    <button type="button" class="btn btn-default btn-sm" id="iapm-add-excluded-port">Add interface</button>
+    <ul id="iapm-excluded-ports" class="list-unstyled" aria-label="Interfaces excluded from this assignment" style="margin-top:8px;">
+        @foreach($excludedPorts ?? [] as $excludedPort)
+        <li style="margin-bottom:6px;">
+            <span>{{ $excludedPort['label'] }}</span>
+            <input type="hidden" name="excluded_port_ids[]" value="{{ $excludedPort['id'] }}">
+            <button type="button" class="btn btn-default btn-xs" data-remove-excluded-port aria-label="Remove {{ $excludedPort['label'] }} from exclusions">Remove</button>
+        </li>
+        @endforeach
+    </ul>
+    <span id="iapm-excluded-port-status" class="iapm-hint" aria-live="polite"></span>
+</div>
+
+<div class="form-group iapm-field" data-types="device_group">
     <label for="iapm-as-mode">Group match mode</label>
     <select name="match_mode" id="iapm-as-mode" class="form-control">
         <option value="any" @selected(old('match_mode',$assignment->match_mode ?? 'any')==='any')>Match ANY selected group</option>
@@ -183,39 +216,64 @@
         var receivers = document.getElementById('iapm-as-receivers');
         receivers.closest('.iapm-field').style.display = excluded || type === 'default' ? 'none' : '';
         receivers.disabled = excluded || type === 'default';
+        syncInterfacePicker();
     }
 
     typeSelect.addEventListener('change', sync);
     document.getElementById('iapm-device-mode').addEventListener('change', sync);
     sync();
 
-    var excludedList = document.getElementById('iapm-excluded-devices');
-    var excludedPicker = document.getElementById('iapm-excluded-device-search');
-    var excludedId = form.querySelector('[name="excluded_device_picker"]');
-    var excludedStatus = document.getElementById('iapm-excluded-device-status');
-    document.getElementById('iapm-add-excluded-device').addEventListener('click', function () {
-        var id = excludedId.value;
-        if (!id) { excludedStatus.textContent = 'Select a device from the search results first.'; return; }
-        var duplicate = Array.from(excludedList.querySelectorAll('input')).some(function (input) { return input.value === id; });
-        if (duplicate) { excludedStatus.textContent = 'This device is already excluded.'; return; }
-        var row = document.createElement('li');
-        row.style.marginBottom = '6px';
-        var label = document.createElement('span');
-        label.textContent = excludedPicker.value;
-        var input = document.createElement('input');
-        input.type = 'hidden'; input.name = 'excluded_device_ids[]'; input.value = id;
-        var remove = document.createElement('button');
-        remove.type = 'button'; remove.className = 'btn btn-default btn-xs'; remove.textContent = 'Remove';
-        remove.setAttribute('data-remove-excluded-device', '');
-        remove.setAttribute('aria-label', 'Remove ' + excludedPicker.value + ' from exclusions');
-        row.appendChild(label); row.appendChild(input); row.appendChild(document.createTextNode(' ')); row.appendChild(remove);
-        excludedList.appendChild(row);
-        excludedStatus.textContent = excludedPicker.value + ' added to exclusions.';
-        excludedPicker.value = ''; excludedId.value = ''; excludedPicker.focus();
-    });
-    excludedList.addEventListener('click', function (event) {
-        var remove = event.target.closest('[data-remove-excluded-device]');
-        if (remove) { remove.closest('li').remove(); excludedStatus.textContent = 'Device removed from exclusions.'; }
+    function bindExclusionList(key, plural, noun) {
+        var list = document.getElementById('iapm-excluded-' + plural);
+        var picker = document.getElementById('iapm-excluded-' + key + '-search');
+        var selectedId = form.querySelector('[name="excluded_' + key + '_picker"]');
+        var status = document.getElementById('iapm-excluded-' + key + '-status');
+        document.getElementById('iapm-add-excluded-' + key).addEventListener('click', function () {
+            var id = selectedId.value;
+            if (!id) { status.textContent = 'Select an item from the search results first.'; return; }
+            var duplicate = Array.from(list.querySelectorAll('input')).some(function (input) { return input.value === id; });
+            if (duplicate) { status.textContent = 'This ' + noun + ' is already excluded.'; return; }
+            var row = document.createElement('li');
+            row.style.marginBottom = '6px';
+            var label = document.createElement('span');
+            label.textContent = picker.value;
+            var input = document.createElement('input');
+            input.type = 'hidden'; input.name = 'excluded_' + key + '_ids[]'; input.value = id;
+            var remove = document.createElement('button');
+            remove.type = 'button'; remove.className = 'btn btn-default btn-xs'; remove.textContent = 'Remove';
+            remove.setAttribute('data-remove-excluded-' + key, '');
+            remove.setAttribute('aria-label', 'Remove ' + picker.value + ' from exclusions');
+            row.appendChild(label); row.appendChild(input); row.appendChild(document.createTextNode(' ')); row.appendChild(remove);
+            list.appendChild(row);
+            status.textContent = picker.value + ' added to exclusions.';
+            picker.value = ''; selectedId.value = ''; picker.focus();
+        });
+        list.addEventListener('click', function (event) {
+            var remove = event.target.closest('[data-remove-excluded-' + key + ']');
+            if (remove) { remove.closest('li').remove(); status.textContent = 'Removed from exclusions.'; }
+        });
+    }
+    bindExclusionList('device', 'devices', 'device');
+    bindExclusionList('port', 'ports', 'interface');
+
+    function syncInterfacePicker() {
+        var enabled = typeSelect.value === 'device_group' && document.getElementById('iapm-excluded-port-device-id').value !== '';
+        document.getElementById('iapm-excluded-port-search').disabled = !enabled;
+        form.querySelector('[name="excluded_port_picker"]').disabled = !enabled;
+        document.getElementById('iapm-add-excluded-port').disabled = !enabled;
+    }
+    function clearInterfacePicker() {
+        var picker = document.getElementById('iapm-excluded-port-search');
+        picker.value = '';
+        form.querySelector('[name="excluded_port_picker"]').value = '';
+        // Clear stale results and invalidate in-flight searches for the previous device.
+        picker.dispatchEvent(new Event('input', {bubbles: true}));
+        syncInterfacePicker();
+    }
+    document.getElementById('iapm-excluded-port-device-id').addEventListener('change', clearInterfacePicker);
+    document.getElementById('iapm-excluded-port-device-search').addEventListener('input', function () {
+        document.getElementById('iapm-excluded-port-device-id').value = '';
+        clearInterfacePicker();
     });
 
     // Device type-ahead: query the search endpoint and store the chosen device_id in
