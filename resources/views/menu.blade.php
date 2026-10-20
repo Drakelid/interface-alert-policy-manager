@@ -20,10 +20,14 @@
         }
 
         var source = document.getElementById('iapm-plugin-menu-fallback');
-        // The Notifications link is the stable entry in LibreNMS's Alerts menu.
-        // Its icon and navbar classes vary between LibreNMS versions.
-        var notificationsLink = document.querySelector('#navHeaderCollapse a[href$="/alerts"]');
-        var alertsMenu = notificationsLink && notificationsLink.closest('ul.dropdown-menu');
+        // LibreNMS renamed Notifications (/alerts) to Faults (/faults).
+        // Statistics remains available when permissions hide the main link.
+        var alertsLink = document.querySelector(
+            '#navHeaderCollapse a[href$="/faults"], ' +
+            '#navHeaderCollapse a[href$="/alerts"], ' +
+            '#navHeaderCollapse a[href$="/alert-stats"]'
+        );
+        var alertsMenu = alertsLink && alertsLink.closest('ul.dropdown-menu');
         if (!source || !alertsMenu) {
             return;
         }
