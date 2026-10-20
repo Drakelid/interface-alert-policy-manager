@@ -31,7 +31,7 @@ class RealSimulationController extends Controller
             $simulationRecoveryDetail = 'The recovery scheduler timestamp is invalid.';
         }
 
-        return $views->make('iapm::real-simulations', [
+        return $views->file(dirname(__DIR__, 3).'/resources/views/real-simulations.blade.php', [
             'simulations' => $simulations,
             'portLabel' => $port ? $lookup->portLabel($port) : '',
             'dryRun' => (bool) $settings->get('dry_run', true),

@@ -2,9 +2,13 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\IapmServiceProvider;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Jobs\SendNotificationJob;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
@@ -32,7 +36,7 @@ class NotificationDispatcher
      *
      * @param  list<int>|null  $incidentIds  all incidents represented by a digest
      */
-    public function dispatch(Incident $incident, Destination $destination, ?PolicyAction $action, string $phase, string $receiver, string $message, ?array $incidentIds = null, bool $forceSync = false): TransportResult
+    public function dispatch(Incident $incident, Destination $destination, ?PolicyAction $action, string $phase, string $receiver, string $message, ?array $incidentIds = null, bool $forceSync = false, bool $force = false): TransportResult
     {
         if (! $destination->enabled) {
             return $this->configurationFailure($incident, $destination, $action, $phase, 'Destination is disabled.');
@@ -41,32 +45,65 @@ class NotificationDispatcher
             $message = $this->smsFilters->filter($message);
         }
 
-        $incidents = Incident::whereIn('id', $incidentIds ?: [$incident->id])->get()->filter(fn (Incident $item) => filled($item->episode_uuid));
-        if ($incidents->isEmpty()) {
+        if (! filled($incident->episode_uuid)) {
             return $this->configurationFailure($incident, $destination, $action, $phase, 'Incident has no outage episode identity; run migrations.');
         }
-        $members = $incidents->sortBy('id')->map(fn (Incident $item): string => $item->id.':'.$item->episode_uuid)->values();
         $receiverHash = hash('sha256', $receiver);
-        $base = implode('|', [$phase, (string) $destination->id, (string) ($action?->id ?? 0), $receiverHash, hash('sha256', $members->implode('|'))]);
-        $successfulCount = NotificationOutbox::where('incident_id', $incident->id)->where('episode_uuid', $incident->episode_uuid)->where('policy_action_id', $action?->id)->where('phase', $phase)->where('receiver_hash', $receiverHash)->whereIn('status', ['sent', 'dry_run'])->count();
-        $key = hash('sha256', $base.'|'.($successfulCount + 1));
-
-        try {
-            $outbox = DB::transaction(function () use ($key, $incident, $destination, $action, $phase, $receiver, $receiverHash, $message, $incidents): NotificationOutbox {
-                $existing = NotificationOutbox::where('idempotency_key', $key)->lockForUpdate()->first();
-                if ($existing) {
-                    if ($existing->status === 'failed' && ($existing->available_at === null || $existing->available_at->isPast())) {
-                        $existing->update(['status' => 'pending', 'available_at' => now(), 'last_error_redacted' => null]);
+        // Eligibility and occurrence allocation share the incident lock. A worker
+        // completing after the scheduler's snapshot cannot invent another send.
+        $outbox = DB::transaction(function () use ($incident, $destination, $action, $phase, $receiver, $receiverHash, $message, $incidentIds, $force): ?NotificationOutbox {
+            $incidents = Incident::whereIn('id', $incidentIds ?: [$incident->id])->orderBy('id')->lockForUpdate()->get();
+            $current = $incidents->firstWhere('id', $incident->id);
+            if (! $current || (string) $current->episode_uuid !== (string) $incident->episode_uuid) {
+                return null;
+            }
+            $current->load('policy');
+            $currentAction = $action?->fresh();
+            if ($this->phaseInvalid($current, $currentAction, $phase, $action !== null)) {
+                return null;
+            }
+            $scope = NotificationOutbox::where('incident_id', $incident->id)
+                ->where('episode_uuid', $incident->episode_uuid)->where('destination_id', $destination->id)
+                ->where('policy_action_id', $action?->id)->where('phase', $phase)->where('receiver_hash', $receiverHash);
+            $previous = (clone $scope)->latest('id')->first();
+            if ($previous && in_array($previous->status, ['pending', 'queued', 'processing', 'failed'], true)) {
+                return $previous;
+            }
+            $completed = (clone $scope)->whereIn('status', ['sent', 'dry_run'])->count();
+            $lastCompleted = (clone $scope)->whereIn('status', ['sent', 'dry_run'])->latest('delivered_at')->first();
+            if (! $force && ! $this->occurrenceDue($current, $currentAction, $phase, $completed, $lastCompleted?->delivered_at)) {
+                return $lastCompleted;
+            }
+            if ($phase === 'trigger') {
+                // A failed digest is replaced by individual fallback. Serialize
+                // that choice with both occurrence allocation and other schedulers.
+                NotificationOutbox::where('phase', 'digest')->where('status', 'failed')
+                    ->where('destination_id', $destination->id)->where('receiver_hash', $receiverHash)
+                    ->whereIn('id', DB::table('iapm_notification_outbox_incidents')->where('incident_id', $current->id)->where('episode_uuid', $current->episode_uuid)->select('notification_outbox_id'))
+                    ->update(['status' => 'cancelled', 'available_at' => null, 'claim_token' => null, 'claimed_at' => null, 'queued_at' => null, 'last_error_redacted' => 'Digest superseded by individual trigger fallback.']);
+            }
+            if ($phase === 'trigger' && $this->triggerCovered($current, $destination->id, $receiverHash)) {
+                return null;
+            }
+            if ($phase === 'digest') {
+                foreach ($incidents as $member) {
+                    if ($this->digestMemberCovered($member, $destination->id, $receiverHash)) {
+                        return null;
                     }
-
-                    return $existing;
                 }
+            }
+            $members = $incidents->map(fn (Incident $item): string => $item->id.':'.$item->episode_uuid)->implode('|');
+            $base = implode('|', [$phase, (string) $destination->id, (string) ($action?->id ?? 0), $receiverHash, hash('sha256', $members)]);
+            $key = hash('sha256', $base.'|'.((clone $scope)->count() + 1));
+            try {
                 $outbox = NotificationOutbox::create([
                     'idempotency_key' => $key,
                     'episode_uuid' => $incident->episode_uuid,
                     'incident_id' => $incident->id,
                     'destination_id' => $destination->id,
                     'policy_action_id' => $action?->id,
+                    'action_required' => $action !== null,
+                    'forced' => $force,
                     'phase' => $phase,
                     'receiver_hash' => $receiverHash,
                     'receiver_encrypted' => $receiver,
@@ -75,14 +112,18 @@ class NotificationDispatcher
                     // multi-thousand-ID digest array in one encrypted database value.
                     'incident_ids_encrypted' => [],
                     'status' => 'pending',
+                    'queued_at' => null,
                     'available_at' => now(),
                 ]);
                 DB::table('iapm_notification_outbox_incidents')->insert($incidents->map(fn (Incident $item) => ['notification_outbox_id' => $outbox->id, 'incident_id' => $item->id, 'episode_uuid' => $item->episode_uuid])->all());
 
                 return $outbox;
-            });
-        } catch (UniqueConstraintViolationException) {
-            $outbox = NotificationOutbox::where('idempotency_key', $key)->firstOrFail();
+            } catch (UniqueConstraintViolationException) {
+                return NotificationOutbox::where('idempotency_key', $key)->firstOrFail();
+            }
+        }, 3);
+        if (! $outbox) {
+            return new TransportResult(true, null, 'not due or no longer applicable');
         }
 
         if (in_array($outbox->status, ['sent', 'dry_run'], true)) {
@@ -99,12 +140,16 @@ class NotificationDispatcher
             return new TransportResult(false, null, 'retry_scheduled', 'Notification is durably retained for a later retry.');
         }
 
-        if ((bool) $this->settings->get('dry_run', true)) {
-            return $this->completeDryRun($outbox);
+        if ((bool) $this->freshSetting('dry_run', true)) {
+            if ($outbox->wasRecentlyCreated) {
+                return $this->completeDryRun($outbox);
+            }
+
+            return new TransportResult(false, null, 'paused', 'Previously accepted live work is paused by dry-run.');
         }
 
         if (! $forceSync && $this->settings->get('dispatch_mode', 'queue') === 'queue') {
-            $claimedForQueue = NotificationOutbox::whereKey($outbox->id)->where('status', 'pending')->update(['status' => 'queued']);
+            $claimedForQueue = NotificationOutbox::whereKey($outbox->id)->whereIn('status', ['pending', 'failed'])->update(['status' => 'queued', 'queued_at' => now()]);
             if ($claimedForQueue !== 1) {
                 return new TransportResult(true, null, 'queued');
             }
@@ -116,6 +161,7 @@ class NotificationDispatcher
             } catch (\Throwable $exception) {
                 NotificationOutbox::whereKey($outbox->id)->where('status', 'queued')->update([
                     'status' => 'pending',
+                    'queued_at' => null,
                     'available_at' => now()->addSeconds(5),
                     'last_error_redacted' => 'Queue dispatch unavailable; durable outbox remains pending.',
                 ]);
@@ -132,7 +178,7 @@ class NotificationDispatcher
     {
         $outbox = DB::transaction(function () use ($outboxId): ?NotificationOutbox {
             $row = NotificationOutbox::whereKey($outboxId)->lockForUpdate()->first();
-            if (! $row || (in_array($row->status, ['sent', 'dry_run'], true) && $row->finalized_at !== null)) {
+            if (! $row || $row->status === 'cancelled' || (in_array($row->status, ['sent', 'dry_run'], true) && $row->finalized_at !== null)) {
                 return null;
             }
             if (in_array($row->status, ['sent', 'dry_run'], true)) {
@@ -144,7 +190,7 @@ class NotificationDispatcher
             if ($row->status === 'processing' && $row->claimed_at?->isAfter(now()->subSeconds(max(30, (int) config('iapm.queue.timeout', 60) + 30)))) {
                 return null;
             }
-            $row->update(['status' => 'processing', 'claimed_at' => now()]);
+            $row->update(['status' => 'processing', 'claimed_at' => now(), 'claim_token' => (string) Str::uuid()]);
 
             return $row->fresh(['incident', 'destination', 'action']);
         });
@@ -156,13 +202,16 @@ class NotificationDispatcher
 
             return new TransportResult(true, null, $outbox->status);
         }
+        if ($blocked = $this->deliveryBlocked($outbox)) {
+            return $blocked;
+        }
         if (! $outbox->incident || ! $outbox->destination) {
             NotificationOutbox::whereKey($outboxId)->update(['status' => 'failed', 'last_error_redacted' => 'Referenced incident or destination no longer exists.']);
 
             return new TransportResult(false, null, null, 'Referenced incident or destination no longer exists.');
         }
         if (! $outbox->destination->enabled) {
-            NotificationOutbox::whereKey($outboxId)->update(['status' => 'failed', 'available_at' => now()->addMinutes(5), 'last_error_redacted' => 'Destination is disabled.']);
+            $this->releaseClaim($outbox, 'Destination is disabled.', 300);
 
             return new TransportResult(false, null, null, 'Destination is disabled.');
         }
@@ -180,6 +229,9 @@ class NotificationDispatcher
         [$attempts, $configuration['timeout']] = $this->clampToWorkerBudget($attempts, (int) $configuration['timeout'], (int) ($configuration['retry_delay_ms'] ?? config('iapm.http.retry_delay_ms', 500)), $outbox->id);
         $result = new TransportResult(false, null, null, 'No delivery attempt was made.');
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            if ($blocked = $this->deliveryBlocked($outbox)) {
+                return $blocked;
+            }
             $result = $this->transports->for($outbox->destination->type)->send($configuration, (string) $outbox->receiver_encrypted, (string) $outbox->message_encrypted);
             $outbox->increment('attempt_count');
             // Log the outbox's cumulative attempt number, not this pass's loop
@@ -201,7 +253,11 @@ class NotificationDispatcher
 
         $safeError = $this->redactPayloadEcho((string) $result->error, $outbox);
         $retryAt = $result->successful ? null : now()->addSeconds($this->retryDelay($outbox, $result));
-        $outbox->update(['status' => $result->successful ? 'sent' : 'failed', 'available_at' => $retryAt, 'delivered_at' => $result->successful ? now() : null, 'last_error_redacted' => $result->successful ? null : $safeError]);
+        $updated = NotificationOutbox::whereKey($outbox->id)->where('claim_token', $outbox->claim_token)->update(['status' => $result->successful ? 'sent' : 'failed', 'available_at' => $retryAt, 'delivered_at' => $result->successful ? now() : null, 'last_error_redacted' => $result->successful ? null : $safeError, 'claim_token' => null, 'claimed_at' => null, 'queued_at' => null]);
+        if ($updated !== 1) {
+            return $result;
+        }
+        $outbox->refresh();
         $this->settings->putThrottled($result->successful ? 'last_gateway_success_at' : 'last_gateway_failure_at', now()->toIso8601String(), 30);
         if ($result->successful) {
             $this->finalizeCompleted($outbox->id);
@@ -223,6 +279,19 @@ class NotificationDispatcher
     {
         $queued = 0;
         NotificationOutbox::query()->whereIn('status', ['sent', 'dry_run'])->whereNull('finalized_at')->orderBy('id')->limit(max(1, $limit))->pluck('id')->each(fn (int $id) => $this->finalizeCompleted($id));
+        if (! $this->pluginEnabled() || (bool) $this->freshSetting('dry_run', true)) {
+            return 0;
+        }
+        $claimCutoff = now()->subSeconds(max(30, (int) config('iapm.queue.timeout', 60) + 30));
+        $publicationCutoff = now()->subSeconds(max(60, (int) config('iapm.queue.publication_lease_seconds', 300)));
+        // Publication and HTTP cannot participate in the same DB transaction.
+        // Recover their expired leases independently of a surviving queue job.
+        NotificationOutbox::where('status', 'processing')
+            ->where(fn ($q) => $q->whereNull('claimed_at')->orWhere('claimed_at', '<=', $claimCutoff))
+            ->update(['status' => 'pending', 'available_at' => now(), 'claimed_at' => null, 'claim_token' => null]);
+        NotificationOutbox::where('status', 'queued')
+            ->where(fn ($q) => $q->where('queued_at', '<=', $publicationCutoff)->orWhere(fn ($legacy) => $legacy->whereNull('queued_at')->where('updated_at', '<=', $publicationCutoff)))
+            ->update(['status' => 'pending', 'available_at' => now(), 'queued_at' => null]);
         NotificationOutbox::query()
             ->whereIn('status', ['pending', 'failed'])
             ->where(fn ($query) => $query->whereNull('available_at')->orWhere('available_at', '<=', now()))
@@ -233,7 +302,7 @@ class NotificationDispatcher
                 $claimed = NotificationOutbox::whereKey($id)
                     ->whereIn('status', ['pending', 'failed'])
                     ->where(fn ($query) => $query->whereNull('available_at')->orWhere('available_at', '<=', now()))
-                    ->update(['status' => 'queued', 'claimed_at' => null]);
+                    ->update(['status' => 'queued', 'queued_at' => now(), 'claimed_at' => null, 'claim_token' => null]);
                 if ($claimed !== 1) {
                     return;
                 }
@@ -243,6 +312,7 @@ class NotificationDispatcher
                 } catch (\Throwable $exception) {
                     NotificationOutbox::whereKey($id)->where('status', 'queued')->update([
                         'status' => 'pending',
+                        'queued_at' => null,
                         'available_at' => now()->addSeconds(5),
                         'last_error_redacted' => 'Queue dispatch unavailable; durable outbox remains pending.',
                     ]);
@@ -251,6 +321,179 @@ class NotificationDispatcher
             });
 
         return $queued;
+    }
+
+    private function pluginEnabled(): bool
+    {
+        try {
+            // The plugin manager caches its collection for the life of a worker.
+            return DB::table('plugins')->where('version', 2)->where('plugin_name', IapmServiceProvider::PLUGIN_NAME)->where('plugin_active', true)->exists();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function freshSetting(string $key, mixed $default): mixed
+    {
+        $this->settings->forget($key);
+
+        return $this->settings->get($key, $default);
+    }
+
+    private function phaseInvalid(Incident $incident, ?PolicyAction $action, string $phase, bool $actionRequired): bool
+    {
+        if (! $incident->policy?->enabled || ! $incident->policy->notifications_enabled) {
+            return true;
+        }
+        if ($actionRequired && (! $action || ! $action->enabled || (int) $action->policy_id !== (int) $incident->policy_id)) {
+            return true;
+        }
+        if ($action && $action->phase->value !== (in_array($phase, ['digest', 'flapping'], true) ? 'trigger' : $phase)) {
+            return true;
+        }
+
+        return match ($phase) {
+            'recovery' => $incident->state !== IncidentState::Recovered || ! $incident->policy->notify_recovery,
+            'acknowledged' => $incident->state !== IncidentState::Acknowledged,
+            default => $incident->state !== IncidentState::Active || $incident->recovered_at !== null,
+        };
+    }
+
+    private function occurrenceDue(Incident $incident, ?PolicyAction $action, string $phase, int $completed, ?CarbonInterface $lastCompleted): bool
+    {
+        $start = match ($phase) {
+            'recovery' => $incident->recovered_at,
+            'acknowledged' => $incident->acknowledged_at,
+            default => $incident->triggered_at ?? $incident->first_seen_at,
+        };
+        if (! $start || $start->copy()->addSeconds((int) ($action->delay_seconds ?? 0))->isFuture()) {
+            return false;
+        }
+        if ($completed === 0) {
+            return true;
+        }
+        if (in_array($phase, ['digest', 'flapping'], true)) {
+            return false;
+        }
+        $repeat = $action->repeat_seconds ?? (in_array($phase, ['trigger', 'reminder'], true) ? $incident->policy?->repeat_seconds : null);
+        $maximum = $action->maximum_sends ?? ($incident->policy?->maximum_repeats === null ? null : 1 + $incident->policy->maximum_repeats);
+
+        return $repeat !== null && ($maximum === null || $completed < $maximum)
+            && ($lastCompleted === null || ! $lastCompleted->copy()->addSeconds((int) $repeat)->isFuture());
+    }
+
+    private function triggerCovered(Incident $incident, int $destinationId, string $receiverHash): bool
+    {
+        return DB::table('iapm_notification_outbox_incidents as membership')
+            ->join('iapm_notification_outbox as outbox', 'outbox.id', '=', 'membership.notification_outbox_id')
+            ->where('membership.incident_id', $incident->id)->where('membership.episode_uuid', $incident->episode_uuid)
+            ->where('outbox.destination_id', $destinationId)->where('outbox.receiver_hash', $receiverHash)
+            ->where('outbox.phase', 'digest')->whereIn('outbox.status', ['pending', 'queued', 'processing', 'sent', 'dry_run'])->exists();
+    }
+
+    private function digestMemberCovered(Incident $incident, int $destinationId, string $receiverHash): bool
+    {
+        return DB::table('iapm_notification_outbox_incidents as membership')
+            ->join('iapm_notification_outbox as outbox', 'outbox.id', '=', 'membership.notification_outbox_id')
+            ->where('membership.incident_id', $incident->id)->where('membership.episode_uuid', $incident->episode_uuid)
+            ->where('outbox.destination_id', $destinationId)->where('outbox.receiver_hash', $receiverHash)
+            ->whereIn('outbox.phase', ['trigger', 'digest'])
+            ->whereIn('outbox.status', ['pending', 'queued', 'processing', 'failed', 'sent', 'dry_run'])->exists();
+    }
+
+    /** Recheck mutable stop controls before every HTTP attempt, including retries. */
+    private function deliveryBlocked(NotificationOutbox $outbox): ?TransportResult
+    {
+        return DB::transaction(function () use ($outbox): ?TransportResult {
+            $ids = DB::table('iapm_notification_outbox_incidents')->where('notification_outbox_id', $outbox->id)->pluck('incident_id');
+            Incident::whereIn('id', $ids->push($outbox->incident_id))->orderBy('id')->lockForUpdate()->get();
+
+            return $this->checkDeliveryControls($outbox);
+        }, 3);
+    }
+
+    private function checkDeliveryControls(NotificationOutbox $outbox): ?TransportResult
+    {
+        $current = $outbox->fresh(['incident.policy', 'destination', 'action']);
+        if (! $current || $current->status !== 'processing' || $current->claim_token !== $outbox->claim_token) {
+            return new TransportResult(true, null, 'claim no longer owned');
+        }
+        $outbox->setRawAttributes($current->getAttributes(), true);
+        $outbox->setRelations($current->getRelations());
+        if (! $this->pluginEnabled() || (bool) $this->freshSetting('dry_run', true)) {
+            return $this->releaseClaim($outbox, 'Delivery paused by plugin enablement or dry-run.');
+        }
+        $incident = $outbox->incident;
+        if (! $incident || (string) $incident->episode_uuid !== (string) $outbox->episode_uuid) {
+            return $this->cancelClaim($outbox, 'The outage episode has ended or been replaced.');
+        }
+        if ($this->phaseInvalid($incident, $outbox->action, $outbox->phase, (bool) $outbox->action_required)
+            || ($outbox->action && (int) $outbox->action->destination_id !== (int) $outbox->destination_id)) {
+            return $this->cancelClaim($outbox, 'The notification phase or action no longer applies.');
+        }
+        if (! $outbox->destination?->enabled) {
+            return $this->releaseClaim($outbox, 'Destination is disabled.', 300);
+        }
+        if ($incident->muted_until?->isFuture()) {
+            return $this->releaseClaim($outbox, 'Notifications are muted.');
+        }
+        if (! $outbox->forced && ! $this->occurrenceDue($incident, $outbox->action, $outbox->phase, 0, null)) {
+            return $this->releaseClaim($outbox, 'The action delay has not elapsed.');
+        }
+        if ($outbox->phase === 'trigger' && $this->triggerCovered($incident, $outbox->destination_id, $outbox->receiver_hash)) {
+            return $this->cancelClaim($outbox, 'Trigger is represented by a device digest.');
+        }
+        if ($outbox->phase === 'digest') {
+            $links = DB::table('iapm_notification_outbox_incidents')->where('notification_outbox_id', $outbox->id)->pluck('episode_uuid', 'incident_id');
+            $members = Incident::with('policy')->whereIn('id', $links->keys())->get();
+            if ($members->count() !== $links->count()) {
+                return $this->cancelClaim($outbox, 'Digest membership no longer exists.');
+            }
+            $actions = PolicyAction::whereIn('policy_id', $members->pluck('policy_id')->unique())
+                ->where('enabled', true)->where('phase', 'trigger')->where('destination_id', $outbox->destination_id)->get()->groupBy('policy_id');
+            $individuals = NotificationOutbox::whereIn('incident_id', $members->modelKeys())
+                ->where('destination_id', $outbox->destination_id)->where('receiver_hash', $outbox->receiver_hash)
+                ->where('phase', 'trigger')->whereIn('status', ['pending', 'queued', 'processing', 'sent', 'dry_run'])
+                ->get(['incident_id', 'episode_uuid'])->keyBy(fn (NotificationOutbox $item): string => $item->incident_id.'|'.$item->episode_uuid);
+            foreach ($members as $member) {
+                if ((string) $member->episode_uuid !== (string) $links[$member->id] || $this->phaseInvalid($member, null, 'digest', false)) {
+                    return $this->cancelClaim($outbox, 'A represented incident no longer requires a trigger.');
+                }
+                $applicable = $actions->get($member->policy_id, collect())
+                    ->contains(fn (PolicyAction $action): bool => $this->occurrenceDue($member, $action, 'digest', 0, null));
+                if (! $applicable) {
+                    return $this->cancelClaim($outbox, 'A represented trigger action no longer applies.');
+                }
+                if ($member->muted_until?->isFuture()) {
+                    return $this->releaseClaim($outbox, 'A represented incident is muted.');
+                }
+                if ($individuals->has($member->id.'|'.$member->episode_uuid)) {
+                    return $this->cancelClaim($outbox, 'Individual fallback already represents this digest.');
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function releaseClaim(NotificationOutbox $outbox, string $reason, int $seconds = 60): TransportResult
+    {
+        NotificationOutbox::whereKey($outbox->id)->where('claim_token', $outbox->claim_token)->update([
+            'status' => 'pending', 'available_at' => now()->addSeconds($seconds),
+            'claimed_at' => null, 'claim_token' => null, 'queued_at' => null, 'last_error_redacted' => $reason,
+        ]);
+
+        return new TransportResult(false, null, 'paused', $reason);
+    }
+
+    private function cancelClaim(NotificationOutbox $outbox, string $reason): TransportResult
+    {
+        NotificationOutbox::whereKey($outbox->id)->where('claim_token', $outbox->claim_token)->update([
+            'status' => 'cancelled', 'available_at' => null, 'claimed_at' => null,
+            'claim_token' => null, 'queued_at' => null, 'last_error_redacted' => $reason,
+        ]);
+
+        return new TransportResult(true, null, 'cancelled');
     }
 
     /** Backward-compatible synchronous entry point; still uses the durable outbox. */
@@ -280,12 +523,18 @@ class NotificationDispatcher
 
     private function completeDryRun(NotificationOutbox $outbox): TransportResult
     {
-        $result = new TransportResult(true, null, 'dry-run');
-        $outbox->update(['status' => 'dry_run', 'delivered_at' => now()]);
-        $this->record($outbox->incident, $outbox->destination, $outbox->action, $outbox->phase, $outbox, $result, 'dry_run');
-        $this->finalizeCompleted($outbox->id);
+        return DB::transaction(function () use ($outbox): TransportResult {
+            $locked = NotificationOutbox::whereKey($outbox->id)->lockForUpdate()->firstOrFail();
+            $result = new TransportResult(true, null, 'dry-run');
+            if (in_array($locked->status, ['sent', 'dry_run', 'cancelled'], true)) {
+                return $result;
+            }
+            $locked->update(['status' => 'dry_run', 'delivered_at' => now()]);
+            $this->record($locked->incident, $locked->destination, $locked->action, $locked->phase, $locked, $result, 'dry_run');
+            $this->finalizeCompleted($locked->id);
 
-        return $result;
+            return $result;
+        });
     }
 
     private function finalizeCompleted(int $outboxId): void
@@ -370,14 +619,7 @@ class NotificationDispatcher
 
     private function redactPayloadEcho(string $value, ?NotificationOutbox $outbox): string
     {
-        $value = $this->redactor->text($value);
-        if (! $outbox) {
-            return $value;
-        }
-
-        $sensitive = array_filter([(string) $outbox->receiver_encrypted, (string) $outbox->message_encrypted], fn (string $item) => $item !== '');
-
-        return str_replace($sensitive, '[REDACTED]', $value);
+        return $this->redactor->text($value, $outbox ? [(string) $outbox->receiver_encrypted, (string) $outbox->message_encrypted] : []);
     }
 
     /**

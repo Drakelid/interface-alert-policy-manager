@@ -77,6 +77,62 @@ class SmsGatewayTransportTest extends IntegrationTestCase
         self::assertTrue(app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', 'message')->successful, 'A null error field is not a failure.');
     }
 
+    public function test_json_whitespace_does_not_turn_an_empty_error_into_failure(): void
+    {
+        Http::fake(['*' => Http::sequence()
+            ->push('{"ok": true, "error": null}', 200)
+            ->push('{"ok": true, "error": ""}', 200)
+            ->push("{\n  \"success\": true,\n  \"error\": null\n}", 200)]);
+
+        for ($i = 0; $i < 3; $i++) {
+            self::assertTrue(app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', 'message')->successful);
+        }
+    }
+
+    public function test_failure_after_the_log_truncation_boundary_is_still_detected(): void
+    {
+        Http::fake(['*' => Http::response(json_encode(['detail' => str_repeat('x', 5000), 'error' => 'receiver rejected']), 200)]);
+
+        $result = app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', 'message');
+
+        self::assertFalse($result->successful);
+        self::assertSame(4096, mb_strlen((string) $result->response));
+    }
+
+    public function test_json_looking_text_inside_a_message_is_not_a_failure_status(): void
+    {
+        Http::fake(['*' => Http::response(json_encode(['message' => 'The literal text "error": "example" is harmless.']), 200)]);
+
+        self::assertTrue(app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', 'message')->successful);
+    }
+
+    public function test_response_echoes_are_redacted_before_truncation(): void
+    {
+        $message = "Customer Ægir / interface \"uplink\"\n".str_repeat('private detail ', 1000);
+        Http::fake(['*' => Http::response(json_encode(['receiver' => 'PERSON', 'message' => $message, 'password' => 'gateway-password']), 200)]);
+
+        $result = app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', $message);
+
+        self::assertTrue($result->successful);
+        self::assertStringNotContainsString('Customer', (string) $result->response);
+        self::assertStringNotContainsString('private detail', (string) $result->response);
+        self::assertStringNotContainsString('PERSON', (string) $result->response);
+        self::assertStringNotContainsString('gateway-password', (string) $result->response);
+    }
+
+    public function test_exception_echoes_are_redacted_before_truncation(): void
+    {
+        $message = 'customer-details '.str_repeat('private detail ', 1000);
+        Http::fake(fn () => throw new \RuntimeException('Gateway echoed '.$message.' gateway-password'));
+
+        $result = app(SmsGatewayTransport::class)->send($this->configuration(), 'PERSON', $message);
+
+        self::assertFalse($result->successful);
+        self::assertStringNotContainsString('customer-details', (string) $result->error);
+        self::assertStringNotContainsString('private detail', (string) $result->error);
+        self::assertStringNotContainsString('gateway-password', (string) $result->error);
+    }
+
     public function test_a_transport_exception_never_leaks_the_password(): void
     {
         Http::fake(fn () => throw new \RuntimeException('failed to connect with password=gateway-password'));

@@ -5,8 +5,8 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\Severity;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyCacheRebuilder;
 
 class Policy extends Model
 {
@@ -35,7 +35,7 @@ class Policy extends Model
     {
         $clear = function (): void {
             try {
-                DB::table('iapm_interface_policy_cache')->delete();
+                PolicyCacheRebuilder::invalidate();
             } catch (\Throwable) {
             }
         };

@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\Severity;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests\IngestAlertRequest;
@@ -49,31 +50,44 @@ class IngestionController extends Controller
         $asyncThreshold = (int) config('iapm.ingestion.async_threshold', 1000);
         $durableRecovery = $state === 'recovered' && (bool) config('iapm.ingestion.async_recovery', true);
         if (! $request->attributes->getBoolean('_iapm_durable_replay') && ($durableRecovery || ($asyncThreshold > 0 && count($data['faults']) >= $asyncThreshold))) {
-            $key = $this->inboxIdempotencyKey($data);
-            $inbox = IngestionInbox::where('idempotency_key', $key)->first();
-            if ($inbox) {
-                return response()->json(['status' => 'accepted', 'processing' => 'durable_inbox', 'inbox_id' => $inbox->id], 202);
-            }
-            $maxPending = max(1, (int) config('iapm.ingestion.inbox_max_pending', 10000));
-            if (IngestionInbox::whereIn('status', ['pending', 'processing', 'failed'])->count() >= $maxPending) {
-                // Backpressure is shedding alerts. The inbox health check reports the
-                // backlog itself; this records that alerts were turned away because
-                // of it, which is the part an operator otherwise never sees.
-                app(IngestionRejectionLog::class)->record('ingestion_backlog_full', $request->ip(), ['device_id' => $device->device_id, 'max_pending' => $maxPending]);
+            $inbox = DB::transaction(function () use ($data, $device): ?IngestionInbox {
+                // Serialize acceptance for one device. The preceding accepted
+                // payload is part of retry identity: down/up/down must retain
+                // all three observations even before replay creates an incident.
+                Device::whereKey($device->device_id)->lockForUpdate()->firstOrFail();
+                $signature = $this->incidentSignature($data);
+                $latest = IngestionInbox::where('device_id', $device->device_id)->latest('id')->first();
+                if ($latest && $latest->status !== 'dead' && $latest->created_at->greaterThanOrEqualTo(now()->subSeconds(max(1, (int) config('iapm.ingestion.inbox_dedup_seconds', 900))))) {
+                    $previous = (array) $latest->payload_encrypted;
+                    $acceptance = $previous['_iapm_acceptance'] ?? [];
+                    unset($previous['_iapm_acceptance']);
+                    if ($previous === $data && ($acceptance['incident_signature'] ?? null) === $signature) {
+                        return $latest;
+                    }
+                }
+                $maxPending = max(1, (int) config('iapm.ingestion.inbox_max_pending', 10000));
+                if (IngestionInbox::whereIn('status', ['pending', 'processing', 'failed'])->count() >= $maxPending) {
+                    return null;
+                }
 
-                return response()->json(['error' => ['code' => 'ingestion_backlog_full', 'message' => 'Durable ingestion backlog is full; retry later.']], 503, ['Retry-After' => '60']);
-            }
-            try {
-                $inbox = IngestionInbox::create([
-                    'idempotency_key' => $key,
+                return IngestionInbox::create([
+                    'idempotency_key' => hash('sha256', (string) Str::uuid()),
                     'device_id' => $device->device_id,
                     'fault_count' => count($data['faults']),
-                    'payload_encrypted' => $data,
+                    // This metadata is generated after validation. Client input
+                    // cannot supply it, and replay validation strips it again.
+                    'payload_encrypted' => $data + ['_iapm_acceptance' => ['incident_signature' => $signature]],
                     'status' => 'pending',
                     'available_at' => now(),
                 ]);
-            } catch (UniqueConstraintViolationException) {
-                $inbox = IngestionInbox::where('idempotency_key', $key)->firstOrFail();
+            });
+            if (! $inbox) {
+                // Backpressure is shedding alerts. The inbox health check reports the
+                // backlog itself; this records that alerts were turned away because
+                // of it, which is the part an operator otherwise never sees.
+                app(IngestionRejectionLog::class)->record('ingestion_backlog_full', $request->ip(), ['device_id' => $device->device_id, 'max_pending' => max(1, (int) config('iapm.ingestion.inbox_max_pending', 10000))]);
+
+                return response()->json(['error' => ['code' => 'ingestion_backlog_full', 'message' => 'Durable ingestion backlog is full; retry later.']], 503, ['Retry-After' => '60']);
             }
 
             return response()->json(['status' => 'accepted', 'processing' => 'durable_inbox', 'inbox_id' => $inbox->id], 202);
@@ -117,12 +131,17 @@ class IngestionController extends Controller
 
                         return;
                     }
-                    if (($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) {
+                    if ($incident->state !== IncidentState::Recovered && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) {
                         $counts['ignored']++;
 
                         return;
                     }
                     if ($state === 'recovered') {
+                        if ($incident->exists && ! $this->sourceMatches($incident, $data)) {
+                            $counts['ignored']++;
+
+                            return;
+                        }
                         if ($incident->exists) {
                             $incident->update(['policy_id' => null, 'suppression_reason' => 'no_policy']);
                         }
@@ -169,7 +188,8 @@ class IngestionController extends Controller
                     }
                     $reopening = $incident->exists && $incident->state === IncidentState::Recovered;
                     $priorState = $incident->exists ? $incident->state : null;
-                    $contextData = (array) $context;
+                    $contextData = $reopening ? (array) $context : array_merge((array) $incident->context_json, (array) $context);
+                    unset($contextData['up_seen_at']);
                     $contextData['last_event_fingerprint'] = $fingerprint;
                     $contextData = $this->sourceContext($contextData, $sourceEventAt, $fingerprint);
                     $contextData['observation_count'] = $reopening ? 1 : (int) (($incident->context_json['observation_count'] ?? 0) + 1);
@@ -195,12 +215,17 @@ class IngestionController extends Controller
 
                     return;
                 }
-                if ($incident && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) {
+                if ($incident && $incident->state !== IncidentState::Recovered && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) {
                     $counts['ignored']++;
 
                     return;
                 }
                 if ($state === 'recovered') {
+                    if ($incident && ! $this->sourceMatches($incident, $data)) {
+                        $counts['ignored']++;
+
+                        return;
+                    }
                     if ($incident && $incident->state !== IncidentState::Recovered) {
                         $this->requestRecovery($incident, $resolution->policy->recovery_after_seconds, 'Recovery received from LibreNMS.', $counts, $sourceEventAt, $fingerprint);
                     }
@@ -239,13 +264,17 @@ class IngestionController extends Controller
                 $incident ??= new Incident(['incident_key' => Incident::key($context->deviceId, $context->portId), 'first_seen_at' => now(), 'notification_count' => 0]);
                 $priorState = $incident->exists ? $incident->state : null;
                 $reopening = $incident->exists && $incident->state === IncidentState::Recovered;
-                $contextData = (array) $context;
+                $contextData = $reopening ? (array) $context : array_merge((array) $incident->context_json, (array) $context);
+                unset($contextData['up_seen_at']);
                 $contextData['observation_count'] = $reopening ? 1 : (int) (($incident->context_json['observation_count'] ?? 0) + 1);
                 $contextData['last_event_fingerprint'] = $fingerprint;
                 $contextData = $this->sourceContext($contextData, $sourceEventAt, $fingerprint);
                 $contextData['assignment_receivers'] = $receivers->assignmentReceivers($resolution);
                 $contextData['assignment_source'] = $resolution->winner?->assignment_type->value ?? 'configured_default';
                 if (! $reason && $resolution->policy->down_observations <= $contextData['observation_count'] && $resolution->policy->trigger_after_seconds === 0) {
+                    $target = IncidentState::Active;
+                }
+                if (! $reason && ! $reopening && $incident->state === IncidentState::Active) {
                     $target = IncidentState::Active;
                 }
                 $episode = $reopening ? $lifecycle->beginEpisode($incident, $contextData) : [];
@@ -321,25 +350,28 @@ class IngestionController extends Controller
         return response()->json(['status' => 'accepted', 'counts' => $counts]);
     }
 
-    /**
-     * Suppress duplicate deliveries of one accepted request without collapsing
-     * genuinely repeated outages onto the first row.
-     *
-     * `timestamp` is optional, so an identical fault set posted for a later
-     * outage can hash to the same value as the original. Keying on the payload
-     * alone would make the second outage return 202 and do no work until the
-     * retained row was eventually cleaned up. Mixing a coarse time bucket into
-     * the key keeps source-side retries (which arrive within seconds) collapsed
-     * while letting a later recurrence claim its own row. A retry that straddles
-     * a bucket boundary replays instead, which the per-incident fingerprint and
-     * source-ordering guards already make idempotent.
-     */
-    private function inboxIdempotencyKey(array $data): string
+    private function incidentSignature(array $data): string
     {
-        $payload = hash('sha256', json_encode($data, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
-        $window = max(1, (int) config('iapm.ingestion.inbox_dedup_seconds', 900));
+        $query = Incident::where('device_id', $data['device_id']);
+        if ($data['faults'] !== []) {
+            $query->whereIn('port_id', array_column($data['faults'], 'port_id'));
+        }
+        $episodes = $query->orderBy('id')->get(['id', 'episode_uuid', 'state'])->map(fn (Incident $incident): array => [
+            (int) $incident->id, (string) $incident->episode_uuid, $incident->state->value,
+        ])->all();
 
-        return hash('sha256', $payload.'|'.intdiv(now()->getTimestamp(), $window));
+        return hash('sha256', json_encode($episodes, JSON_THROW_ON_ERROR));
+    }
+
+    private function sourceMatches(Incident $incident, array $data): bool
+    {
+        foreach (['alert_id' => 'source_alert_id', 'alert_uid' => 'source_alert_uid', 'rule_id' => 'source_rule_id'] as $input => $attribute) {
+            if (isset($data[$input]) && (string) $data[$input] !== (string) $incident->{$attribute}) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -389,14 +421,29 @@ class IngestionController extends Controller
 
             return;
         }
-        $context = $incident->context_json;
-        $context = $this->sourceContext((array) $context, $sourceEventAt, $fingerprint);
-        $context['up_seen_at'] ??= now()->toIso8601String();
-        $incident->update(['context_json' => $context, 'last_seen_at' => now()]);
-        if (! $incident->events()->where('event_type', 'recovery_pending')->where('created_at', '>=', now()->subSeconds($holdDown))->exists()) {
-            $incident->events()->create(['event_type' => 'recovery_pending', 'event_message' => "$message Recovery hold-down is {$holdDown} seconds."]);
-        }
-        $counts['pending']++;
+        DB::transaction(function () use ($incident, $holdDown, $message, &$counts, $sourceEventAt, $fingerprint): void {
+            $locked = Incident::whereKey($incident->id)->lockForUpdate()->first();
+            $sameSource = true;
+            foreach (['source_alert_id', 'source_alert_uid', 'source_rule_id'] as $attribute) {
+                if ($locked && (string) $locked->{$attribute} !== (string) $incident->{$attribute}) {
+                    $sameSource = false;
+                }
+            }
+            if (! $locked || $locked->state === IncidentState::Recovered || $locked->episode_uuid !== $incident->episode_uuid
+                || ! $sameSource || $this->isStale($locked, $sourceEventAt)) {
+                $counts['ignored']++;
+
+                return;
+            }
+            $context = $this->sourceContext((array) $locked->context_json, $sourceEventAt, $fingerprint);
+            $context['up_seen_at'] ??= now()->toIso8601String();
+            $locked->update(['context_json' => $context, 'last_seen_at' => now()]);
+            if (! $locked->events()->where('event_type', 'recovery_pending')->where('created_at', '>=', now()->subSeconds($holdDown))->exists()) {
+                $locked->events()->create(['event_type' => 'recovery_pending', 'event_message' => "$message Recovery hold-down is {$holdDown} seconds."]);
+            }
+            $incident->setRawAttributes($locked->getAttributes(), true);
+            $counts['pending']++;
+        });
     }
 
     private function isStale(Incident $incident, ?string $sourceEventAt): bool

@@ -77,7 +77,11 @@ class CacheRebuildCommand extends Command
         // single-device rebuild leaves the rest of the cache as it was, so it
         // must not clear the warning (P1-7).
         if (! $device) {
-            $rebuilder->markCompletedNow();
+            if (! $rebuilder->markCompletedNow()) {
+                $this->error((string) $rebuilder->state()['error']);
+
+                return self::FAILURE;
+            }
         }
         $this->info("Policy cache rebuilt for $count ports.");
 

@@ -34,7 +34,9 @@ class FlapDetector
             ->join('iapm_policies as p', 'p.id', '=', 'i.policy_id')
             ->whereIn('ie.incident_id', $ids)->where('ie.event_type', 'reopened')
             ->where('ie.created_at', '>=', now()->subDay())
-            ->selectRaw('ie.incident_id, SUM(CASE WHEN ie.created_at >= DATE_SUB(NOW(), INTERVAL p.flap_window_seconds SECOND) THEN 1 ELSE 0 END) flap_count, MAX(ie.created_at) last_reopen')
+            // Event timestamps and the direct detector use the application
+            // clock. A database session in local time must use that same clock.
+            ->selectRaw('ie.incident_id, SUM(CASE WHEN ie.created_at >= DATE_SUB(?, INTERVAL p.flap_window_seconds SECOND) THEN 1 ELSE 0 END) flap_count, MAX(ie.created_at) last_reopen', [now()->toDateTimeString()])
             ->groupBy('ie.incident_id')->get()->each(function ($row): void {
                 $this->primed[(int) $row->incident_id] = ['count' => (int) $row->flap_count, 'last' => $row->last_reopen];
             });

@@ -226,11 +226,11 @@ class DeviceDigestTest extends IntegrationTestCase
         }
     }
 
-    public function test_failed_digest_retries_same_logical_outbox_and_then_finalizes(): void
+    public function test_failed_individual_fallbacks_retry_without_reviving_the_superseded_digest(): void
     {
         // First run: digest plus both eligible individual fallbacks fail. The
-        // next scheduler run retries the same digest outbox and succeeds.
-        Http::fakeSequence()->push('failed', 500)->push('failed', 500)->push('failed', 500)->push('ok', 200);
+        // next scheduler run retries the individual outboxes and succeeds.
+        Http::fakeSequence()->push('failed', 500)->push('failed', 500)->push('failed', 500)->push('ok', 200)->push('ok', 200);
         $this->settings->put('aggregate_threshold', 2);
         $this->settings->put('aggregate_window_seconds', 3600);
         $policy = $this->policy();
@@ -239,13 +239,16 @@ class DeviceDigestTest extends IntegrationTestCase
         $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
 
         $this->artisan('iapm:process-actions');
-        NotificationOutbox::where('phase', 'digest')->update(['available_at' => now()->subSecond()]);
+        NotificationOutbox::where('phase', 'trigger')->update(['available_at' => now()->subSecond()]);
         $this->artisan('iapm:process-actions');
 
         self::assertSame(1, NotificationOutbox::where('phase', 'digest')->count());
-        self::assertSame('sent', NotificationOutbox::where('phase', 'digest')->sole()->status);
+        self::assertSame('cancelled', NotificationOutbox::where('phase', 'digest')->sole()->status);
+        self::assertSame(2, NotificationOutbox::where('phase', 'trigger')->where('status', 'sent')->count());
+        Http::assertSentCount(5);
         foreach ($incidents as $incident) {
-            self::assertNotEmpty($incident->fresh()->context_json['trigger_notified_via_digest'] ?? null);
+            self::assertSame(1, (int) $incident->fresh()->notification_count);
+            self::assertArrayNotHasKey('trigger_notified_via_digest', $incident->fresh()->context_json);
         }
     }
 
@@ -357,7 +360,7 @@ class DeviceDigestTest extends IntegrationTestCase
         $this->artisan('iapm:process-actions')->assertExitCode(0);
 
         self::assertSame('sent', NotificationOutbox::where('phase', 'digest')->where('destination_id', $destinationA->id)->sole()->status);
-        self::assertSame('failed', NotificationOutbox::where('phase', 'digest')->where('destination_id', $destinationB->id)->sole()->status);
+        self::assertSame('cancelled', NotificationOutbox::where('phase', 'digest')->where('destination_id', $destinationB->id)->sole()->status);
         self::assertSame(0, NotificationOutbox::where('phase', 'trigger')->where('destination_id', $destinationA->id)->count());
         self::assertSame(2, NotificationOutbox::where('phase', 'trigger')->where('destination_id', $destinationB->id)->where('status', 'sent')->count());
     }

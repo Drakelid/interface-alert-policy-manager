@@ -11,14 +11,18 @@ class MigrationRoundTripTest extends IntegrationTestCase
 {
     public function test_latest_additive_migration_round_trips(): void
     {
+        $leases = require dirname(__DIR__, 2).'/database/migrations/2026_10_20_000001_add_outbox_delivery_leases.php';
         $indexes = require dirname(__DIR__, 2).'/database/migrations/2026_08_10_000001_add_storm_path_indexes.php';
         $migration = require dirname(__DIR__, 2).'/database/migrations/2026_08_09_000001_add_notification_outbox_and_episode_identity.php';
+        $leases->down();
         $indexes->down();
         $migration->down();
         self::assertFalse(Schema::hasTable('iapm_notification_outbox'));
         self::assertFalse(Schema::hasColumn('iapm_incidents', 'episode_uuid'));
         $migration->up();
         $indexes->up();
+        $leases->up();
+        $leases->up();
         self::assertTrue(Schema::hasTable('iapm_notification_outbox'));
         self::assertTrue(Schema::hasColumn('iapm_incidents', 'episode_uuid'));
         $this->restoreTransactionAfterDdl();
@@ -64,6 +68,7 @@ class MigrationRoundTripTest extends IntegrationTestCase
     public function test_interrupted_inbox_and_index_migrations_resume_safely(): void
     {
         $inbox = require dirname(__DIR__, 2).'/database/migrations/2026_08_10_000002_add_durable_ingestion_inbox.php';
+        $fifo = require dirname(__DIR__, 2).'/database/migrations/2026_10_20_000002_add_ingestion_fifo_index.php';
         $indexes = require dirname(__DIR__, 2).'/database/migrations/2026_08_10_000001_add_storm_path_indexes.php';
 
         $inbox->down();
@@ -75,6 +80,8 @@ class MigrationRoundTripTest extends IntegrationTestCase
 
         $inbox->up();
         $inbox->up();
+        $fifo->up();
+        $fifo->up();
         $indexes->up();
         $indexes->up();
 

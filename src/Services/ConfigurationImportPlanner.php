@@ -27,7 +27,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
  */
 class ConfigurationImportPlanner
 {
-    private const EXCLUDED = ['created_by', 'updated_by'];
+    private const EXCLUDED = ['created_by', 'updated_by', 'policy_id', 'destination_id'];
 
     /**
      * @return array{items: list<array<string, mixed>>, counts: array<string, int>}
@@ -35,11 +35,27 @@ class ConfigurationImportPlanner
     public function plan(array $document, bool $updateExisting): array
     {
         $items = [];
+        $existingPolicies = Policy::with(['actions', 'assignments.deviceGroups'])
+            ->whereIn('name', array_column($document['policies'] ?? [], 'name'))->get()->keyBy('name');
+        $destinations = Destination::pluck('id', 'name');
         foreach ((array) ($document['policies'] ?? []) as $policy) {
             $name = (string) ($policy['name'] ?? '');
-            $existing = Policy::where('name', $name)->first();
+            $existing = $existingPolicies->get($name);
             $decision = $this->decide('policy', $name, $existing !== null, $updateExisting);
+            $decision['target_id'] = $existing?->id;
             $items[] = $decision;
+            // Consume each row in the pre-import snapshot at most once. Rows
+            // created earlier in this document must never become update targets.
+            $actions = [];
+            $assignments = [];
+            foreach ($existing?->actions->sortBy('id') ?? [] as $action) {
+                $actions[$this->actionKey($action->toArray(), $action->destination_id)][] = $action->id;
+            }
+            foreach ($existing?->assignments->sortBy('id') ?? [] as $assignment) {
+                $row = $assignment->toArray();
+                $row['device_group_ids'] = $assignment->deviceGroups->pluck('device_group_id')->all();
+                $assignments[$this->assignmentKey($row)][] = $assignment->id;
+            }
 
             // Children of a skipped policy cannot be written; say so explicitly
             // rather than leaving them out of the report entirely.
@@ -52,10 +68,13 @@ class ConfigurationImportPlanner
 
                     continue;
                 }
-                $match = $existing ? $this->matchAction($existing, $action) : null;
-                $items[] = $match
+                $key = $this->actionKey($action, $destinations[$action['destination'] ?? ''] ?? null);
+                $targetId = empty($actions[$key]) ? null : array_shift($actions[$key]);
+                $item = $targetId
                     ? $this->item('action', $label, 'update', 'an action with the same phase, destination and sort order exists', $name)
                     : $this->item('action', $label, 'create', $existing ? 'no matching action on the existing policy' : 'new policy', $name);
+                $item['target_id'] = $targetId;
+                $items[] = $item;
             }
 
             foreach ((array) ($policy['assignments'] ?? []) as $assignment) {
@@ -65,10 +84,13 @@ class ConfigurationImportPlanner
 
                     continue;
                 }
-                $match = $existing ? $this->matchAssignment($existing, $assignment) : null;
-                $items[] = $match
-                    ? $this->item('assignment', $label, 'update', 'an assignment with the same type and reference exists', $name)
+                $key = $this->assignmentKey($assignment);
+                $targetId = empty($assignments[$key]) ? null : array_shift($assignments[$key]);
+                $item = $targetId
+                    ? $this->item('assignment', $label, 'update', 'an assignment with the same scope and match mode exists', $name)
                     : $this->item('assignment', $label, 'create', $existing ? 'no matching assignment on the existing policy' : 'new policy', $name);
+                $item['target_id'] = $targetId;
+                $items[] = $item;
             }
         }
 
@@ -84,13 +106,16 @@ class ConfigurationImportPlanner
     {
         $plan = $this->plan($document, $updateExisting);
         $destinations = Destination::pluck('id', 'name');
+        $offset = 0;
 
         foreach ((array) ($document['policies'] ?? []) as $policy) {
-            $name = (string) ($policy['name'] ?? '');
-            $existing = Policy::where('name', $name)->first();
-            if ($existing !== null && ! $updateExisting) {
+            $decision = $plan['items'][$offset++];
+            if ($decision['action'] === 'skip') {
+                $offset += count($policy['actions'] ?? []) + count($policy['assignments'] ?? []);
+
                 continue;
             }
+            $existing = $decision['target_id'] ? Policy::findOrFail($decision['target_id']) : null;
 
             $attributes = $this->fillable($policy, new Policy) + [
                 'updated_by' => $userId,
@@ -104,20 +129,22 @@ class ConfigurationImportPlanner
             }
 
             foreach ((array) ($policy['actions'] ?? []) as $action) {
+                $decision = $plan['items'][$offset++];
                 $destinationId = $destinations[$action['destination'] ?? ''] ?? null;
                 if (! $destinationId) {
                     // The validator rejects unknown destinations before we get
                     // here, so this can only mean the document changed underneath.
                     throw new \LogicException('Validated destination disappeared during import.');
                 }
-                $attributes = $this->fillable($action, new PolicyAction) + ['destination_id' => $destinationId];
-                $match = $this->matchAction($target, $action);
+                $attributes = $this->fillable($action, new PolicyAction) + ['destination_id' => $destinationId, 'policy_id' => $target->id];
+                $match = $decision['target_id'] ? $target->actions()->findOrFail($decision['target_id']) : null;
                 $match ? $match->update($attributes) : $target->actions()->create($attributes);
             }
 
             foreach ((array) ($policy['assignments'] ?? []) as $assignment) {
-                $attributes = $this->fillable($assignment, new Assignment);
-                $match = $this->matchAssignment($target, $assignment);
+                $decision = $plan['items'][$offset++];
+                $attributes = $this->fillable($assignment, new Assignment) + ['policy_id' => $target->id];
+                $match = $decision['target_id'] ? $target->assignments()->findOrFail($decision['target_id']) : null;
                 if ($match) {
                     $match->update($attributes);
                     $record = $match;
@@ -137,35 +164,69 @@ class ConfigurationImportPlanner
         return $plan;
     }
 
-    private function matchAction(Policy $policy, array $action): ?PolicyAction
+    /** Count the enabled regex topology after the exact non-destructive plan. */
+    public function projectedRegexCounts(array $document, bool $updateExisting): array
     {
-        $destinationId = Destination::where('name', $action['destination'] ?? '')->value('id');
+        $types = ['ifalias_regex', 'ifname_regex'];
+        $counts = array_fill_keys($types, 0);
+        foreach ($types as $type) {
+            $counts[$type] = Assignment::where('assignment_type', $type)->where('enabled', true)
+                ->whereHas('policy', fn ($query) => $query->where('enabled', true))->count();
+        }
+        $plan = $this->plan($document, $updateExisting);
+        $existingPolicies = Policy::with('assignments')->whereIn('name', array_column($document['policies'] ?? [], 'name'))->get()->keyBy('name');
+        $offset = 0;
+        foreach ($document['policies'] ?? [] as $policy) {
+            $decision = $plan['items'][$offset++];
+            $offset += count($policy['actions'] ?? []);
+            if ($decision['action'] === 'skip') {
+                $offset += count($policy['assignments'] ?? []);
 
-        return $policy->actions()
-            ->where('phase', $action['phase'] ?? '')
-            ->where('destination_id', $destinationId)
-            ->where('sort_order', (int) ($action['sort_order'] ?? 0))
-            ->first();
-    }
-
-    private function matchAssignment(Policy $policy, array $assignment): ?Assignment
-    {
-        $query = $policy->assignments()
-            ->where('assignment_type', $assignment['assignment_type'] ?? '')
-            ->where('assignment_reference', $assignment['assignment_reference'] ?? null)
-            ->where('match_expression', $assignment['match_expression'] ?? null);
-
-        if (($assignment['assignment_type'] ?? null) !== 'device_group') {
-            return $query->first();
+                continue;
+            }
+            $existing = $existingPolicies->get($policy['name']);
+            $rows = [];
+            foreach ($existing->assignments ?? [] as $assignment) {
+                $type = $assignment->assignment_type->value;
+                $rows[$assignment->id] = ['assignment_type' => $type, 'enabled' => $assignment->enabled];
+                if ($existing->enabled && $assignment->enabled && isset($counts[$type])) {
+                    $counts[$type]--;
+                }
+            }
+            foreach ($policy['assignments'] ?? [] as $index => $assignment) {
+                $decision = $plan['items'][$offset++];
+                $rows[$decision['target_id'] ?? 'new-'.$index] = $assignment;
+            }
+            if ($policy['enabled']) {
+                foreach ($rows as $row) {
+                    if ($row['enabled'] && isset($counts[$row['assignment_type']])) {
+                        $counts[$row['assignment_type']]++;
+                    }
+                }
+            }
         }
 
-        $wanted = collect($assignment['device_group_ids'] ?? [])->map(fn ($id) => (int) $id)->sort()->values()->all();
+        return $counts;
+    }
 
-        return $query->with('deviceGroups')->get()->first(function (Assignment $candidate) use ($wanted): bool {
-            $current = $candidate->deviceGroups->pluck('device_group_id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+    private function actionKey(array $action, mixed $destinationId): string
+    {
+        return json_encode([(string) $action['phase'], (int) $destinationId, (int) ($action['sort_order'] ?? 0)], JSON_THROW_ON_ERROR);
+    }
 
-            return $current === $wanted;
-        });
+    private function assignmentKey(array $assignment): string
+    {
+        $groups = $assignment['assignment_type'] === 'device_group'
+            ? collect($assignment['device_group_ids'] ?? [])->map(fn ($id) => (int) $id)->unique()->sort()->values()->all()
+            : [];
+
+        return json_encode([
+            $assignment['assignment_type'],
+            isset($assignment['assignment_reference']) ? (string) $assignment['assignment_reference'] : null,
+            $assignment['match_expression'] ?? null,
+            $assignment['match_mode'] ?? 'any',
+            $groups,
+        ], JSON_THROW_ON_ERROR);
     }
 
     private function assignmentLabel(array $assignment): string

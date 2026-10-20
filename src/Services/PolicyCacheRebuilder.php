@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Services;
 use App\Models\Port;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\TimeText;
 
 /**
@@ -36,6 +37,14 @@ class PolicyCacheRebuilder
 
     public const ERROR = 'cache_rebuild_error';
 
+    public const CONFIGURATION_REVISION = 'policy_configuration_revision';
+
+    public const CONFIGURATION_CHANGED_AT = 'policy_configuration_changed_at';
+
+    private const REBUILD_REVISION = 'cache_rebuild_revision';
+
+    private const REBUILT_REVISION = 'cache_rebuilt_revision';
+
     /** A queued rebuild that has not moved in this long means nothing is draining the queue. */
     private const STALLED_AFTER_SECONDS = 300;
 
@@ -44,6 +53,18 @@ class PolicyCacheRebuilder
         private readonly InterfaceContextService $contexts,
         private readonly PolicyResolver $resolver,
     ) {}
+
+    /** Called inside configuration-write transactions, including deletes. */
+    public static function invalidate(): void
+    {
+        DB::transaction(function (): void {
+            app(SettingStore::class)->putMany([
+                self::CONFIGURATION_REVISION => (string) Str::uuid(),
+                self::CONFIGURATION_CHANGED_AT => now()->toIso8601String(),
+            ]);
+            DB::table('iapm_interface_policy_cache')->delete();
+        });
+    }
 
     public function markQueued(): void
     {
@@ -54,6 +75,7 @@ class PolicyCacheRebuilder
         $this->settings->put(self::STARTED_AT, $now);
         $this->settings->put(self::ACTIVITY_AT, $now);
         $this->settings->put(self::ERROR, null);
+        $this->settings->put(self::REBUILD_REVISION, $this->configurationRevision());
     }
 
     public function markFailed(string $message): void
@@ -82,6 +104,16 @@ class PolicyCacheRebuilder
      */
     public function runBatch(?int $afterPortId, int $limit): array
     {
+        if ($afterPortId === null) {
+            // Work may wait in the queue across a configuration change. The
+            // first batch starts from the current revision; later batches must
+            // retain that snapshot because they cannot revisit earlier ports.
+            $this->settings->put(self::REBUILD_REVISION, $this->configurationRevision());
+        } elseif (! $this->rebuildRevisionIsCurrent()) {
+            $this->configurationChangedDuringRebuild();
+
+            return ['done' => true, 'last' => $afterPortId, 'processed' => 0];
+        }
         $baseProgress = (int) $this->settings->get(self::PROGRESS, 0);
         $this->markRunning($baseProgress);
 
@@ -122,23 +154,58 @@ class PolicyCacheRebuilder
         }
 
         $this->markRunning($baseProgress + $processed);
+        if (! $this->rebuildRevisionIsCurrent()) {
+            $this->configurationChangedDuringRebuild();
+
+            return ['done' => true, 'last' => $last, 'processed' => $processed];
+        }
         $done = $processed === $ports->count() && $ports->count() < $limit;
         if ($done) {
-            $this->settings->put(self::STATUS, 'complete');
-            $this->settings->put(self::REBUILT_AT, now()->toIso8601String());
-            $this->settings->put(self::ERROR, null);
+            $this->markCompletedNow();
         }
 
         return ['done' => $done, 'last' => $last, 'processed' => $processed];
     }
 
     /** Called by the console command, which rebuilds synchronously in one pass. */
-    public function markCompletedNow(): void
+    public function markCompletedNow(): bool
     {
-        $this->settings->put(self::STATUS, 'complete');
-        $this->settings->put(self::REBUILT_AT, now()->toIso8601String());
-        $this->settings->put(self::ERROR, null);
-        $this->settings->put(self::ACTIVITY_AT, now()->toIso8601String());
+        if (! $this->rebuildRevisionIsCurrent()) {
+            $this->configurationChangedDuringRebuild();
+
+            return false;
+        }
+        $this->settings->putMany([
+            self::STATUS => 'complete',
+            self::REBUILT_AT => now()->toIso8601String(),
+            self::REBUILT_REVISION => $this->settings->get(self::REBUILD_REVISION, $this->configurationRevision()),
+            self::ERROR => null,
+            self::ACTIVITY_AT => now()->toIso8601String(),
+        ]);
+
+        return true;
+    }
+
+    private function configurationRevision(): ?string
+    {
+        // Workers retain SettingStore for their lifetime. A revision check must
+        // see another request's committed edit immediately, without the TTL.
+        $this->settings->forget(self::CONFIGURATION_REVISION);
+
+        return $this->settings->get(self::CONFIGURATION_REVISION);
+    }
+
+    private function rebuildRevisionIsCurrent(): bool
+    {
+        $revision = $this->configurationRevision();
+        $this->settings->forget(self::REBUILD_REVISION);
+
+        return $this->settings->get(self::REBUILD_REVISION, $revision) === $revision;
+    }
+
+    private function configurationChangedDuringRebuild(): void
+    {
+        $this->markFailed('Policy configuration changed during the rebuild. Rebuild again to refresh every interface.');
     }
 
     public function rebuiltAt(): ?CarbonImmutable
@@ -157,13 +224,18 @@ class PolicyCacheRebuilder
         $latest = collect([
             DB::table('iapm_policies')->max('updated_at'),
             DB::table('iapm_assignments')->max('updated_at'),
-        ])->filter()->max();
+            $this->settings->get(self::CONFIGURATION_CHANGED_AT),
+        ])->filter()->map(fn ($value) => CarbonImmutable::parse($value))->max();
 
-        return $latest ? CarbonImmutable::parse($latest) : null;
+        return $latest;
     }
 
     public function isStale(): bool
     {
+        $revision = $this->configurationRevision();
+        if ($revision !== null && $revision !== $this->settings->get(self::REBUILT_REVISION)) {
+            return true;
+        }
         $rebuilt = $this->rebuiltAt();
         if ($rebuilt === null) {
             // Never rebuilt: stale only if there is configuration to reflect.

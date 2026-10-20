@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\DeviceGroup;
 use App\Models\Location;
 use App\Models\Port;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\Concerns\ListsRecords;
@@ -100,11 +101,14 @@ class InterfaceMatrixController
                 }
             } elseif ($data['operation'] === 'remove_assignment') {
                 Assignment::where('assignment_type', 'port')->whereIn('assignment_reference', array_map('strval', $data['port_ids']))->delete();
+                // Query deletes bypass Assignment's model events.
+                PolicyCacheRebuilder::invalidate();
             } elseif ($data['operation'] === 'mute') {
-                Incident::whereIn('port_id', $data['port_ids'])->where('state', '!=', 'recovered')->update(['muted_until' => $data['muted_until']]);
+                $mutedUntil = CarbonImmutable::parse($data['muted_until'])->setTimezone(config('app.timezone', 'UTC'));
+                Incident::whereIn('port_id', $data['port_ids'])->where('state', '!=', 'recovered')->update(['muted_until' => $mutedUntil->toDateTimeString()]);
             } else {
                 Incident::whereIn('port_id', $data['port_ids'])->update(['muted_until' => null]);
-            }DB::table('iapm_interface_policy_cache')->whereIn('port_id', $data['port_ids'])->delete();
+            }
         });
         $audit->record($request, 'bulk_'.$data['operation'], 'interface_matrix', null, null, ['port_ids' => $data['port_ids'], 'policy_id' => $data['policy_id'] ?? null, 'muted_until' => $data['muted_until'] ?? null]);
 

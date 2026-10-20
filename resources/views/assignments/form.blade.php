@@ -120,7 +120,7 @@
 </div>
 
 <div class="form-group iapm-field" data-types="device_group">
-    <h4>Excluded interfaces</h4>
+    <h2 style="font-size:16px;">Excluded interfaces</h2>
     @include('iapm::partials.typeahead', [
         'id' => 'iapm-excluded-port-device-search',
         'valueId' => 'iapm-excluded-port-device-id',

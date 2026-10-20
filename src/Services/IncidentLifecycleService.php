@@ -37,6 +37,37 @@ class IncidentLifecycleService
         ];
     }
 
+    /** Atomically activate a still-pending snapshot and refresh its caller. */
+    public function activateIfEligible(Incident $incident): bool
+    {
+        return DB::transaction(function () use ($incident): bool {
+            $expectedEpisode = $incident->episode_uuid;
+            $locked = Incident::with('policy')->whereKey($incident->id)->lockForUpdate()->first();
+            if (! $locked) {
+                return false;
+            }
+            $policy = $locked->policy;
+            $loadedPolicy = $incident->relationLoaded('policy') ? $incident->getRelation('policy') : null;
+            if ($policy && $loadedPolicy && (int) $policy->id === (int) $loadedPolicy->id && $loadedPolicy->relationLoaded('actions')) {
+                $policy->setRelation('actions', $loadedPolicy->getRelation('actions'));
+            }
+            $eligible = $locked->episode_uuid === $expectedEpisode
+                && $locked->state === IncidentState::Pending
+                && $locked->recovered_at === null
+                && $policy !== null && $policy->enabled
+                && $locked->first_seen_at->addSeconds((int) $policy->trigger_after_seconds)->lessThanOrEqualTo(now())
+                && (int) ($locked->context_json['observation_count'] ?? 1) >= (int) $policy->down_observations;
+            if ($eligible) {
+                $locked->update(['state' => IncidentState::Active, 'triggered_at' => $locked->triggered_at ?? now()]);
+                $locked->events()->create(['event_type' => 'activated', 'event_message' => 'Trigger requirements satisfied.']);
+            }
+            $incident->setRawAttributes($locked->getAttributes(), true);
+            $incident->setRelation('policy', $policy);
+
+            return $eligible;
+        });
+    }
+
     public function acknowledge(Incident $incident, ?int $actorId = null): void
     {
         if ($incident->state === IncidentState::Recovered) {
@@ -69,7 +100,7 @@ class IncidentLifecycleService
     {
         return DB::transaction(function () use ($incident, $message, $attributes): bool {
             $locked = Incident::whereKey($incident->id)->lockForUpdate()->firstOrFail();
-            if ($locked->state === IncidentState::Recovered) {
+            if ($locked->state === IncidentState::Recovered || ! $this->sameEpisodeSource($locked, $incident)) {
                 return false;
             }
             $incomingSourceAt = $attributes['context_json']['last_source_event_at'] ?? null;
@@ -98,19 +129,20 @@ class IncidentLifecycleService
      */
     public function recoverMany(iterable $incidents, string $message, ?string $sourceEventAt = null): int
     {
-        $ids = collect($incidents)->pluck('id')->filter()->unique()->values();
+        $snapshots = collect($incidents)->keyBy('id');
+        $ids = $snapshots->pluck('id')->filter()->unique()->values();
         if ($ids->isEmpty()) {
             return 0;
         }
 
-        return DB::transaction(function () use ($ids, $message, $sourceEventAt): int {
+        return DB::transaction(function () use ($ids, $snapshots, $message, $sourceEventAt): int {
             $recoveredAt = now();
             $locked = Incident::query()
                 ->whereIn('id', $ids)
                 ->where('state', '!=', IncidentState::Recovered)
                 ->orderBy('id')
                 ->lockForUpdate()
-                ->get();
+                ->get()->filter(fn (Incident $incident): bool => $this->sameEpisodeSource($incident, $snapshots->get($incident->id)))->values();
             if ($sourceEventAt !== null) {
                 $locked = $locked->reject(function (Incident $incident) use ($sourceEventAt): bool {
                     $current = $incident->context_json['last_source_event_at'] ?? null;
@@ -181,5 +213,19 @@ class IncidentLifecycleService
 
             return $locked->count();
         });
+    }
+
+    private function sameEpisodeSource(Incident $current, Incident $snapshot): bool
+    {
+        if ($current->episode_uuid !== $snapshot->episode_uuid) {
+            return false;
+        }
+        foreach (['source_alert_id', 'source_alert_uid', 'source_rule_id'] as $attribute) {
+            if ((string) $current->{$attribute} !== (string) $snapshot->{$attribute}) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

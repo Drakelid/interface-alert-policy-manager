@@ -167,11 +167,11 @@ class RealSimulationService
                             }
                         } else {
                             // Polling writes the physical state back periodically.
-                            // Reassert the simulation overlay until its deadline.
-                            DB::table('ports')->where('port_id', $simulation->port_id)->update([
-                                'ifAdminStatus' => $simulation->simulated_admin_status,
-                                'ifOperStatus' => $simulation->simulated_oper_status,
-                            ]);
+                            // Serialize reassertion with recovery. A simulation
+                            // fetched before manual recovery is a stale snapshot.
+                            if (! $this->maintainOverlay($simulation)) {
+                                continue;
+                            }
                             if ($simulation->incident_id) {
                                 Artisan::call('iapm:reconcile', ['--incident' => $simulation->incident_id]);
                                 Artisan::call('iapm:process-actions', ['--incident' => $simulation->incident_id]);
@@ -186,6 +186,23 @@ class RealSimulationService
         $this->settings->put('last_simulation_maintenance_at', now()->toIso8601String());
 
         return $counts;
+    }
+
+    private function maintainOverlay(Simulation $simulation): bool
+    {
+        return DB::transaction(function () use ($simulation): bool {
+            $locked = Simulation::whereKey($simulation->id)->lockForUpdate()->first();
+            if (! $locked || ! in_array($locked->status, ['starting', 'running'], true) || $locked->recover_at->lessThanOrEqualTo(now())) {
+                return false;
+            }
+            DB::table('ports')->where('port_id', $locked->port_id)->update([
+                'ifAdminStatus' => $locked->simulated_admin_status,
+                'ifOperStatus' => $locked->simulated_oper_status,
+            ]);
+            $simulation->setRawAttributes($locked->getAttributes(), true);
+
+            return true;
+        });
     }
 
     private function assertStartable(Port $port): Policy

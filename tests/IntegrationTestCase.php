@@ -3,6 +3,7 @@
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests;
 
 use App\Models\Device;
+use App\Models\Plugin;
 use App\Models\Port;
 use App\Models\User;
 use Illuminate\Foundation\Application;
@@ -67,6 +68,8 @@ abstract class IntegrationTestCase extends TestCase
 
         // The plugins table did not exist when the provider booted, so materialize
         // the plugin row the way `lnms plugin:add` does.
+        // migrate:fresh can also remove a row cached by the manager during boot.
+        Plugin::firstOrCreate(['version' => 2, 'plugin_name' => IapmServiceProvider::PLUGIN_NAME], ['plugin_active' => true]);
         if (! app(PluginManagerInterface::class)->pluginEnabled(IapmServiceProvider::PLUGIN_NAME)) {
             throw new \RuntimeException('IAPM plugin fixture was not enabled.');
         }

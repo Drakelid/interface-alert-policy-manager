@@ -46,6 +46,8 @@ class SendNotificationJob implements ShouldQueue
 
     public function failed(?\Throwable $exception): void
     {
-        NotificationOutbox::whereKey($this->outboxId)->whereIn('status', ['pending', 'queued', 'processing'])->update(['status' => 'failed', 'last_error_redacted' => 'Queue worker failed before finalization.']);
+        // A late failure callback must not release another worker's live claim.
+        // Abandoned processing leases are reclaimed by the outbox drainer.
+        NotificationOutbox::whereKey($this->outboxId)->whereIn('status', ['pending', 'queued'])->update(['status' => 'failed', 'last_error_redacted' => 'Queue worker failed before finalization.']);
     }
 }

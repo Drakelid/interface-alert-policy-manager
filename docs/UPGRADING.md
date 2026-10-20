@@ -14,6 +14,18 @@ php artisan iapm:cache-rebuild
 php artisan iapm:health
 ```
 
+### Delivery and configuration audit fixes
+
+Run migrations before restarting workers. The additive outbox migration adds queue publication timestamps, claim tokens, and action/force metadata. Existing rows remain readable; existing action-backed rows stop if their action has been deleted. No prior migration is changed.
+
+Workers now recheck plugin enablement, dry-run, mute, policy, action, destination, phase and outage episode before each HTTP attempt. Enabling dry-run pauses previously queued live work; it resumes after dry-run is disabled. Newly discovered dry-run actions continue to record simulated delivery. Inapplicable work becomes `cancelled`; paused work remains `pending` with a retry time.
+
+The outbox drainer recovers expired processing claims and abandoned queue publications (five minutes by default). It also prevents failed device digests from retrying after individual fallback takes over. Repeats and send limits apply independently to each receiver, and digest members must have an enabled trigger action whose delay has elapsed.
+
+Inbox workers now replay each device's observations in acceptance order, including retry backoff, while other devices continue independently. A second additive migration indexes that ordering check. Exhausted inbox rows still become terminal so later observations can progress.
+
+Rebuild the policy cache after upgrading. Routing revisions now keep filters stale after policy/default/assignment changes and reject a rebuild that overlaps a routing change. Imports preserve repeated actions and assignment matching modes while enforcing authoritative destination/parent IDs.
+
 ### Queue-worker health now uses a heartbeat (no schema change)
 
 `iapm:health` used to infer queue-worker liveness from the timestamp

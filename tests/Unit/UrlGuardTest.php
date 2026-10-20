@@ -50,12 +50,23 @@ class UrlGuardTest extends TestCase
             'link local fe80::/10' => ['http://[fe80::1]/hook'],
             'ipv4-mapped loopback' => ['http://[::ffff:127.0.0.1]/hook'],
             'ipv4-mapped private' => ['http://[::ffff:10.0.0.1]/hook'],
+            'uppercase mapped loopback' => ['http://[::FFFF:127.0.0.1]/hook'],
+            'hexadecimal mapped loopback' => ['http://[::ffff:7f00:1]/hook'],
+            'expanded mapped loopback' => ['http://[0:0:0:0:0:ffff:7f00:1]/hook'],
+            'expanded mapped private' => ['http://[0:0:0:0:0:FFFF:0a00:0001]/hook'],
+            'hexadecimal mapped metadata' => ['http://[::ffff:a9fe:a9fe]/hook'],
         ];
     }
 
     public function test_a_public_ipv6_literal_is_allowed(): void
     {
         (new UrlGuard)->assertAllowed('http://[2606:4700:4700::1111]/hook');
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_a_public_ipv4_mapped_literal_is_allowed_in_hexadecimal_form(): void
+    {
+        (new UrlGuard)->assertAllowed('http://[::ffff:0808:0808]/hook');
         $this->addToAssertionCount(1);
     }
 

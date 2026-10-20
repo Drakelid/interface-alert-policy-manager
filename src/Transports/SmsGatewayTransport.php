@@ -12,6 +12,12 @@ class SmsGatewayTransport implements NotificationTransport
 
     public function send(array $configuration, string $receiver, string $message): TransportResult
     {
+        $sensitive = [$receiver, $message, (string) ($configuration['username'] ?? ''), (string) ($configuration['password'] ?? '')];
+        foreach ((array) ($configuration['headers'] ?? []) as $value) {
+            if (is_scalar($value)) {
+                $sensitive[] = (string) $value;
+            }
+        }
         try {
             $url = (string) ($configuration['url'] ?? '');
             $networkOptions = $this->urls->pinnedOptions($url, (bool) ($configuration['allow_private_networks'] ?? config('iapm.http.allow_private_networks', false)));
@@ -25,14 +31,22 @@ class SmsGatewayTransport implements NotificationTransport
             }
             $payload = ['receiver' => $receiver, 'message' => $message];
             $response = ($configuration['mode'] ?? 'json') === 'form' ? $client->asForm()->post($url, $payload) : $client->asJson()->post($url, $payload);
-            $body = $this->redactor->text($response->body());
+            $rawBody = $response->body();
+            $body = $this->redactor->text($rawBody, $sensitive);
             // A 2xx is success unless the body clearly says otherwise. `"error": null`
             // and `"error": ""` are both "no error"; anything else in that field is one.
-            $bodyError = preg_match('/"(?:success|ok)"\s*:\s*false|"error"\s*:\s*(?!null|"")/i', $body) === 1;
+            // Status must be read from the original structured response. Logs
+            // may be truncated or redacted, and JSON whitespace is insignificant.
+            $decoded = json_decode($rawBody, true);
+            $bodyError = is_array($decoded) && (
+                ($decoded['success'] ?? null) === false
+                || ($decoded['ok'] ?? null) === false
+                || (isset($decoded['error']) && $decoded['error'] !== '')
+            );
 
             return new TransportResult($response->successful() && ! $bodyError, $response->status(), $body, $bodyError ? 'Gateway response indicates failure.' : null, $this->retryAfter($response->header('Retry-After')));
         } catch (\Throwable $e) {
-            return new TransportResult(false, null, null, $this->redactor->text($e->getMessage()));
+            return new TransportResult(false, null, null, $this->redactor->text($e->getMessage(), $sensitive));
         }
     }
 

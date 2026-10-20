@@ -2,7 +2,6 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Console;
 
-use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +12,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\PolicyAction;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\FlapDetector;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IncidentLifecycleService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReceiverResolver;
@@ -94,14 +94,9 @@ class ProcessActionsCommand extends Command
                 $episodes = $items->pluck('episode_uuid')->filter()->unique();
                 $deliveryStats = DB::table('iapm_delivery_logs')
                     ->whereIn('incident_id', $ids)->whereIn('episode_uuid', $episodes)
-                    ->selectRaw("incident_id, episode_uuid, policy_action_id, phase, SUM(CASE WHEN status IN ('sent','dry_run') THEN 1 ELSE 0 END) successful_count, MAX(CASE WHEN status IN ('sent','dry_run') THEN created_at END) last_success_at, SUM(CASE WHEN status='failed_configuration' AND created_at >= ? THEN 1 ELSE 0 END) recent_config_failures", [now()->subMinutes(5)])
+                    ->selectRaw("incident_id, episode_uuid, policy_action_id, phase, SUM(CASE WHEN status='failed_configuration' AND created_at >= ? THEN 1 ELSE 0 END) recent_config_failures", [now()->subMinutes(5)])
                     ->groupBy('incident_id', 'episode_uuid', 'policy_action_id', 'phase')->get()
                     ->keyBy(fn ($row) => $this->actionStatKey((int) $row->incident_id, (string) $row->episode_uuid, (int) $row->policy_action_id, (string) $row->phase));
-                $digestInFlight = DB::table('iapm_notification_outbox_incidents as noi')
-                    ->join('iapm_notification_outbox as no', 'no.id', '=', 'noi.notification_outbox_id')
-                    ->whereIn('noi.incident_id', $ids)->whereIn('noi.episode_uuid', $episodes)
-                    ->where('no.phase', 'digest')->whereIn('no.status', ['pending', 'queued', 'processing'])
-                    ->get(['noi.incident_id', 'noi.episode_uuid'])->mapWithKeys(fn ($row) => [$row->incident_id.'|'.$row->episode_uuid => true]);
                 /** @var array<string, true> $deliveredDigests */
                 $deliveredDigests = DB::table('iapm_notification_outbox_incidents as noi')
                     ->join('iapm_notification_outbox as no', 'no.id', '=', 'noi.notification_outbox_id')
@@ -118,9 +113,11 @@ class ProcessActionsCommand extends Command
                         return false;
                     } // out of time budget; the next scheduled run continues the backlog
                     $lastId = (int) $incident->id;
-                    if ($incident->state === IncidentState::Pending && $incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->down_observations) {
-                        $incident->update(['state' => IncidentState::Active, 'triggered_at' => now()]);
-                        $incident->events()->create(['event_type' => 'activated', 'event_message' => 'Trigger requirements satisfied.']);
+                    if ($incident->state === IncidentState::Pending) {
+                        if (! $this->pendingSnapshotEligible($incident)) {
+                            continue;
+                        }
+                        app(IncidentLifecycleService::class)->activateIfEligible($incident);
                     }
                     if (! $incident->policy || ! $incident->policy->notifications_enabled) {
                         continue;
@@ -152,28 +149,17 @@ class ProcessActionsCommand extends Command
                         if ($phase === 'recovery' && ! $incident->policy->notify_recovery) {
                             continue;
                         }
-                        if ($phase === 'trigger' && $digestInFlight->has($incident->id.'|'.$incident->episode_uuid)) {
-                            continue;
-                        }
                         foreach ($incident->policy->actions->filter(fn ($action) => $action->enabled && $action->phase->value === $phase && (! $this->option('action') || (int) $this->option('action') === (int) $action->id)) as $action) {
                             $stat = $deliveryStats->get($this->actionStatKey((int) $incident->id, (string) $incident->episode_uuid, (int) $action->id, $phase));
                             if (! $this->option('force') && (int) ($stat->recent_config_failures ?? 0) > 0) {
                                 continue;
                             }
-                            $sendCount = (int) ($stat->successful_count ?? 0);
-                            $lastSend = isset($stat->last_success_at) ? CarbonImmutable::parse($stat->last_success_at) : null;
-                            $repeatSeconds = $action->repeat_seconds ?? (in_array($phase, ['trigger', 'reminder'], true) ? $incident->policy->repeat_seconds : null);
-                            $maximumSends = $action->maximum_sends ?? ($incident->policy->maximum_repeats === null ? null : 1 + $incident->policy->maximum_repeats);
-                            if (! $this->option('force') && $sendCount > 0 && ($repeatSeconds === null || ($maximumSends !== null && $sendCount >= $maximumSends))) {
-                                continue;
-                            }
-                            if (! $this->option('force') && $lastSend && $repeatSeconds !== null && $lastSend->addSeconds($repeatSeconds)->isFuture()) {
-                                continue;
-                            }
+                            // Repeat eligibility is checked per receiver under
+                            // the dispatcher's incident lock, using fresh data.
                             $phaseStart = match ($phase) {
                                 'recovery' => $incident->recovered_at, 'acknowledged' => $incident->acknowledged_at, default => $incident->triggered_at ?? $incident->first_seen_at
                             };
-                            if (! $phaseStart || (! $this->option('force') && $phaseStart->addSeconds($action->delay_seconds)->isFuture())) {
+                            if (! $phaseStart || (! $this->option('force') && $phaseStart->copy()->addSeconds($action->delay_seconds)->isFuture())) {
                                 continue;
                             }
                             if ($this->sendAction($incident, $action, $phase)) {
@@ -205,13 +191,19 @@ class ProcessActionsCommand extends Command
             if (microtime(true) >= $this->deadline) {
                 return false;
             }
-            if ($incident->policy && $incident->first_seen_at->addSeconds($incident->policy->trigger_after_seconds)->isPast() && (int) ($incident->context_json['observation_count'] ?? 1) >= $incident->policy->down_observations) {
-                $incident->update(['state' => IncidentState::Active, 'triggered_at' => now()]);
-                $incident->events()->create(['event_type' => 'activated', 'event_message' => 'Trigger requirements satisfied.']);
+            if ($this->pendingSnapshotEligible($incident)) {
+                app(IncidentLifecycleService::class)->activateIfEligible($incident);
             }
 
             return true;
         });
+    }
+
+    private function pendingSnapshotEligible(Incident $incident): bool
+    {
+        return $incident->policy?->enabled
+            && $incident->first_seen_at?->copy()->addSeconds((int) $incident->policy->trigger_after_seconds)->lessThanOrEqualTo(now())
+            && (int) ($incident->context_json['observation_count'] ?? 1) >= (int) $incident->policy->down_observations;
     }
 
     /**
@@ -241,7 +233,7 @@ class ProcessActionsCommand extends Command
             if ($incidents->count() < $threshold) {
                 continue;
             } // already-digested incidents dropped it below threshold
-            $sent += $this->sendDeviceDigest($incidents);
+            $sent += $this->sendDeviceDigest($incidents, $threshold);
             $cursor = (int) $deviceId;
         }
         $this->settings->put('digest_cursor_device_id', $deviceIds->count() < $limit ? 0 : $cursor);
@@ -262,10 +254,17 @@ class ProcessActionsCommand extends Command
             ->whereNotNull('triggered_at')->where('triggered_at', '>=', $cutoff)
             ->where(fn ($q) => $q->whereNull('muted_until')->orWhere('muted_until', '<=', now()))
             ->whereHas('policy', fn ($q) => $q->where('notifications_enabled', true))
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')
+                ->from('iapm_notification_outbox_incidents as membership')
+                ->join('iapm_notification_outbox as outbox', 'outbox.id', '=', 'membership.notification_outbox_id')
+                ->whereColumn('membership.incident_id', 'iapm_incidents.id')
+                ->whereColumn('membership.episode_uuid', 'iapm_incidents.episode_uuid')
+                ->whereIn('outbox.phase', ['digest', 'trigger'])
+                ->whereIn('outbox.status', ['pending', 'queued', 'processing', 'failed', 'sent', 'dry_run']))
             ->whereDoesntHave('deliveries', fn ($q) => $q->where('phase', 'trigger')->whereIn('status', ['sent', 'dry_run'])->whereColumn('iapm_delivery_logs.episode_uuid', 'iapm_incidents.episode_uuid'));
     }
 
-    private function sendDeviceDigest(Collection $incidents): int
+    private function sendDeviceDigest(Collection $incidents, int $threshold): int
     {
         $first = $incidents->first();
         $ctx = (array) $first->context_json;
@@ -287,9 +286,17 @@ class ProcessActionsCommand extends Command
         ];
 
         // One digest per distinct trigger destination across the grouped policies.
-        $pairs = $incidents->flatMap(fn ($item) => $item->policy ? $item->policy->actions->filter(fn ($action) => $action->enabled && $action->phase->value === 'trigger')->map(fn ($action) => ['incident' => $item, 'action' => $action]) : collect());
+        $pairs = $incidents->flatMap(fn ($item) => $item->policy ? $item->policy->actions->filter(fn ($action) => $action->enabled && $action->phase->value === 'trigger' && $item->triggered_at && ! $item->triggered_at->copy()->addSeconds($action->delay_seconds)->isFuture())->map(fn ($action) => ['incident' => $item, 'action' => $action]) : collect());
         $sentAny = false;
         foreach ($pairs->groupBy(fn ($pair) => $pair['action']->destination_id) as $destinationPairs) {
+            $represented = $destinationPairs->pluck('incident')->unique('id')->values();
+            if ($represented->count() < $threshold) {
+                continue;
+            }
+            $first = $represented->first();
+            $names = $represented->map(fn ($i) => (string) (($i->context_json['ifName'] ?? '') ?: ('port '.$i->port_id)));
+            $values['interface_count'] = $represented->count();
+            $values['interfaces'] = $names->take(10)->implode(', ').($names->count() > 10 ? ' +'.($names->count() - 10).' more' : '');
             $action = $destinationPairs->first()['action'];
             $destination = $action->destination;
             if (! $destination) {
@@ -318,7 +325,7 @@ class ProcessActionsCommand extends Command
                 continue;
             }
             foreach ($resolved as $receiver) {
-                $result = $this->dispatcher->dispatch($first, $destination, $action, 'digest', $receiver, $message, $incidents->pluck('id')->map(fn ($id) => (int) $id)->all());
+                $result = $this->dispatcher->dispatch($first, $destination, $action, 'digest', $receiver, $message, $represented->pluck('id')->map(fn ($id) => (int) $id)->all());
                 $sentAny = $sentAny || $result->successful;
             }
         }
@@ -388,7 +395,7 @@ class ProcessActionsCommand extends Command
             if ($phase === 'trigger' && $this->digestDelivered($incident, $destination->id, $receiver)) {
                 continue;
             }
-            $this->dispatcher->dispatch($incident, $destination, $action, $phase, $receiver, $message);
+            $this->dispatcher->dispatch($incident, $destination, $action, $phase, $receiver, $message, force: (bool) $this->option('force'));
             $attempted = true;
         }
 

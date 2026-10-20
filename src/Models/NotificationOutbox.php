@@ -21,6 +21,9 @@ class NotificationOutbox extends Model
             'claimed_at' => 'datetime',
             'delivered_at' => 'datetime',
             'finalized_at' => 'datetime',
+            'queued_at' => 'datetime',
+            'action_required' => 'boolean',
+            'forced' => 'boolean',
         ];
     }
 

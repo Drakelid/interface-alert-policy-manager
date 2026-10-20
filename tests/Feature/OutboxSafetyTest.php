@@ -210,7 +210,7 @@ class OutboxSafetyTest extends IntegrationTestCase
         $result = app(NotificationDispatcher::class)->test($destination, $receiver, $message);
 
         self::assertTrue($result->successful);
-        self::assertStringContainsString($message, (string) $result->response);
+        self::assertStringNotContainsString($message, (string) $result->response);
         $stored = json_encode(DeliveryLog::sole()->toArray());
         self::assertStringNotContainsString($receiver, $stored);
         self::assertStringNotContainsString($message, $stored);
@@ -252,12 +252,13 @@ class OutboxSafetyTest extends IntegrationTestCase
 
         (new SendNotificationJob($oldOutbox->id))->handle(app(NotificationDispatcher::class), app(SettingStore::class));
 
-        $delivery = DeliveryLog::sole();
-        self::assertSame($oldEpisode, $delivery->episode_uuid);
+        Http::assertNothingSent();
+        self::assertSame(0, DeliveryLog::count());
+        self::assertSame('cancelled', $oldOutbox->fresh()->status);
         self::assertSame(0, (int) $incident->fresh()->notification_count);
         self::assertNull($incident->fresh()->last_notification_at);
 
-        // The old success must not satisfy the new episode's trigger. A new logical
+        // The old job must not satisfy the new episode's trigger. A new logical
         // outbox is queued when action processing sees the current active episode.
         $this->artisan('iapm:process-actions');
         self::assertSame(2, NotificationOutbox::count());

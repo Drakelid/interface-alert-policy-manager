@@ -21,6 +21,8 @@ class WebhookSsrfTest extends IntegrationTestCase
             'gopher scheme' => 'gopher://127.0.0.1:11211/_stats',
             'no host' => 'https:///path',
             'credentials in userinfo' => 'https://user:secret@example.com/hook',
+            'hexadecimal mapped loopback' => 'http://[::ffff:7f00:1]/internal',
+            'expanded mapped loopback' => 'http://[0:0:0:0:0:FFFF:7f00:1]/internal',
         ];
 
         foreach ($blocked as $description => $url) {
@@ -72,6 +74,35 @@ class WebhookSsrfTest extends IntegrationTestCase
         $this->expectException(\InvalidArgumentException::class);
 
         app(TransportManager::class)->for('carrier_pigeon');
+    }
+
+    public function test_response_echoes_are_redacted_before_truncation(): void
+    {
+        $message = "Customer Ægir / interface \"uplink\"\n".str_repeat('private detail ', 1000);
+        Http::fake(['*' => Http::response(json_encode(['receiver' => 'noc', 'message' => $message, 'token' => 'webhook-token']), 200)]);
+        $destination = $this->webhook(['url' => 'http://127.0.0.1/hook', 'allow_private_networks' => true, 'bearer_token' => 'webhook-token']);
+
+        $result = app(TransportManager::class)->for('generic_webhook')->send((array) $destination->configuration_encrypted, 'noc', $message);
+
+        self::assertTrue($result->successful);
+        self::assertStringNotContainsString('Customer', (string) $result->response);
+        self::assertStringNotContainsString('private detail', (string) $result->response);
+        self::assertStringNotContainsString('webhook-token', (string) $result->response);
+        self::assertSame('[REDACTED]', json_decode((string) $result->response, true, 512, JSON_THROW_ON_ERROR)['receiver']);
+    }
+
+    public function test_exception_echoes_are_redacted_before_truncation(): void
+    {
+        $message = 'customer-details '.str_repeat('private detail ', 1000);
+        Http::fake(fn () => throw new \RuntimeException('Gateway echoed '.$message.' webhook-token'));
+        $destination = $this->webhook(['url' => 'http://127.0.0.1/hook', 'allow_private_networks' => true, 'bearer_token' => 'webhook-token']);
+
+        $result = app(TransportManager::class)->for('generic_webhook')->send((array) $destination->configuration_encrypted, 'noc', $message);
+
+        self::assertFalse($result->successful);
+        self::assertStringNotContainsString('customer-details', (string) $result->error);
+        self::assertStringNotContainsString('private detail', (string) $result->error);
+        self::assertStringNotContainsString('webhook-token', (string) $result->error);
     }
 
     private function webhook(array $configuration): Destination

@@ -81,6 +81,16 @@ class DrainIngestionCommand extends Command
                     $query->where(fn ($due) => $due->whereIn('status', ['pending', 'failed'])->where(fn ($available) => $available->whereNull('available_at')->orWhere('available_at', '<=', now())))
                         ->orWhere(fn ($claimed) => $claimed->where('status', 'processing')->where('claimed_at', '<', $stale));
                 })
+                // A source observation can omit its timestamp. Never let a
+                // later row for the same device overtake an active claim or
+                // a retry waiting for backoff; dead rows are terminal and do
+                // not prevent the remaining observations from progressing.
+                ->whereNotExists(function ($older): void {
+                    $older->selectRaw('1')->from('iapm_ingestion_inbox as previous')
+                        ->whereColumn('previous.device_id', 'iapm_ingestion_inbox.device_id')
+                        ->whereColumn('previous.id', '<', 'iapm_ingestion_inbox.id')
+                        ->whereIn('previous.status', ['pending', 'failed', 'processing']);
+                })
                 ->orderBy('id')->lockForUpdate()->first();
             if (! $row) {
                 return null;
@@ -88,6 +98,6 @@ class DrainIngestionCommand extends Command
             $row->update(['status' => 'processing', 'claimed_at' => now(), 'attempt_count' => DB::raw('attempt_count + 1')]);
 
             return $row->fresh();
-        });
+        }, 3);
     }
 }

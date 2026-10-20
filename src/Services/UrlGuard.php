@@ -109,19 +109,26 @@ class UrlGuard
      */
     private function isPublic(string $ip): bool
     {
-        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        if (! filter_var($ip, FILTER_VALIDATE_IP)) {
             return false;
         }
 
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $binary = @inet_pton($ip);
-            if ($binary === false) {
-                return false;
-            }
-            // An IPv4-mapped address (::ffff:a.b.c.d) must be judged on its IPv4 value.
-            if (str_starts_with($ip, '::ffff:') && ($mapped = filter_var(substr($ip, 7), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4))) {
-                return $this->isPublic($mapped);
-            }
+        $binary = @inet_pton($ip);
+        if ($binary === false) {
+            return false;
+        }
+        // Mapped addresses have many equivalent spellings (uppercase,
+        // expanded zeros and hexadecimal tails). Judge their binary IPv4
+        // payload before PHP's version-dependent reserved-range classification.
+        if (strlen($binary) === 16 && substr($binary, 0, 12) === str_repeat("\0", 10)."\xff\xff") {
+            $mapped = inet_ntop(substr($binary, 12));
+
+            return $mapped !== false && $this->isPublic($mapped);
+        }
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return false;
+        }
+        if (strlen($binary) === 16) {
             $first = ord($binary[0]);
             if ($ip === '::1' || $ip === '::') {
                 return false;

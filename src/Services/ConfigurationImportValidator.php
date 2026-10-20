@@ -15,6 +15,7 @@ class ConfigurationImportValidator
     public function __construct(
         private readonly SafeTemplateRenderer $templates,
         private readonly TemplateContextBuilder $templateContext,
+        private readonly ConfigurationImportPlanner $planner,
     ) {}
 
     /**
@@ -83,20 +84,17 @@ class ConfigurationImportValidator
             'policies.*.assignments.*.device_group_ids.*' => ['integer'],
         ]);
         $validator->after(function ($validator) use ($document, $updateExisting): void {
+            // Structural failures must be reported before typed traversal or
+            // projected writes assume that policies and children are arrays.
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
             $records = count($document['policies'] ?? []);
             $policies = collect($document['policies'] ?? []);
             $assignments = $policies->flatMap(fn (array $policy) => $policy['assignments'] ?? []);
-            $existingPolicyNames = $this->existing('iapm_policies', 'name', $policies->pluck('name')->filter()->all());
-            // Assignments belonging to an already-existing policy are only written
-            // when updating is enabled; otherwise that policy is skipped whole and
-            // its assignments never reach the database.
-            $newAssignments = $updateExisting
-                ? $assignments
-                : $policies->reject(fn (array $policy) => $existingPolicyNames->contains($policy['name'] ?? null))->flatMap(fn (array $policy) => $policy['assignments'] ?? []);
             $regexLimit = max(1, (int) config('iapm.resolver.max_regex_assignments', 5000));
-            foreach (['ifalias_regex', 'ifname_regex'] as $regexType) {
-                $existingRegex = DB::table('iapm_assignments')->join('iapm_policies', 'iapm_policies.id', '=', 'iapm_assignments.policy_id')->where('iapm_assignments.assignment_type', $regexType)->where('iapm_assignments.enabled', true)->where('iapm_policies.enabled', true)->count();
-                if ($existingRegex + $newAssignments->where('assignment_type', $regexType)->where('enabled', true)->count() > $regexLimit) {
+            foreach ($this->planner->projectedRegexCounts($document, $updateExisting) as $regexType => $count) {
+                if ($count > $regexLimit) {
                     $validator->errors()->add('policies', "The import exceeds the configured {$regexType} safety limit of {$regexLimit}.");
                 }
             }
