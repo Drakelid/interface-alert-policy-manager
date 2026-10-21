@@ -19,12 +19,20 @@ class Incident extends Model
     {
         static::creating(function (Incident $incident): void {
             $incident->episode_uuid ??= (string) Str::uuid();
+            if ($incident->state === IncidentState::Recovered && $incident->recovered_at && $incident->recovery_action_due_at === null) {
+                $incident->recovery_action_due_at = now();
+            }
+        });
+        static::updating(function (Incident $incident): void {
+            if ($incident->state === IncidentState::Recovered && $incident->isDirty(['state', 'recovered_at', 'policy_id', 'muted_until'])) {
+                $incident->recovery_action_due_at = now();
+            }
         });
     }
 
     protected function casts(): array
     {
-        return ['state' => IncidentState::class, 'severity' => Severity::class, 'context_json' => 'array', 'first_seen_at' => 'datetime', 'triggered_at' => 'datetime', 'last_seen_at' => 'datetime', 'recovered_at' => 'datetime', 'acknowledged_at' => 'datetime', 'muted_until' => 'datetime', 'last_notification_at' => 'datetime'];
+        return ['state' => IncidentState::class, 'severity' => Severity::class, 'context_json' => 'array', 'first_seen_at' => 'datetime', 'triggered_at' => 'datetime', 'last_seen_at' => 'datetime', 'recovered_at' => 'datetime', 'recovery_action_due_at' => 'datetime', 'acknowledged_at' => 'datetime', 'muted_until' => 'datetime', 'last_notification_at' => 'datetime'];
     }
 
     public static function key(int $deviceId, int $portId): string

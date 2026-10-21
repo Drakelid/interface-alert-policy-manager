@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Transports;
 use Illuminate\Http\Client\Factory;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\Redactor;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\UrlGuard;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\RetryAfter;
 
 class SmsGatewayTransport implements NotificationTransport
 {
@@ -44,23 +45,10 @@ class SmsGatewayTransport implements NotificationTransport
                 || (isset($decoded['error']) && $decoded['error'] !== '')
             );
 
-            return new TransportResult($response->successful() && ! $bodyError, $response->status(), $body, $bodyError ? 'Gateway response indicates failure.' : null, $this->retryAfter($response->header('Retry-After')));
+            return new TransportResult($response->successful() && ! $bodyError, $response->status(), $body, $bodyError ? 'Gateway response indicates failure.' : null, RetryAfter::seconds($response->header('Retry-After')));
         } catch (\Throwable $e) {
             return new TransportResult(false, null, null, $this->redactor->text($e->getMessage(), $sensitive));
         }
-    }
-
-    private function retryAfter(?string $value): ?int
-    {
-        if ($value === null || trim($value) === '') {
-            return null;
-        }
-        if (ctype_digit(trim($value))) {
-            return min(86400, (int) trim($value));
-        }
-        $timestamp = strtotime($value);
-
-        return $timestamp === false ? null : min(86400, max(0, $timestamp - time()));
     }
 
     /**

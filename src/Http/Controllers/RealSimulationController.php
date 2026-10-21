@@ -10,6 +10,7 @@ use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Simulation;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\QueueHeartbeat;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\RealSimulationService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
@@ -19,8 +20,8 @@ class RealSimulationController extends Controller
 {
     public function index(Request $request, EntityLookup $lookup, SettingStore $settings, QueueHeartbeat $heartbeat, ViewFactory $views)
     {
-        $port = $request->filled('port_id') ? Port::with('device')->find($request->integer('port_id')) : null;
-        $simulations = Simulation::with(['port.device', 'incident.policy', 'incident.deliveries'])->latest('id')->limit(25)->get();
+        $port = $request->filled('port_id') ? app(InventoryAccess::class)->ports(Port::query())->with('device')->find($request->integer('port_id')) : null;
+        $simulations = app(InventoryAccess::class)->records(Simulation::query())->with(['port.device', 'incident.policy', 'incident.deliveries'])->latest('id')->limit(25)->get();
         $lastSimulationMaintenance = $settings->get('last_simulation_maintenance_at');
         try {
             $lastSimulationMaintenanceAt = is_string($lastSimulationMaintenance) ? CarbonImmutable::parse($lastSimulationMaintenance) : null;
@@ -55,7 +56,7 @@ class RealSimulationController extends Controller
         try {
             $simulation = $simulations->start(
                 $request,
-                Port::with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']),
+                app(InventoryAccess::class)->ports(Port::query())->with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']),
                 (int) $data['duration_seconds'],
                 $data['simulated_admin_status'],
                 $data['simulated_oper_status'],
@@ -67,6 +68,13 @@ class RealSimulationController extends Controller
             report($exception);
 
             return back()->withInput()->with('error', 'The simulation failed and the interface state was restored. Check the LibreNMS log for details.');
+        }
+
+        if ($simulation->status === 'failed') {
+            return redirect()->route('iapm.real-simulations.index')->with('error', 'The simulation was superseded by another observation. The current interface and incident were left intact.');
+        }
+        if ($simulation->status === 'recovered') {
+            return redirect()->route('iapm.real-simulations.index')->with('status', "Simulation #{$simulation->id} was recovered before startup finished.");
         }
 
         return redirect()->route('iapm.real-simulations.index')
@@ -85,6 +93,10 @@ class RealSimulationController extends Controller
         }
 
         if ($result->status !== 'recovered') {
+            if ($result->status === 'failed') {
+                return back()->with('error', "Simulation #{$simulation->id} is no longer active. The current interface and incident were left intact.");
+            }
+
             return back()->with('status', "Simulation #{$simulation->id} recovery is already in progress.");
         }
 

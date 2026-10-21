@@ -22,10 +22,17 @@ namespace App\Models {
         public function groups(): \Illuminate\Database\Eloquent\Relations\BelongsToMany {}
     }
     class PortGroup extends \Illuminate\Database\Eloquent\Model {}
-    class User extends \Illuminate\Database\Eloquent\Model
+    class User extends \Illuminate\Foundation\Auth\User
     {
         public function hasRole(string $role): bool {}
         public function hasPermissionTo(string $permission): bool {}
+    }
+}
+
+namespace App\Facades {
+    class LibrenmsConfig extends \Illuminate\Support\Facades\Facade
+    {
+        public static function get(string $key, mixed $default = null): mixed {}
     }
 }
 

@@ -10,6 +10,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers\Concerns\Lists
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IncidentLifecycleService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SuppressionService;
 
 class IncidentController extends Controller
@@ -30,7 +31,7 @@ class IncidentController extends Controller
 
     public function index(Request $r)
     {
-        $q = Incident::with('policy');
+        $q = app(InventoryAccess::class)->records(Incident::query())->with('policy');
         $state = (string) $r->query('state', '');
         // Default landing ('' / no param) shows the OPEN working set (recovered hidden);
         // 'all' shows every state; a specific value filters to it.
@@ -86,7 +87,11 @@ class IncidentController extends Controller
         abort_unless($r->user()->can('acknowledge iapm incidents'), 403);
         abort_if($incident->state === IncidentState::Recovered, 409, 'A recovered incident cannot be acknowledged.');
         $before = $incident->toArray();
-        $lifecycle->acknowledge($incident, (int) $r->user()->getAuthIdentifier());
+        try {
+            $lifecycle->acknowledge($incident, (int) $r->user()->getAuthIdentifier());
+        } catch (\DomainException $exception) {
+            abort(409, $exception->getMessage());
+        }
         $audit->record($r, 'acknowledged', 'incident', $incident, $before, $incident->fresh()->toArray());
 
         return back()->with('status', 'Incident acknowledged.');

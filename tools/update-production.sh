@@ -7,8 +7,8 @@
 #   sudo bash update-production.sh 1.7.3       # install an exact release
 #   sudo bash update-production.sh '^1.7' --yes
 #
-# Requires systemd: the script stops and restarts iapm-worker@ units and reloads
-# PHP-FPM through systemctl. On a host without systemd (a container image, for
+# Requires systemd and Linux /proc: the script drains the LibreNMS scheduler and
+# workers in maintenance mode and reloads PHP-FPM through systemctl. On a host without systemd (a container image, for
 # example) follow the manual steps in the README's "Updating" section instead.
 #
 # The default constraint follows stable 1.x releases from 1.7 onward. Database
@@ -29,8 +29,139 @@ PLUGIN_NAME="interface-alert-policy-manager"
 VERSION_CONSTRAINT="^1.7"
 ASSUME_YES=0
 BACKUP_DIR=""
-SYSTEMD_WORKERS=()
-WORKERS_STOPPED=0
+# BEGIN IAPM RUNTIME HELPERS
+# Kept inline so copying this single script remains sufficient for an update.
+# The isolated shell regression checks source only this marked block.
+# The caller supplies log(), as_librenms(), fail(), and LIBRENMS_DIR.
+IAPM_RESTORE_UNITS=()
+IAPM_RUNTIME_PAUSED=0
+IAPM_MAINTENANCE_CHANGED=0
+IAPM_REPLACEMENT_STARTED=0
+IAPM_REPLACEMENT_COMPLETE=0
+
+iapm_runtime_command() {
+    local index command
+    local -a arguments=("$@")
+    for ((index = 0; index + 1 < ${#arguments[@]}; index++)); do
+        case "${arguments[index]##*/}" in
+            artisan|lnms)
+                command="${arguments[index + 1]}"
+                case "$command" in
+                    queue:work|queue:listen|schedule:run|schedule:work|iapm:*) return 0 ;;
+                esac
+                ;;
+        esac
+    done
+    return 1
+}
+
+iapm_runtime_processes() {
+    local pid process_directory argument entrypoint
+    local -a arguments=()
+    while IFS= read -r pid; do
+        [[ -r "/proc/$pid/cmdline" ]] || continue
+        process_directory="$(readlink -f "/proc/$pid/cwd" 2>/dev/null)" || continue
+        mapfile -d '' -t arguments <"/proc/$pid/cmdline" 2>/dev/null || continue
+        if iapm_runtime_command "${arguments[@]}"; then
+            for argument in "${arguments[@]}"; do
+                case "${argument##*/}" in
+                    artisan|lnms)
+                        if [[ "$argument" == /* ]]; then
+                            entrypoint="$(readlink -f -- "$argument" 2>/dev/null)" || continue
+                        else
+                            entrypoint="$(readlink -f -- "$process_directory/$argument" 2>/dev/null)" || continue
+                        fi
+                        if [[ "$entrypoint" == "$LIBRENMS_DIR/artisan" || "$entrypoint" == "$LIBRENMS_DIR/lnms" ]]; then
+                            printf '%s\n' "$pid"
+                            break
+                        fi
+                        ;;
+                esac
+            done
+        fi
+    done < <(pgrep -f '(artisan|lnms)' || true)
+}
+
+iapm_wait_runtime() {
+    local pending deadline
+    deadline=$((SECONDS + ${IAPM_UPDATE_DRAIN_SECONDS:-180}))
+    while true; do
+        pending="$(iapm_runtime_processes)"
+        [[ -n "$pending" ]] || return 0
+        if (( SECONDS >= deadline )); then
+            printf 'LibreNMS runtime processes still running: %s\n' "$pending" >&2
+            printf 'Stop custom worker/scheduler supervisors, then retry the update. No package or schema replacement has started.\n' >&2
+            return 1
+        fi
+        sleep 1
+    done
+}
+
+iapm_pause_runtime() {
+    local state unit
+    local -a candidates=('librenms-scheduler.timer' 'iapm-worker@*.service')
+    if [[ -n "${IAPM_UPDATE_EXTRA_UNITS:-}" ]]; then
+        local -a extra=()
+        read -r -a extra <<<"$IAPM_UPDATE_EXTRA_UNITS"
+        for unit in "${extra[@]}"; do
+            [[ "$unit" =~ ^[a-zA-Z0-9@_.:-]+\.(service|timer)$ ]] || fail "Invalid extra systemd unit: $unit"
+        done
+        candidates+=("${extra[@]}")
+    fi
+    state="$(as_librenms php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo $app->isDownForMaintenance() ? "down" : "up";')"
+    [[ "$state" == 'up' || "$state" == 'down' ]] || fail 'Could not determine Laravel maintenance state.'
+    # Capture only units that were active, so neither normal exit nor a failed
+    # update starts an intentionally stopped service or timer.
+    local listed
+    listed="$(systemctl list-units --type=service,timer --state=active,activating --no-legend --plain "${candidates[@]}")" || return 1
+    mapfile -t IAPM_RESTORE_UNITS < <(awk 'NF {print $1}' <<<"$listed")
+    IAPM_RUNTIME_PAUSED=1
+    if [[ "$state" == 'up' ]]; then
+        IAPM_MAINTENANCE_CHANGED=1
+        as_librenms php artisan down --retry=60 || return 1
+    fi
+    if ((${#IAPM_RESTORE_UNITS[@]} > 0)); then
+        systemctl stop "${IAPM_RESTORE_UNITS[@]}" || return 1
+    fi
+    # Laravel's default scheduler skips new events in maintenance mode. Existing
+    # foreground runs must finish too; queue:restart is only a graceful signal.
+    as_librenms php artisan queue:restart || return 1
+    log 'Waiting for all LibreNMS queue, scheduler, and IAPM processes to finish'
+    iapm_wait_runtime
+}
+
+iapm_resume_runtime() {
+    local failed=0
+    (( IAPM_RUNTIME_PAUSED == 1 )) || return 0
+    if ((${#IAPM_RESTORE_UNITS[@]} > 0)); then
+        systemctl start "${IAPM_RESTORE_UNITS[@]}" || failed=1
+    fi
+    if (( IAPM_MAINTENANCE_CHANGED == 1 )); then
+        as_librenms php artisan up || failed=1
+    fi
+    if (( failed == 0 )); then
+        IAPM_RUNTIME_PAUSED=0
+        IAPM_MAINTENANCE_CHANGED=0
+    fi
+    return "$failed"
+}
+
+iapm_finish_runtime() {
+    if (( IAPM_REPLACEMENT_STARTED == 1 && IAPM_REPLACEMENT_COMPLETE == 0 )); then
+        printf '\nPackage/schema replacement failed. Maintenance mode and stopped units are being left in place.\n' >&2
+        printf 'Complete the update and migrations, or restore verified package/database backups, before resuming runtime activity.\n' >&2
+        printf 'Previously active units: %s\n' "${IAPM_RESTORE_UNITS[*]:-(none)}" >&2
+        if (( IAPM_MAINTENANCE_CHANGED == 1 )); then
+            printf 'After recovery, start those units and run php artisan up as the LibreNMS user.\n' >&2
+        else
+            printf 'After recovery, start those units; preserve the pre-existing maintenance state.\n' >&2
+        fi
+        return 1
+    fi
+    iapm_resume_runtime
+}
+
+# END IAPM RUNTIME HELPERS
 
 for argument in "$@"; do
     case "$argument" in
@@ -68,23 +199,21 @@ composer_wrapper() {
     as_librenms env FORCE=1 ./scripts/composer_wrapper.php "$@"
 }
 
-restart_workers() {
-    if (( WORKERS_STOPPED == 1 )) && ((${#SYSTEMD_WORKERS[@]} > 0)); then
-        log "Starting the IAPM systemd workers"
-        systemctl start "${SYSTEMD_WORKERS[@]}" || true
-        WORKERS_STOPPED=0
-    fi
-}
-
 on_exit() {
     local status=$?
-    restart_workers
+    if ! iapm_finish_runtime; then
+        if (( IAPM_REPLACEMENT_STARTED == 0 || IAPM_REPLACEMENT_COMPLETE == 1 )); then
+            printf '\nFailed to restore the previous scheduler/worker or maintenance state. Restore it manually.\n' >&2
+        fi
+        status=1
+    fi
     if (( status != 0 && status != 3 )); then
         printf '\nUpdate stopped with exit code %d.\n' "$status" >&2
         if [[ -n "$BACKUP_DIR" ]]; then
             printf 'Composer metadata backup: %s\n' "$BACKUP_DIR" >&2
         fi
     fi
+    exit "$status"
 }
 trap on_exit EXIT
 
@@ -92,10 +221,14 @@ trap on_exit EXIT
 id "$LIBRENMS_USER" >/dev/null 2>&1 || fail "User '$LIBRENMS_USER' does not exist."
 [[ -d "$LIBRENMS_DIR" ]] || fail "LibreNMS directory not found: $LIBRENMS_DIR"
 cd "$LIBRENMS_DIR"
+LIBRENMS_DIR="$(pwd -P)"
 
 command -v php >/dev/null 2>&1 || fail "PHP is not available on PATH."
 command -v sudo >/dev/null 2>&1 || fail "sudo is not available on PATH."
 command -v systemctl >/dev/null 2>&1 || fail "systemctl is not available on PATH. This script manages the iapm-worker@ units and the PHP-FPM reload through systemd; on a non-systemd host follow the manual update steps in the README instead."
+command -v pgrep >/dev/null 2>&1 || fail 'pgrep is required to verify runtime shutdown.'
+[[ -d /proc ]] || fail 'Linux /proc is required to verify runtime shutdown.'
+[[ "${IAPM_UPDATE_DRAIN_SECONDS:-180}" =~ ^[0-9]+$ ]] || fail 'IAPM_UPDATE_DRAIN_SECONDS must be a nonnegative integer.'
 
 for required in artisan lnms scripts/composer_wrapper.php composer.json; do
     [[ -e "$required" ]] || fail "Required LibreNMS file is missing: $LIBRENMS_DIR/$required"
@@ -180,20 +313,11 @@ as_librenms php -r '
 log "Checking current IAPM health (informational pre-update snapshot)"
 as_librenms php artisan iapm:health || true
 
-mapfile -t SYSTEMD_WORKERS < <(
-    systemctl list-units --type=service --state=running --no-legend 'iapm-worker@*.service' 2>/dev/null \
-        | awk '{print $1}'
-)
-if ((${#SYSTEMD_WORKERS[@]} > 0)); then
-    log "Stopping ${#SYSTEMD_WORKERS[@]} systemd-managed IAPM worker(s)"
-    systemctl stop "${SYSTEMD_WORKERS[@]}"
-    WORKERS_STOPPED=1
-else
-    log "No running iapm-worker@ systemd units found; requesting scheduler-managed workers to recycle"
-    as_librenms php artisan queue:restart || true
-fi
+log 'Pausing and draining LibreNMS runtime activity before replacing code'
+iapm_pause_runtime || fail 'Runtime did not stop safely; package and schema replacement were cancelled.'
 
 log "Installing $PACKAGE:$VERSION_CONSTRAINT"
+IAPM_REPLACEMENT_STARTED=1
 composer_wrapper require "$PACKAGE:$VERSION_CONSTRAINT" --with-dependencies --no-interaction
 
 log "Running database migrations"
@@ -202,12 +326,13 @@ as_librenms php artisan migrate --force
 log "Ensuring the plugin is enabled"
 as_librenms ./lnms plugin:enable "$PLUGIN_NAME"
 
-log "Clearing Laravel and LibreNMS application caches"
-as_librenms php artisan optimize:clear
+log "Clearing Laravel bootstrap caches while preserving runtime mutexes"
+as_librenms php artisan optimize:clear --except=cache
 
 log "Recycling queue workers onto the new code"
 as_librenms php artisan queue:restart || true
-restart_workers
+IAPM_REPLACEMENT_COMPLETE=1
+iapm_resume_runtime || fail 'Could not restore the previous runtime state.'
 
 mapfile -t PHP_FPM_UNITS < <(
     systemctl list-units --type=service --state=running --no-legend 'php*-fpm.service' 2>/dev/null \

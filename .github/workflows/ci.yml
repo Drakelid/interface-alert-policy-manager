@@ -24,6 +24,7 @@ jobs:
           tools: composer:v2
       - run: composer install --no-interaction --prefer-dist
       - run: composer validate --strict
+      - run: bash tests/Shell/UpdateProductionTest.sh
       - run: vendor/bin/pint --test
       - run: vendor/bin/phpstan analyse
       - run: vendor/bin/phpunit --testsuite unit

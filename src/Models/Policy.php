@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\Severity;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyCacheRebuilder;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\RecoveryActionScheduler;
 
 class Policy extends Model
 {
@@ -41,6 +42,11 @@ class Policy extends Model
         };
         static::saved($clear);
         static::deleted($clear);
+        static::saved(function (Policy $policy): void {
+            if ($policy->wasChanged(['enabled', 'notifications_enabled', 'notify_recovery', 'default_receiver', 'maximum_repeats'])) {
+                app(RecoveryActionScheduler::class)->reschedulePolicy((int) $policy->id);
+            }
+        });
     }
 
     protected function casts(): array

@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Console;
 
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,6 +17,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IncidentLifecycleServi
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\NotificationDispatcher;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReceiverResolver;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\RecoveryActionScheduler;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\TemplateContextBuilder;
@@ -47,6 +49,16 @@ class ProcessActionsCommand extends Command
 
     private float $deadline = 0.0;
 
+    private bool $digestsComplete = true;
+
+    private ?CarbonInterface $activationCohortStartedAt = null;
+
+    private int $activationCohortMaxId = 0;
+
+    private int $digestCohortMaxDeviceId = 0;
+
+    private float $aggregationDeadline = 0.0;
+
     public function handle(NotificationDispatcher $dispatcher, ReceiverResolver $receivers, SafeTemplateRenderer $templates, SettingStore $settings, TemplateContextBuilder $placeholders, FlapDetector $flapper, MessageTemplates $messages): int
     {
         if ($this->pluginDisabled()) {
@@ -70,26 +82,42 @@ class ProcessActionsCommand extends Command
         // Runs before the per-incident loop so a durable in-flight digest can defer
         // individual triggers until successful delivery finalizes the episode.
         $threshold = (int) $this->settings->get('aggregate_threshold', 0);
-        if ($threshold >= 2 && ! $this->option('incident') && ! $this->option('force')) {
+        $aggregate = $threshold >= 2 && ! $this->option('incident') && ! $this->option('force');
+        $aggregationReady = true;
+        if ($aggregate) {
+            // Reserve part of the command budget for existing open actions and
+            // due recoveries while a large activation cohort spans several ticks.
+            $this->aggregationDeadline = $this->deadline - min(10, max(1, $budget / 5));
             // Activate any due Pending incidents first, so ports that trip together on
             // a failing device are already Active (with a fresh triggered_at) and can
             // be grouped — otherwise they'd each fire an individual trigger this run.
-            $this->activateEligiblePending();
-            $processed += $this->emitDeviceDigests($threshold, max(30, (int) $this->settings->get('aggregate_window_seconds', 120)));
+            $activated = $this->activateEligiblePending();
+            if ($activated) {
+                $processed += $this->emitDeviceDigests($threshold, max(30, (int) $this->settings->get('aggregate_window_seconds', 120)));
+            }
+            $aggregationReady = $activated && $this->digestsComplete;
+            if ($aggregationReady) {
+                foreach (['pending_activation_started_at', 'pending_activation_max_id', 'digest_cohort_max_device_id'] as $key) {
+                    $this->settings->put($key, null);
+                }
+            }
+        } elseif (! $targeted) {
+            $this->settings->put('pending_activation_cursor_id', 0);
+            $this->settings->put('pending_activation_started_at', null);
+            $this->settings->put('pending_activation_max_id', null);
+            $this->settings->put('digest_cohort_max_device_id', null);
         }
 
-        // A targeted --incident run processes exactly that incident. Otherwise take the
-        // open working set plus only *recently* recovered incidents — recovered rows are
-        // retained for a year, so scanning them all every minute would be crippling at
-        // ISP scale. 48h is a generous window for a recovery notification (survives a
-        // scheduler outage) while keeping the scan bounded to a day or two of recoveries.
+        // A targeted run processes exactly that incident. Ordinary discovery uses
+        // the open working set and indexed due recovery markers. Historical rows
+        // with no remaining work are skipped regardless of retention length.
         $cursor = $targeted ? 0 : (int) $this->settings->get('process_actions_cursor_id', 0);
         $lastId = $cursor;
         $stopped = false;
         Incident::query()->when($cursor > 0, fn ($q) => $q->where('id', '>', $cursor))->when($this->option('incident'),
             fn ($q, $id) => $q->whereKey($id),
-            fn ($q) => $q->where(fn ($w) => $w->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged])->orWhere(fn ($r) => $r->where('state', IncidentState::Recovered)->where('recovered_at', '>=', now()->subHours(48)))))
-            ->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed, &$lastId, &$stopped): bool {
+            fn ($q) => $q->where(fn ($w) => $w->whereIn('state', [IncidentState::Pending, IncidentState::Active, IncidentState::Acknowledged])->orWhere(fn ($r) => $r->where('state', IncidentState::Recovered)->where('recovery_action_due_at', '<=', now()))))
+            ->with(['policy.actions.destination'])->chunkById((int) config('iapm.processing.batch_size', 500), function ($items) use (&$processed, &$lastId, &$stopped, $aggregate, $aggregationReady): bool {
                 $ids = $items->pluck('id');
                 $episodes = $items->pluck('episode_uuid')->filter()->unique();
                 $deliveryStats = DB::table('iapm_delivery_logs')
@@ -113,58 +141,73 @@ class ProcessActionsCommand extends Command
                         return false;
                     } // out of time budget; the next scheduled run continues the backlog
                     $lastId = (int) $incident->id;
-                    if ($incident->state === IncidentState::Pending) {
-                        if (! $this->pendingSnapshotEligible($incident)) {
-                            continue;
-                        }
-                        app(IncidentLifecycleService::class)->activateIfEligible($incident);
-                    }
-                    if (! $incident->policy || ! $incident->policy->notifications_enabled) {
-                        continue;
-                    }
-                    if ($incident->muted_until?->isFuture()) {
-                        continue;
-                    }
-
-                    // Flap dampening (opt-in per policy): while an interface is flapping,
-                    // send one dampened notice and suppress the routine trigger/reminder/
-                    // recovery churn until it stabilises.
-                    if ($this->flapper->shouldDampen($incident, $incident->policy)) {
-                        if (! $this->option('force')) {
-                            $processed += $this->dampenFlapping($incident);
-
-                            continue;
-                        }
-                    } elseif (! empty($incident->context_json['flap_notified'])) {
-                        $ctx = $incident->context_json;
-                        unset($ctx['flap_notified']);
-                        $incident->update(['context_json' => $ctx]);
-                        $incident->events()->create(['event_type' => 'flap_cleared', 'event_message' => 'Interface stabilised; normal notifications resume.']);
-                    }
-
-                    $phases = match ($incident->state) {
-                        IncidentState::Recovered => ['recovery'], IncidentState::Acknowledged => ['acknowledged'], IncidentState::Active => ['trigger', 'escalation', 'reminder'], default => []
-                    };
-                    foreach ($phases as $phase) {
-                        if ($phase === 'recovery' && ! $incident->policy->notify_recovery) {
-                            continue;
-                        }
-                        foreach ($incident->policy->actions->filter(fn ($action) => $action->enabled && $action->phase->value === $phase && (! $this->option('action') || (int) $this->option('action') === (int) $action->id)) as $action) {
-                            $stat = $deliveryStats->get($this->actionStatKey((int) $incident->id, (string) $incident->episode_uuid, (int) $action->id, $phase));
-                            if (! $this->option('force') && (int) ($stat->recent_config_failures ?? 0) > 0) {
+                    try {
+                        if ($incident->state === IncidentState::Pending) {
+                            if ($aggregate) {
+                                // Pending activation belongs to the frozen
+                                // cohort prepass; new arrivals wait for its next
+                                // pass instead of leaking individual triggers.
                                 continue;
                             }
-                            // Repeat eligibility is checked per receiver under
-                            // the dispatcher's incident lock, using fresh data.
-                            $phaseStart = match ($phase) {
-                                'recovery' => $incident->recovered_at, 'acknowledged' => $incident->acknowledged_at, default => $incident->triggered_at ?? $incident->first_seen_at
-                            };
-                            if (! $phaseStart || (! $this->option('force') && $phaseStart->copy()->addSeconds($action->delay_seconds)->isFuture())) {
+                            if (! $this->pendingSnapshotEligible($incident)) {
                                 continue;
                             }
-                            if ($this->sendAction($incident, $action, $phase)) {
-                                $processed++;
+                            app(IncidentLifecycleService::class)->activateIfEligible($incident);
+                        }
+                        if (! $incident->policy || ! $incident->policy->notifications_enabled) {
+                            continue;
+                        }
+                        if ($incident->muted_until?->isFuture()) {
+                            continue;
+                        }
+
+                        // Flap dampening (opt-in per policy): while an interface is flapping,
+                        // send one dampened notice and suppress the routine trigger/reminder/
+                        // recovery churn until it stabilises.
+                        if ($this->flapper->shouldDampen($incident, $incident->policy)) {
+                            if (! $this->option('force')) {
+                                $processed += $this->dampenFlapping($incident);
+
+                                continue;
                             }
+                        } elseif (! empty($incident->context_json['flap_notified'])) {
+                            $ctx = $incident->context_json;
+                            unset($ctx['flap_notified']);
+                            $incident->update(['context_json' => $ctx]);
+                            $incident->events()->create(['event_type' => 'flap_cleared', 'event_message' => 'Interface stabilised; normal notifications resume.']);
+                        }
+
+                        $phases = match ($incident->state) {
+                            IncidentState::Recovered => ['recovery'], IncidentState::Acknowledged => ['acknowledged'], IncidentState::Active => ['trigger', 'escalation', 'reminder'], default => []
+                        };
+                        foreach ($phases as $phase) {
+                            if ($phase === 'trigger' && $aggregate && (! $aggregationReady || $incident->id > $this->activationCohortMaxId || $incident->device_id > $this->digestCohortMaxDeviceId)) {
+                                continue;
+                            }
+                            if ($phase === 'recovery' && ! $incident->policy->notify_recovery) {
+                                continue;
+                            }
+                            foreach ($incident->policy->actions->filter(fn ($action) => $action->enabled && $action->phase->value === $phase && (! $this->option('action') || (int) $this->option('action') === (int) $action->id)) as $action) {
+                                $stat = $deliveryStats->get($this->actionStatKey((int) $incident->id, (string) $incident->episode_uuid, (int) $action->id, $phase));
+                                if (! $this->option('force') && (int) ($stat->recent_config_failures ?? 0) > 0) {
+                                    continue;
+                                }
+                                // Repeat eligibility is checked per receiver under
+                                // the dispatcher's incident lock, using fresh data.
+                                $phaseStart = match ($phase) {
+                                    'recovery' => $incident->recovered_at, 'acknowledged' => $incident->acknowledged_at, default => $incident->triggered_at ?? $incident->first_seen_at
+                                };
+                                if (! $phaseStart || (! $this->option('force') && $phaseStart->copy()->addSeconds($action->delay_seconds)->isFuture())) {
+                                    continue;
+                                }
+                                if ($this->sendAction($incident, $action, $phase)) {
+                                    $processed++;
+                                }
+                            }
+                        }
+                    } finally {
+                        if ($incident->state === IncidentState::Recovered) {
+                            app(RecoveryActionScheduler::class)->scheduleNext($incident);
                         }
                     }
                 }
@@ -185,18 +228,35 @@ class ProcessActionsCommand extends Command
      * Promote due Pending incidents to Active (same rule the per-incident loop
      * uses) so the device digest can group ports that just tripped together.
      */
-    private function activateEligiblePending(): void
+    private function activateEligiblePending(): bool
     {
-        Incident::query()->where('state', IncidentState::Pending)->with('policy')->orderBy('id')->limit((int) config('iapm.processing.batch_size', 500) * 2)->get()->each(function ($incident): bool {
-            if (microtime(true) >= $this->deadline) {
-                return false;
-            }
-            if ($this->pendingSnapshotEligible($incident)) {
-                app(IncidentLifecycleService::class)->activateIfEligible($incident);
-            }
+        foreach (['pending_activation_cursor_id', 'pending_activation_started_at', 'pending_activation_max_id', 'digest_cohort_max_device_id'] as $key) {
+            $this->settings->forget($key);
+        }
+        $started = $this->settings->get('pending_activation_started_at');
+        $this->activationCohortStartedAt = is_string($started) ? CarbonImmutable::parse($started) : CarbonImmutable::now();
+        $this->settings->put('pending_activation_started_at', $this->activationCohortStartedAt->toIso8601String());
+        $this->activationCohortMaxId = (int) ($this->settings->get('pending_activation_max_id') ?? Incident::max('id') ?? 0);
+        $this->digestCohortMaxDeviceId = (int) ($this->settings->get('digest_cohort_max_device_id') ?? Incident::max('device_id') ?? 0);
+        $this->settings->put('pending_activation_max_id', $this->activationCohortMaxId);
+        $this->settings->put('digest_cohort_max_device_id', $this->digestCohortMaxDeviceId);
+        $cursor = (int) $this->settings->get('pending_activation_cursor_id', 0);
+        $complete = true;
+        Incident::query()->where('state', IncidentState::Pending)->where('id', '>', $cursor)->where('id', '<=', $this->activationCohortMaxId)->with('policy')
+            ->chunkById(max(1, (int) config('iapm.processing.batch_size', 500)), function ($incidents) use (&$cursor, &$complete): bool {
+                if (microtime(true) >= $this->aggregationDeadline) {
+                    $complete = false;
 
-            return true;
-        });
+                    return false;
+                }
+                app(IncidentLifecycleService::class)->activateManyIfEligible($incidents);
+                $cursor = (int) $incidents->last()->id;
+
+                return true;
+            });
+        $this->settings->put('pending_activation_cursor_id', $complete ? 0 : $cursor);
+
+        return $complete;
     }
 
     private function pendingSnapshotEligible(Incident $incident): bool
@@ -214,19 +274,26 @@ class ProcessActionsCommand extends Command
     private function emitDeviceDigests(int $threshold, int $window): int
     {
         $cutoff = now()->subSeconds($window);
+        if ($this->activationCohortStartedAt?->isBefore($cutoff)) {
+            $cutoff = $this->activationCohortStartedAt;
+        }
         $sent = 0;
+        $this->digestsComplete = true;
 
         // Find candidate devices with a grouped count first, then load one device's
         // incidents at a time — a simultaneous multi-thousand-port event never pulls
         // every eligible incident into memory at once.
         $limit = max(1, (int) config('iapm.processing.digest_devices_per_run', 100));
+        $this->settings->forget('digest_cursor_device_id');
         $cursor = (int) $this->settings->get('digest_cursor_device_id', 0);
         $deviceIds = $this->digestBase($cutoff)->when($cursor > 0, fn ($query) => $query->where('device_id', '>', $cursor))->select('device_id')->groupBy('device_id')->havingRaw('COUNT(*) >= ?', [$threshold])->orderBy('device_id')->limit($limit)->pluck('device_id');
 
         foreach ($deviceIds as $deviceId) {
-            if (microtime(true) >= $this->deadline) {
+            if (microtime(true) >= $this->aggregationDeadline) {
+                $this->digestsComplete = false;
                 break;
             }
+            $cursor = (int) $deviceId;
             $incidents = $this->digestBase($cutoff)->where('device_id', $deviceId)->with(['policy.actions.destination'])->get()
                 ->filter(fn ($i) => empty($i->context_json['trigger_notified_via_digest']))
                 ->values();
@@ -234,9 +301,9 @@ class ProcessActionsCommand extends Command
                 continue;
             } // already-digested incidents dropped it below threshold
             $sent += $this->sendDeviceDigest($incidents, $threshold);
-            $cursor = (int) $deviceId;
         }
-        $this->settings->put('digest_cursor_device_id', $deviceIds->count() < $limit ? 0 : $cursor);
+        $this->digestsComplete = $this->digestsComplete && $deviceIds->count() < $limit;
+        $this->settings->put('digest_cursor_device_id', $this->digestsComplete ? 0 : $cursor);
 
         return $sent;
     }
@@ -250,6 +317,7 @@ class ProcessActionsCommand extends Command
     private function digestBase(CarbonInterface $cutoff): Builder
     {
         return Incident::query()
+            ->where('id', '<=', $this->activationCohortMaxId)->where('device_id', '<=', $this->digestCohortMaxDeviceId)
             ->where('state', IncidentState::Active)
             ->whereNotNull('triggered_at')->where('triggered_at', '>=', $cutoff)
             ->where(fn ($q) => $q->whereNull('muted_until')->orWhere('muted_until', '<=', now()))

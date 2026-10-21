@@ -8,6 +8,7 @@ use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\MessageTemplates;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SafeTemplateRenderer;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SmsContentFilter;
@@ -23,7 +24,7 @@ class TemplatePreviewController extends Controller
 
         if ($request->isMethod('post')) {
             $data = $request->validate(['port_id' => ['required', 'integer', new PortHasDevice], 'template' => ['required', 'string', 'max:10000']]);
-            $port = Port::with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']);
+            $port = app(InventoryAccess::class)->ports(Port::query())->with(['device.location', 'device.groups', 'groups'])->findOrFail($data['port_id']);
             $values = $placeholders->forPreview($contexts->forPort($port));
             try {
                 $rendered = $smsFilters->filter($renderer->render($data['template'], $values));
@@ -34,7 +35,7 @@ class TemplatePreviewController extends Controller
         }
 
         // A GET with ?port_id= (the Interface Matrix link) prefills the picker too.
-        $port ??= $request->filled('port_id') ? Port::with('device')->find($request->integer('port_id')) : null;
+        $port ??= $request->filled('port_id') ? app(InventoryAccess::class)->ports(Port::query())->with('device')->find($request->integer('port_id')) : null;
 
         return view('iapm::template-preview', ['rendered' => $rendered, 'warning' => $warning, 'defaultTemplate' => MessageTemplates::default('trigger'), 'portLabel' => $port ? $lookup->portLabel($port) : '']);
     }

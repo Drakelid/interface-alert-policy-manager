@@ -7,6 +7,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\DTO\InterfaceContext;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\DTO\PolicyResolution;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\AssignmentType;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Assignment;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\AssignmentDeviceGroup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 
 class PolicyResolver
@@ -52,10 +53,14 @@ class PolicyResolver
                 }
             }
         };
-        $appendRegex = function (array $ids, string $subject) use (&$matches, $index): void {
+        $subjectLimit = $this->regexSubjectBytes ??= max(1, (int) config('iapm.resolver.regex_subject_bytes', 2048));
+        $appendRegex = function (array $ids, string $subject) use (&$matches, $index, $subjectLimit): void {
+            if (strlen($subject) > $subjectLimit) {
+                return;
+            }
             foreach ($ids as $id) {
                 $pattern = $index['regex_patterns'][$id] ?? null;
-                if (is_string($pattern) && $this->regex($pattern, $subject)) {
+                if (is_string($pattern) && @preg_match($pattern, $subject) === 1) {
                     $matches[] = $index['all'][$id];
                 }
             }
@@ -76,14 +81,17 @@ class PolicyResolver
         $append($index['default']);
         // Explicit device exclusions take precedence over every inclusion,
         // including port assignments and the configured fallback policy.
-        $exclusions = array_values(array_filter($matches, fn (Assignment $assignment): bool => $assignment->assignment_type === AssignmentType::Device && $assignment->match_mode === 'exclude'));
+        // Device exclusions are topology, so classify them once while building
+        // the index. Re-reading enum casts on every candidate here made a fleet
+        // with thousands of matching assignments spend seconds in model access.
+        $exclusion = $index['device_exclusions'][$context->deviceId][0] ?? null;
         /** @var Assignment|null $winner */
-        $winner = $exclusions[0] ?? $matches[0] ?? null;
+        $winner = $exclusion ?? $matches[0] ?? null;
         if (! $winner && $this->configuredDefault === null) {
             $id = $this->settings->get('default_policy_id');
             $this->configuredDefault = $id ? (Policy::where('enabled', true)->find($id) ?: false) : false;
         }
-        $resolution = new PolicyResolution($exclusions ? null : ($winner?->policy ?? ($this->configuredDefault ?: null)), $winner, $matches);
+        $resolution = new PolicyResolution($exclusion !== null ? null : ($winner?->policy ?? ($this->configuredDefault ?: null)), $winner, $matches);
         // The policy cache is a materialised view for the UI matrix. Writing it on
         // every resolve means one upsert per fault on the ingestion hot path — heavy
         // during a storm. Callers on that path pass writeCache=false; the per-minute
@@ -105,10 +113,9 @@ class PolicyResolver
         // Let MariaDB order the topology once. Repeated PHP comparisons against
         // enum casts and Eloquent relations are disproportionately expensive at
         // thousands of assignments, even though the SQL dataset is small.
-        $assignments = Assignment::query()
+        $assignments = DB::table('iapm_assignments')
             ->select('iapm_assignments.*')
             ->join('iapm_policies', 'iapm_policies.id', '=', 'iapm_assignments.policy_id')
-            ->with(['policy.schedule', 'deviceGroups'])
             ->where('iapm_assignments.enabled', true)
             ->where('iapm_policies.enabled', true)
             ->orderByRaw("CASE iapm_assignments.assignment_type WHEN 'port' THEN 9 WHEN 'port_group' THEN 8 WHEN 'device' THEN 7 WHEN 'device_group' THEN 6 WHEN 'location' THEN 5 WHEN 'ifalias_regex' THEN 4 WHEN 'ifname_regex' THEN 3 WHEN 'interface_type' THEN 2 WHEN 'default' THEN 1 ELSE 0 END DESC")
@@ -116,45 +123,59 @@ class PolicyResolver
             ->orderByDesc('iapm_policies.priority')
             ->orderByDesc('iapm_assignments.updated_at')
             ->get();
-        $index = ['all' => [], 'rank' => [], 'regex_patterns' => [], 'port' => [], 'device' => [], 'location' => [], 'port_group' => [], 'device_group' => [], 'interface_type' => [], 'default' => [], 'ifalias_regex' => [], 'ifname_regex' => [], 'device_group_complex' => []];
+        // The topology is immutable for this resolver. Load its small relation
+        // dictionaries once instead of asking Eloquent to repeatedly extract
+        // cast keys while matching thousands of mostly unrelated assignments.
+        $policies = Policy::with('schedule')->whereIn('id', $assignments->pluck('policy_id')->unique())->get()->keyBy('id');
+        $groupIds = $assignments->where('assignment_type', AssignmentType::DeviceGroup->value)->pluck('id');
+        $groups = $groupIds->isEmpty() ? collect() : AssignmentDeviceGroup::whereIn('assignment_id', $groupIds)->get()->groupBy('assignment_id');
+        $prototype = new Assignment;
+        $emptyGroups = (new AssignmentDeviceGroup)->newCollection();
+        $index = ['all' => [], 'rank' => [], 'regex_patterns' => [], 'port' => [], 'device' => [], 'device_exclusions' => [], 'location' => [], 'port_group' => [], 'device_group' => [], 'interface_type' => [], 'default' => [], 'ifalias_regex' => [], 'ifname_regex' => [], 'device_group_complex' => []];
         $regexLimit = max(1, (int) config('iapm.resolver.max_regex_assignments', 5000));
 
-        foreach ($assignments as $rank => $assignment) {
-            $index['all'][$assignment->id] = $assignment;
-            $index['rank'][$assignment->id] = $rank;
-            $type = $assignment->assignment_type;
+        foreach ($assignments as $rank => $row) {
+            $id = (int) $row->id;
+            $assignment = $prototype->newFromBuilder((array) $row);
+            $assignment->setRelation('policy', $policies->get((int) $row->policy_id));
+            $assignment->setRelation('deviceGroups', $groups->get($id, $emptyGroups));
+            $index['all'][$id] = $assignment;
+            $index['rank'][$id] = $rank;
+            $type = AssignmentType::from((string) $row->assignment_type);
             if ($type === AssignmentType::IfAliasRegex || $type === AssignmentType::IfNameRegex) {
                 $bucket = $type === AssignmentType::IfAliasRegex ? 'ifalias_regex' : 'ifname_regex';
                 if (count($index[$bucket]) >= $regexLimit) {
                     throw new \RuntimeException("Enabled {$bucket} assignments exceed the configured safe limit of {$regexLimit}; none may be silently excluded.");
                 }
-                $index[$bucket][] = $assignment->id;
-                $index['regex_patterns'][$assignment->id] = $assignment->match_expression;
-                $this->prepareRegex($assignment->match_expression);
+                $index[$bucket][] = $id;
+                $index['regex_patterns'][$id] = $this->prepareRegex($row->match_expression);
 
                 continue;
             }
             if ($type === AssignmentType::DeviceGroup) {
-                $index['excluded_devices'][$assignment->id] = array_fill_keys(array_map('intval', (array) ($assignment->metadata_json['excluded_device_ids'] ?? [])), true);
-                $index['excluded_ports'][$assignment->id] = array_fill_keys(array_map('intval', (array) ($assignment->metadata_json['excluded_port_ids'] ?? [])), true);
-                if ($assignment->match_mode === 'any') {
+                $index['excluded_devices'][$id] = array_fill_keys(array_map('intval', (array) ($assignment->metadata_json['excluded_device_ids'] ?? [])), true);
+                $index['excluded_ports'][$id] = array_fill_keys(array_map('intval', (array) ($assignment->metadata_json['excluded_port_ids'] ?? [])), true);
+                if ($row->match_mode === 'any') {
                     foreach ($assignment->deviceGroups as $group) {
-                        $index['device_group'][(int) $group->device_group_id][] = $assignment->id;
+                        $index['device_group'][(int) $group->device_group_id][] = $id;
                     }
                 } else {
-                    $index['device_group_complex'][] = $assignment->id;
+                    $index['device_group_complex'][] = $id;
                 }
 
                 continue;
             }
             if ($type === AssignmentType::Default) {
-                $index['default'][] = $assignment->id;
+                $index['default'][] = $id;
 
                 continue;
             }
             $bucket = $type->value;
-            $key = $type === AssignmentType::InterfaceType ? (string) $assignment->assignment_reference : (int) $assignment->assignment_reference;
-            $index[$bucket][$key][] = $assignment->id;
+            $key = $type === AssignmentType::InterfaceType ? (string) $row->assignment_reference : (int) $row->assignment_reference;
+            if ($type === AssignmentType::Device && $row->match_mode === 'exclude') {
+                $index['device_exclusions'][$key][] = $assignment;
+            }
+            $index[$bucket][$key][] = $id;
         }
 
         return $index;

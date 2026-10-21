@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Command;
 use Illuminate\Support\Facades\Http;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class ProcessActionsCommandTest extends IntegrationTestCase
@@ -123,14 +124,15 @@ class ProcessActionsCommandTest extends IntegrationTestCase
         self::assertSame(1, DeliveryLog::where('phase', 'acknowledged')->count());
     }
 
-    public function test_a_long_recovered_incident_is_not_reprocessed(): void
+    public function test_recovered_history_without_due_work_is_not_reprocessed(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);
         $policy = $this->policy(['notify_recovery' => true]);
         $this->triggerAction($policy, $this->smsDestination(), ['phase' => 'recovery']);
-        // Recovered 3 days ago — outside the 48h window, so it must not be scanned or
-        // re-notified (recovered rows are retained for a year).
-        $this->incident($policy, $this->downPort($this->device()), ['state' => IncidentState::Recovered, 'recovered_at' => now()->subDays(3)]);
+        // Terminal history has no due marker; elapsed recovery age alone does
+        // not turn it into work again.
+        $incident = $this->incident($policy, $this->downPort($this->device()), ['state' => IncidentState::Recovered, 'first_seen_at' => now()->subDays(4), 'recovered_at' => now()->subDays(3)]);
+        Incident::whereKey($incident->id)->update(['recovery_action_due_at' => null]);
 
         $this->artisan('iapm:process-actions')->assertExitCode(0);
 

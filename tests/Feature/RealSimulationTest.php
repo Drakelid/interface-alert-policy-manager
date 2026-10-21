@@ -4,6 +4,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\Feature;
 
 use App\Models\Port;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\AuditLog;
@@ -149,16 +150,20 @@ class RealSimulationTest extends IntegrationTestCase
     public function test_a_viewer_cannot_start_a_real_simulation(): void
     {
         Permission::findOrCreate('view iapm', 'web');
+        Permission::findOrCreate('port.view', 'web');
         $viewer = User::factory()->create(['enabled' => true]);
-        $viewer->givePermissionTo('view iapm');
+        $viewer->givePermissionTo(['view iapm', 'port.view']);
         $port = $this->downPort($this->device(), ['ifOperStatus' => 'up']);
 
-        $this->actingAs($viewer)->post(self::BASE, [
+        $payload = [
             'port_id' => $port->port_id,
             'duration_seconds' => 600,
             'simulated_admin_status' => 'up',
             'simulated_oper_status' => 'down',
-        ])->assertForbidden();
+        ];
+        $this->actingAs($viewer)->post(self::BASE, $payload)->assertNotFound();
+        DB::table('ports_perms')->insert(['user_id' => $viewer->user_id, 'port_id' => $port->port_id]);
+        $this->post(self::BASE, $payload)->assertForbidden();
 
         self::assertSame(0, Simulation::count());
         self::assertSame('up', $this->statusValue($port->fresh()->ifOperStatus));

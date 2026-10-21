@@ -2,6 +2,7 @@
 
 namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Controllers;
 
+use App\Models\Port;
 use App\Models\PortGroup;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -9,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyCacheRebuilder;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\SettingStore;
 
@@ -16,7 +18,7 @@ class SettingsController extends Controller
 {
     public function edit(Request $request, SettingStore $s)
     {
-        return view('iapm::admin-settings', ['values' => ['dry_run' => $s->get('dry_run', true), 'default_policy_id' => $s->get('default_policy_id'), 'sms_default_receiver' => $request->user()->can('manage iapm settings') ? $s->get('sms_default_receiver') : null, 'retention_days' => $s->get('retention_days', 365), 'notification_timeout' => $s->get('notification_timeout', 15), 'notification_retry_count' => $s->get('notification_retry_count', 2), 'deleted_port_behavior' => $s->get('deleted_port_behavior', 'recover'), 'url_base' => $s->get('url_base', config('app.url')), 'uplink_port_group_id' => $s->get('uplink_port_group_id'), 'aggregate_threshold' => $s->get('aggregate_threshold', 0), 'aggregate_window_seconds' => $s->get('aggregate_window_seconds', 120), 'dispatch_mode' => $s->get('dispatch_mode', 'queue'), 'record_unpoliced' => $s->get('record_unpoliced', true), 'has_token' => filled($s->get('ingestion_token'))], 'policies' => Policy::orderBy('name')->get(), 'portGroups' => PortGroup::orderBy('name')->get(['id', 'name'])]);
+        return view('iapm::admin-settings', ['values' => ['dry_run' => $s->get('dry_run', true), 'default_policy_id' => $s->get('default_policy_id'), 'sms_default_receiver' => $request->user()->can('manage iapm settings') ? $s->get('sms_default_receiver') : null, 'retention_days' => $s->get('retention_days', 365), 'notification_timeout' => $s->get('notification_timeout', 15), 'notification_retry_count' => $s->get('notification_retry_count', 2), 'deleted_port_behavior' => $s->get('deleted_port_behavior', 'recover'), 'url_base' => $s->get('url_base', config('app.url')), 'uplink_port_group_id' => $s->get('uplink_port_group_id'), 'aggregate_threshold' => $s->get('aggregate_threshold', 0), 'aggregate_window_seconds' => $s->get('aggregate_window_seconds', 120), 'dispatch_mode' => $s->get('dispatch_mode', 'queue'), 'record_unpoliced' => $s->get('record_unpoliced', true), 'has_token' => filled($s->get('ingestion_token'))], 'policies' => Policy::orderBy('name')->get(), 'portGroups' => PortGroup::query()->when(! app(InventoryAccess::class)->unrestricted(), fn ($query) => $query->whereIn('id', DB::table('port_group_port')->select('port_group_id')->whereIn('port_id', app(InventoryAccess::class)->ports(Port::query())->select('ports.port_id'))))->orderBy('name')->get(['id', 'name'])]);
     }
 
     public function update(Request $r, SettingStore $s, AuditService $audit)

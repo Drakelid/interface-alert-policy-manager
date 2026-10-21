@@ -64,6 +64,44 @@ class UrlGuardTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    #[DataProvider('specialUseAddresses')]
+    public function test_non_global_unicast_addresses_require_the_private_network_opt_in(string $ip): void
+    {
+        $url = 'http://'.(str_contains($ip, ':') ? '['.$ip.']' : $ip).'/hook';
+        (new UrlGuard)->assertAllowed($url, allowPrivate: true);
+        $this->expectException(InvalidArgumentException::class);
+        (new UrlGuard)->assertAllowed($url);
+    }
+
+    public static function specialUseAddresses(): array
+    {
+        return array_map(static fn (string $ip) => [$ip], [
+            '100.64.0.0', '100.127.255.255', '198.18.0.0', '198.19.255.255',
+            '192.0.2.1', '198.51.100.1', '203.0.113.1', '192.88.99.2',
+            '224.0.0.1', '239.255.255.255', '::ffff:100.64.0.1',
+            '64:ff9b::7f00:1', '64:ff9b::a9fe:a9fe', '64:ff9b:1::808:808',
+            '100:0:0:1::1', '2001:2::1', '2001:db8::1', '2002:0808:0808::1',
+            '3fff::1', '3fff:fff:ffff:ffff:ffff:ffff:ffff:ffff', '5f00::1',
+            'fec0::1', 'ff02::1',
+        ]);
+    }
+
+    #[DataProvider('publicUnicastAddresses')]
+    public function test_public_unicast_and_public_translation_addresses_are_allowed(string $ip): void
+    {
+        (new UrlGuard)->assertAllowed('http://'.(str_contains($ip, ':') ? '['.$ip.']' : $ip).'/hook');
+        $this->addToAssertionCount(1);
+    }
+
+    public static function publicUnicastAddresses(): array
+    {
+        return array_map(static fn (string $ip) => [$ip], [
+            '8.8.8.8', '100.63.255.255', '100.128.0.0', '198.17.255.255', '198.20.0.0',
+            '192.0.0.9', '192.0.0.10', '2606:4700:4700::1111', '64:ff9b::808:808',
+            '2001:1::3', '2001:3::1', '2001:4:112::1', '2001:20::1', '2001:30::1',
+        ]);
+    }
+
     public function test_a_public_ipv4_mapped_literal_is_allowed_in_hexadecimal_form(): void
     {
         (new UrlGuard)->assertAllowed('http://[::ffff:0808:0808]/hook');

@@ -9,6 +9,20 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Tests\IntegrationTestCase;
 
 class WebhookSsrfTest extends IntegrationTestCase
 {
+    public function test_server_cooldowns_longer_than_one_day_are_preserved_and_overflow_is_rejected(): void
+    {
+        Http::fakeSequence()->push('limited', 429, ['Retry-After' => '172800'])
+            ->push('maintenance', 503, ['Retry-After' => gmdate(DATE_RFC7231, time() + 172800)])
+            ->push('invalid', 429, ['Retry-After' => str_repeat('9', 100)]);
+        $destination = $this->webhook(['url' => 'http://127.0.0.1/hook', 'allow_private_networks' => true]);
+        $transport = app(TransportManager::class)->for('generic_webhook');
+        $configuration = (array) $destination->configuration_encrypted;
+
+        self::assertSame(172800, $transport->send($configuration, 'noc', 'message')->retryAfterSeconds);
+        self::assertEqualsWithDelta(172800, $transport->send($configuration, 'noc', 'message')->retryAfterSeconds, 5);
+        self::assertNull($transport->send($configuration, 'noc', 'message')->retryAfterSeconds);
+    }
+
     public function test_a_blocked_url_is_never_requested(): void
     {
         Http::fake();

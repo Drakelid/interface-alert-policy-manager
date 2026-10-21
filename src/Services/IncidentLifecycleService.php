@@ -24,6 +24,7 @@ class IncidentLifecycleService
             'first_seen_at' => now(),
             'triggered_at' => null,
             'recovered_at' => null,
+            'recovery_action_due_at' => null,
             'acknowledged_at' => null,
             'acknowledged_by' => null,
             'pre_acknowledgement_state' => null,
@@ -68,32 +69,83 @@ class IncidentLifecycleService
         });
     }
 
+    /** Activate a bounded batch before discovering device digests. */
+    public function activateManyIfEligible(iterable $incidents): int
+    {
+        $snapshots = collect($incidents)->keyBy('id');
+        if ($snapshots->isEmpty()) {
+            return 0;
+        }
+
+        return DB::transaction(function () use ($snapshots): int {
+            $at = now();
+            $eligible = Incident::with('policy')->whereIn('id', $snapshots->keys())
+                ->where('state', IncidentState::Pending)->whereNull('recovered_at')
+                ->orderBy('id')->lockForUpdate()->get()->filter(function (Incident $incident) use ($snapshots, $at): bool {
+                    return $incident->episode_uuid === $snapshots->get($incident->id)?->episode_uuid
+                        && $incident->policy?->enabled
+                        && $incident->first_seen_at?->copy()->addSeconds((int) $incident->policy->trigger_after_seconds)->lessThanOrEqualTo($at)
+                        && (int) ($incident->context_json['observation_count'] ?? 1) >= (int) $incident->policy->down_observations;
+                });
+            if ($eligible->isEmpty()) {
+                return 0;
+            }
+            $quotedAt = DB::connection()->getPdo()->quote($at->toDateTimeString());
+            if ($quotedAt === false) {
+                throw new \RuntimeException('Cannot quote activation time.');
+            }
+            Incident::whereIn('id', $eligible->modelKeys())->update([
+                'state' => IncidentState::Active,
+                'triggered_at' => DB::raw("COALESCE(triggered_at, {$quotedAt})"),
+                'updated_at' => $at,
+            ]);
+            DB::table('iapm_incident_events')->insert($eligible->map(fn (Incident $incident): array => [
+                'incident_id' => $incident->id,
+                'event_type' => 'activated',
+                'event_message' => 'Trigger requirements satisfied.',
+                'event_data' => null,
+                'actor_user_id' => null,
+                'created_at' => $at,
+                'updated_at' => $at,
+            ])->values()->all());
+
+            return $eligible->count();
+        }, 3);
+    }
+
     public function acknowledge(Incident $incident, ?int $actorId = null): void
     {
-        if ($incident->state === IncidentState::Recovered) {
-            throw new \DomainException('A recovered incident cannot be acknowledged.');
-        }
-        if ($incident->state === IncidentState::Acknowledged) {
-            return;
-        }
-        $prior = $incident->state;
-        $incident->update(['state' => IncidentState::Acknowledged, 'pre_acknowledgement_state' => $prior->value, 'acknowledged_at' => now(), 'acknowledged_by' => $actorId]);
-        $incident->events()->create(['event_type' => 'acknowledged', 'event_message' => $actorId ? 'Incident acknowledged.' : 'Acknowledged upstream in LibreNMS.', 'actor_user_id' => $actorId, 'event_data' => ['previous_state' => $prior->value]]);
+        DB::transaction(function () use ($incident, $actorId): void {
+            $locked = $this->lockEpisode($incident);
+            if ($locked->state === IncidentState::Recovered || $locked->recovered_at !== null) {
+                throw new \DomainException('A recovered incident cannot be acknowledged.');
+            }
+            if ($locked->state !== IncidentState::Acknowledged) {
+                $prior = $locked->state;
+                $locked->update(['state' => IncidentState::Acknowledged, 'pre_acknowledgement_state' => $prior->value, 'acknowledged_at' => now(), 'acknowledged_by' => $actorId]);
+                $locked->events()->create(['event_type' => 'acknowledged', 'event_message' => $actorId ? 'Incident acknowledged.' : 'Acknowledged upstream in LibreNMS.', 'actor_user_id' => $actorId, 'event_data' => ['previous_state' => $prior->value]]);
+            }
+            $incident->setRawAttributes($locked->getAttributes(), true);
+        }, 3);
     }
 
     public function unacknowledge(Incident $incident, ?int $actorId = null): IncidentState
     {
-        if ($incident->state !== IncidentState::Acknowledged) {
-            throw new \DomainException('Only an acknowledged incident can be unacknowledged.');
-        }
-        $target = IncidentState::tryFrom((string) $incident->pre_acknowledgement_state) ?? ($incident->suppression_reason ? IncidentState::Suppressed : ($incident->triggered_at ? IncidentState::Active : IncidentState::Pending));
-        if ($target === IncidentState::Recovered || $incident->recovered_at !== null) {
-            throw new \DomainException('A recovered incident cannot be resurrected.');
-        }
-        $incident->update(['state' => $target, 'pre_acknowledgement_state' => null, 'acknowledged_at' => null, 'acknowledged_by' => null]);
-        $incident->events()->create(['event_type' => 'unacknowledged', 'event_message' => 'Acknowledgement removed.', 'actor_user_id' => $actorId, 'event_data' => ['restored_state' => $target->value]]);
+        return DB::transaction(function () use ($incident, $actorId): IncidentState {
+            $locked = $this->lockEpisode($incident);
+            if ($locked->state !== IncidentState::Acknowledged) {
+                throw new \DomainException('Only an acknowledged incident can be unacknowledged.');
+            }
+            $target = IncidentState::tryFrom((string) $locked->pre_acknowledgement_state) ?? ($locked->suppression_reason ? IncidentState::Suppressed : ($locked->triggered_at ? IncidentState::Active : IncidentState::Pending));
+            if ($target === IncidentState::Recovered || $locked->recovered_at !== null) {
+                throw new \DomainException('A recovered incident cannot be resurrected.');
+            }
+            $locked->update(['state' => $target, 'pre_acknowledgement_state' => null, 'acknowledged_at' => null, 'acknowledged_by' => null]);
+            $locked->events()->create(['event_type' => 'unacknowledged', 'event_message' => 'Acknowledgement removed.', 'actor_user_id' => $actorId, 'event_data' => ['restored_state' => $target->value]]);
+            $incident->setRawAttributes($locked->getAttributes(), true);
 
-        return $target;
+            return $target;
+        }, 3);
     }
 
     public function recover(Incident $incident, string $message, array $attributes = []): bool
@@ -109,7 +161,7 @@ class IncidentLifecycleService
                 return false;
             }
             $reason = $locked->suppression_reason;
-            $locked->update(array_merge($attributes, ['state' => IncidentState::Recovered, 'recovered_at' => now(), 'last_seen_at' => now(), 'suppression_reason' => null]));
+            $locked->update(array_merge($attributes, ['state' => IncidentState::Recovered, 'recovered_at' => now(), 'recovery_action_due_at' => now(), 'last_seen_at' => now(), 'suppression_reason' => null]));
             $locked->events()->create(['event_type' => 'recovered', 'event_message' => $message]);
             $this->outages->record($locked->fresh(), $reason);
             $incident->setRawAttributes($locked->fresh()->getAttributes(), true);
@@ -199,6 +251,7 @@ class IncidentLifecycleService
             $incidentUpdate = [
                 'state' => IncidentState::Recovered,
                 'recovered_at' => $recoveredAt,
+                'recovery_action_due_at' => $recoveredAt,
                 'last_seen_at' => $recoveredAt,
                 'suppression_reason' => null,
                 'updated_at' => $recoveredAt,
@@ -213,6 +266,16 @@ class IncidentLifecycleService
 
             return $locked->count();
         });
+    }
+
+    private function lockEpisode(Incident $snapshot): Incident
+    {
+        $locked = Incident::whereKey($snapshot->id)->lockForUpdate()->first();
+        if (! $locked || ! $this->sameEpisodeSource($locked, $snapshot)) {
+            throw new \DomainException('The incident changed. Refresh it before changing acknowledgement.');
+        }
+
+        return $locked;
     }
 
     private function sameEpisodeSource(Incident $current, Incident $snapshot): bool

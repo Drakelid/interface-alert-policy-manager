@@ -8,6 +8,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Enums\IncidentState;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\IncidentLifecycleService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 
 class IncidentBulkController
 {
@@ -17,7 +18,7 @@ class IncidentBulkController
         $ability = $data['operation'] === 'acknowledge' ? 'acknowledge iapm incidents' : 'mute iapm incidents';
         abort_unless($request->user()->can($ability), 403);
         DB::transaction(function () use ($request, $data, $lifecycle) {
-            Incident::whereIn('id', $data['incident_ids'])->where('state', '!=', IncidentState::Recovered)->lockForUpdate()->get()->each(function ($incident) use ($request, $data, $lifecycle) {
+            app(InventoryAccess::class)->records(Incident::query())->whereIn('id', $data['incident_ids'])->where('state', '!=', IncidentState::Recovered)->lockForUpdate()->get()->each(function ($incident) use ($request, $data, $lifecycle) {
                 if ($data['operation'] === 'acknowledge') {
                     $lifecycle->acknowledge($incident, (int) $request->user()->getAuthIdentifier());
                 } elseif ($data['operation'] === 'mute') {

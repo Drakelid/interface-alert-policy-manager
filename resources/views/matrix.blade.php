@@ -68,6 +68,7 @@
      after broad policy or assignment changes", which a web-only administrator
      cannot act on. It is now a button, a last-rebuilt time, and a warning that
      appears only when the configuration has actually moved since. --}}
+@if(app(\LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess::class)->unrestricted())
 <div class="panel {{ $cache['stale'] ? 'panel-warning' : 'panel-default' }}" id="iapm-cache-panel">
     <div class="panel-body">
         <div class="iapm-toolbar" style="margin-bottom:0;">
@@ -101,6 +102,7 @@
     </div>
 </div>
 
+@endif
 @include('iapm::partials.result-count',['paginator'=>$rows,'noun'=>'interface'])
 
 <form method="post" action="{{ route('iapm.matrix.bulk') }}">@csrf

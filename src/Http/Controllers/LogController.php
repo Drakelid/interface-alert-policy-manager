@@ -11,6 +11,8 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\AuditLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Destination;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Incident;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\SafeCsv;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\TimeText;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -51,7 +53,7 @@ class LogController extends Controller
         $this->applySort($q, $sort);
         $perPage = $this->perPage($r, 100);
         $deliveries = $q->paginate($perPage)->withQueryString();
-        $incident = $r->filled('incident_id') ? Incident::find($r->integer('incident_id')) : null;
+        $incident = $r->filled('incident_id') ? app(InventoryAccess::class)->records(Incident::query())->find($r->integer('incident_id')) : null;
 
         return view('iapm::delivery-log', [
             'deliveries' => $deliveries,
@@ -129,7 +131,7 @@ class LogController extends Controller
     {
         $status = (string) $r->query('status', '');
 
-        return DeliveryLog::query()
+        return app(InventoryAccess::class)->throughIncident(DeliveryLog::query())
             ->when($status === 'failed_any', fn ($q) => $q->whereIn('status', self::FAILED_STATUSES))
             ->when($status !== '' && $status !== 'failed_any', fn ($q) => $q->where('status', $status))
             ->when($r->filled('within'), fn ($q) => $q->where('created_at', '>=', now()->subHours($r->integer('within'))))
@@ -160,10 +162,10 @@ class LogController extends Controller
     {
         return response()->streamDownload(function () use ($headers, $query, $row): void {
             $out = fopen('php://output', 'w');
-            fputcsv($out, $headers);
+            SafeCsv::write($out, $headers);
             $query->chunk(500, function ($records) use ($out, $row): void {
                 foreach ($records as $record) {
-                    fputcsv($out, $row($record));
+                    SafeCsv::write($out, $row($record));
                 }
             });
             fclose($out);

@@ -19,7 +19,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Transports\TransportResult;
 
 class NotificationDispatcher
 {
-    public function __construct(private readonly TransportManager $transports, private readonly Redactor $redactor, private readonly SettingStore $settings, private readonly SmsContentFilter $smsFilters) {}
+    public function __construct(private readonly TransportManager $transports, private readonly Redactor $redactor, private readonly SettingStore $settings, private readonly SmsContentFilter $smsFilters, private readonly NotificationHistory $history) {}
 
     public function configurationFailure(Incident $incident, Destination $destination, ?PolicyAction $action, string $phase, string $error): TransportResult
     {
@@ -69,9 +69,10 @@ class NotificationDispatcher
             if ($previous && in_array($previous->status, ['pending', 'queued', 'processing', 'failed'], true)) {
                 return $previous;
             }
-            $completed = (clone $scope)->whereIn('status', ['sent', 'dry_run'])->count();
+            $history = $this->history->forOccurrence($current, $destination->id, $action?->id, $phase, $receiverHash);
+            $completed = $history['completed'];
             $lastCompleted = (clone $scope)->whereIn('status', ['sent', 'dry_run'])->latest('delivered_at')->first();
-            if (! $force && ! $this->occurrenceDue($current, $currentAction, $phase, $completed, $lastCompleted?->delivered_at)) {
+            if (! $force && ! $this->occurrenceDue($current, $currentAction, $phase, $completed, $history['last_completed'])) {
                 return $lastCompleted;
             }
             if ($phase === 'trigger') {
@@ -133,7 +134,7 @@ class NotificationDispatcher
 
             return new TransportResult(true, null, $outbox->status);
         }
-        if (in_array($outbox->status, ['queued', 'processing'], true)) {
+        if ($outbox->status === 'processing' || ($outbox->status === 'queued' && ! $forceSync && $this->settings->get('dispatch_mode', 'queue') === 'queue')) {
             return new TransportResult(true, null, $outbox->status);
         }
         if ($outbox->available_at?->isFuture()) {
@@ -228,11 +229,13 @@ class NotificationDispatcher
         // logical notification into repeated gateway calls.
         [$attempts, $configuration['timeout']] = $this->clampToWorkerBudget($attempts, (int) $configuration['timeout'], (int) ($configuration['retry_delay_ms'] ?? config('iapm.http.retry_delay_ms', 500)), $outbox->id);
         $result = new TransportResult(false, null, null, 'No delivery attempt was made.');
+        $attemptsMade = 0;
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             if ($blocked = $this->deliveryBlocked($outbox)) {
                 return $blocked;
             }
             $result = $this->transports->for($outbox->destination->type)->send($configuration, (string) $outbox->receiver_encrypted, (string) $outbox->message_encrypted);
+            $attemptsMade++;
             $outbox->increment('attempt_count');
             // Log the outbox's cumulative attempt number, not this pass's loop
             // counter. A row that failed here, was requeued, and later succeeded
@@ -243,7 +246,7 @@ class NotificationDispatcher
             if ($result->successful) {
                 break;
             }
-            if ($result->status === 429 && $result->retryAfterSeconds !== null) {
+            if ($result->retryAfterSeconds !== null) {
                 break;
             }
             if ($attempt < $attempts) {
@@ -262,7 +265,7 @@ class NotificationDispatcher
         if ($result->successful) {
             $this->finalizeCompleted($outbox->id);
         } else {
-            $outbox->incident->events()->create(['event_type' => 'notification_failed', 'event_message' => ucfirst($outbox->phase).' notification failed after '.$attempts.' attempt(s).', 'event_data' => ['destination_id' => $outbox->destination_id, 'outbox_id' => $outbox->id, 'error' => $safeError]]);
+            $outbox->incident->events()->create(['event_type' => 'notification_failed', 'event_message' => ucfirst($outbox->phase).' notification failed after '.$attemptsMade.' attempt(s).', 'event_data' => ['destination_id' => $outbox->destination_id, 'outbox_id' => $outbox->id, 'error' => $safeError]]);
         }
 
         Log::channel('iapm')->log($result->successful ? 'info' : 'error', 'Notification delivery completed.', ['incident_id' => $outbox->incident_id, 'outbox_id' => $outbox->id, 'destination_id' => $outbox->destination_id, 'phase' => $outbox->phase, 'successful' => $result->successful, 'attempts' => (int) $outbox->attempt_count]);
@@ -282,6 +285,8 @@ class NotificationDispatcher
         if (! $this->pluginEnabled() || (bool) $this->freshSetting('dry_run', true)) {
             return 0;
         }
+        $synchronous = $this->freshSetting('dispatch_mode', 'queue') !== 'queue';
+        $deadline = $synchronous ? microtime(true) + max(1, (int) config('iapm.processing.max_seconds', 50)) : PHP_FLOAT_MAX;
         $claimCutoff = now()->subSeconds(max(30, (int) config('iapm.queue.timeout', 60) + 30));
         $publicationCutoff = now()->subSeconds(max(60, (int) config('iapm.queue.publication_lease_seconds', 300)));
         // Publication and HTTP cannot participate in the same DB transaction.
@@ -293,18 +298,29 @@ class NotificationDispatcher
             ->where(fn ($q) => $q->where('queued_at', '<=', $publicationCutoff)->orWhere(fn ($legacy) => $legacy->whereNull('queued_at')->where('updated_at', '<=', $publicationCutoff)))
             ->update(['status' => 'pending', 'available_at' => now(), 'queued_at' => null]);
         NotificationOutbox::query()
-            ->whereIn('status', ['pending', 'failed'])
+            ->whereIn('status', $synchronous ? ['pending', 'failed', 'queued'] : ['pending', 'failed'])
             ->where(fn ($query) => $query->whereNull('available_at')->orWhere('available_at', '<=', now()))
             ->orderBy('id')
             ->limit(max(1, $limit))
             ->pluck('id')
-            ->each(function (int $id) use (&$queued): void {
+            ->each(function (int $id) use (&$queued, $synchronous, $deadline): bool {
+                if (microtime(true) >= $deadline) {
+                    return false;
+                }
+                if ($synchronous) {
+                    // The same atomic delivery claim is shared with any surviving
+                    // queue job, so changing mode cannot create two HTTP owners.
+                    $this->deliverOutbox($id);
+                    $queued++;
+
+                    return true;
+                }
                 $claimed = NotificationOutbox::whereKey($id)
                     ->whereIn('status', ['pending', 'failed'])
                     ->where(fn ($query) => $query->whereNull('available_at')->orWhere('available_at', '<=', now()))
                     ->update(['status' => 'queued', 'queued_at' => now(), 'claimed_at' => null, 'claim_token' => null]);
                 if ($claimed !== 1) {
-                    return;
+                    return true;
                 }
                 try {
                     SendNotificationJob::dispatch($id);
@@ -318,6 +334,8 @@ class NotificationDispatcher
                     ]);
                     Log::channel('iapm')->error('Outbox requeue failed; durable row remains pending.', ['outbox_id' => $id, 'error' => $this->redactor->text($exception->getMessage())]);
                 }
+
+                return true;
             });
 
         return $queued;
@@ -546,6 +564,9 @@ class NotificationDispatcher
             }
             $this->finalize($outbox, $outbox->status === 'dry_run');
             $outbox->update(['finalized_at' => now()]);
+            if ($outbox->phase === 'recovery' && $outbox->incident) {
+                app(RecoveryActionScheduler::class)->scheduleNext($outbox->incident);
+            }
         });
     }
 
@@ -653,7 +674,9 @@ class NotificationDispatcher
         $base = max(1, (int) config('iapm.queue.retry_base_seconds', 15));
         $maximum = max($base, (int) config('iapm.queue.retry_max_seconds', 3600));
         if ($result->retryAfterSeconds !== null) {
-            return min($maximum, max(1, $result->retryAfterSeconds));
+            // A gateway's cooldown is a lower bound, independent of our cap on
+            // exponential backoff. Shortening it can prolong a rate-limit outage.
+            return max(1, $result->retryAfterSeconds);
         }
         $exponent = min(10, max(0, (int) $outbox->attempt_count - 1));
         $delay = min($maximum, $base * (2 ** $exponent));

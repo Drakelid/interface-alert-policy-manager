@@ -27,7 +27,7 @@ class EntityLookup
     /** @return list<array{id:int,label:string}> */
     public function devices(string $term): array
     {
-        return Device::query()
+        return app(InventoryAccess::class)->devices(Device::query())
             ->where(fn ($q) => $q->where('hostname', 'like', $this->like($term))->orWhere('sysName', 'like', $this->like($term)))
             ->orderBy('hostname')
             ->limit(self::LIMIT)
@@ -42,7 +42,7 @@ class EntityLookup
         $limit = max(1, min(101, $limit));
         $offset = max(0, $offset);
 
-        return Port::query()
+        return app(InventoryAccess::class)->ports(Port::query())
             ->with('device:device_id,hostname')
             ->whereHas('device')
             ->when($deviceId, fn ($q) => $q->where('ports.device_id', $deviceId))
@@ -90,7 +90,7 @@ class EntityLookup
     /** @return list<array{id:int,label:string}> */
     public function incidents(string $term): array
     {
-        return Incident::query()
+        return app(InventoryAccess::class)->records(Incident::query())
             ->when(ctype_digit($term), fn ($q) => $q->where('id', 'like', $term.'%'))
             ->when(! ctype_digit($term), fn ($q) => $q->whereIn('device_id', Device::where('hostname', 'like', $this->like($term))->select('device_id')))
             ->orderByDesc('id')

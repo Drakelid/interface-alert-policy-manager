@@ -17,7 +17,9 @@ $tile = function ($label, $value, $href, $accent = '', $hot = false) {
         @include('iapm::partials.auto-refresh')
     </div>
 
-    @include('iapm::partials.setup-checklist')
+    @if($readiness !== [])
+        @include('iapm::partials.setup-checklist')
+    @endif
 
     @php($healthDown = collect($health)->where('ok',false))
     @if($healthDown->isNotEmpty())

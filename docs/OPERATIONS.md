@@ -1,5 +1,17 @@
 # IAPM Operations
 
+## Browser access and restricted operators
+
+IAPM permissions apply together with LibreNMS inventory permissions. `view iapm` grants entry to the plugin; core device, static device-group and individual port grants determine the interfaces, incidents, statistics and exports an operator can access. Itemized access also requires the corresponding core read permission (`device.view` or `port.view`), or LibreNMS's built-in `user` role. Dynamic device-group grants follow LibreNMS's `permission.device_group.allow_dynamic` setting. Individual port access includes the parent device's label, while sibling ports remain hidden. Accessing an unavailable incident or interface returns HTTP 404, and a bulk request containing an inaccessible item is rejected before any change.
+
+Shared policy, assignment, destination and settings changes, configuration import/export, cache administration and the audit log require unrestricted core `device.viewAll` and `port.viewAll` permissions, in addition to the relevant IAPM ability. LibreNMS administrators retain access. Restricted operators can still read policy/destination lists and settings, use permitted incident actions and simulations, and manage individual visible ports through Interface Matrix bulk actions when granted the corresponding IAPM ability. Imports containing assignments also require `manage iapm assignments`; `manage iapm policies` alone is insufficient. An HTTP 403 on a shared configuration operation can therefore indicate missing core inventory permissions even when the IAPM management permission is present.
+
+These restrictions apply to browser operations. Machine ingestion and scheduled processing continue to evaluate the complete configured inventory.
+
+## CSV exports
+
+Interface Matrix, Comparison Report, Delivery Log and Audit Log exports prefix text that could start a spreadsheet formula with a single quote. This includes formula markers after whitespace and control characters. The quote is intentional: spreadsheets should treat such values as text. Consumers importing CSV programmatically may see the added quote; retain it when opening the data in a spreadsheet.
+
 ## Gateway unavailable or failed deliveries
 
 Keep incidents active, enable dry-run if failures are prolonged, inspect redacted delivery status, verify DNS/routing/TLS from the LibreNMS host, and use `iapm:test-destination` with a controlled receiver. Do not paste credentials into logs or tickets.
@@ -51,6 +63,12 @@ The reason to reach for `schedule:clear-cache` at all is a worker that died
 without releasing its lock, which `iapm:health` now reports. Since v1.4.1 that
 clears itself within minutes, so prefer waiting over clearing the cache — and if
 you do clear it, stop the workers in the same step as above.
+
+`php artisan optimize:clear` also flushes the application cache and can remove the same overlap locks. Use `php artisan optimize:clear --except=cache` when refreshing bootstrap files. The production updater uses that form and drains runtime processes before Composer or migration work; see [UPGRADING.md](UPGRADING.md#before-the-upgrade) for custom-supervisor and failure-recovery instructions.
+
+## Failed or superseded real simulations
+
+A failed simulation is retained for diagnosis and cannot restore the interface again. If another alert source or outage episode takes over the port, simulation recovery and maintenance leave that current state intact and stop the simulation. Inspect the current LibreNMS port and incident before starting a new test. Continue to use isolated test interfaces: physical polling and simulation overlays share the LibreNMS port record.
 
 ## LibreNMS alert operations (26.x)
 

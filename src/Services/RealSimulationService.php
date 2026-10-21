@@ -68,14 +68,36 @@ class RealSimulationService
         });
 
         try {
-            $result = $this->ingest($simulation, true);
-            $incident = Incident::where('device_id', $simulation->device_id)
-                ->where('port_id', $simulation->port_id)->first();
-            $simulation->update([
-                'status' => 'running',
-                'incident_id' => $incident?->id,
-                'episode_uuid' => $incident?->episode_uuid,
-            ]);
+            // Keep the port lock across local ingestion and the state transition.
+            // Recovery must never finish between ingestion and a stale write that
+            // would put the simulation back into running state.
+            $started = DB::transaction(function () use ($simulation): ?array {
+                $port = Port::whereKey($simulation->port_id)->lockForUpdate()->first();
+                $locked = Simulation::whereKey($simulation->id)->lockForUpdate()->firstOrFail();
+                if ($locked->status !== 'starting') {
+                    return null;
+                }
+                if (! $port || ! $this->ownsPort($locked)) {
+                    $this->markSuperseded($locked);
+
+                    return null;
+                }
+                $result = $this->ingest($locked, true);
+                $incident = $this->simulationIncident($locked);
+                $changed = Simulation::whereKey($locked->id)->where('status', 'starting')->update([
+                    'status' => 'running',
+                    'incident_id' => $incident?->id,
+                    'episode_uuid' => $incident?->episode_uuid,
+                    'updated_at' => now(),
+                ]);
+
+                return $changed ? [$result, $incident] : null;
+            });
+            if ($started === null) {
+                return $simulation->fresh(['incident']) ?? $simulation;
+            }
+            [$result, $incident] = $started;
+            $simulation->refresh();
             if ($sendNotifications && $incident) {
                 Artisan::call('iapm:process-actions', ['--incident' => $incident->id]);
             }
@@ -91,48 +113,55 @@ class RealSimulationService
 
             return $simulation->fresh(['incident']) ?? $simulation;
         } catch (\Throwable $exception) {
-            $this->restorePort($simulation);
-            // If ingestion succeeded but action processing failed, close the
-            // incident before reporting failure. Best effort only: the port is
-            // already restored and normal reconciliation is the final safety net.
-            try {
-                $this->ingest($simulation, false);
-                $incident = Incident::where('device_id', $simulation->device_id)->where('port_id', $simulation->port_id)->first();
-                if ($incident) {
-                    Artisan::call('iapm:process-actions', ['--incident' => $incident->id]);
-                }
-            } catch (\Throwable) {
-            }
-            $simulation->update(['status' => 'failed', 'recovered_at' => now(), 'last_error' => $this->safeError($exception)]);
+            $this->failSimulation($simulation, $exception);
             throw $exception;
         }
     }
 
     public function recover(Simulation $simulation, ?Request $request = null, string $reason = 'scheduled'): Simulation
     {
-        if (! $this->claimRecovery($simulation)) {
-            return $simulation->fresh(['incident']) ?? $simulation;
-        }
-
         try {
-            $this->restorePort($simulation);
-            $result = $this->ingest($simulation, false);
-            $incident = Incident::where('device_id', $simulation->device_id)
-                ->where('port_id', $simulation->port_id)->first();
-            if ($incident) {
-                // Reconcile completes a configured recovery hold-down once it is
-                // due; process-actions dispatches a configured recovery action.
-                Artisan::call('iapm:reconcile', ['--incident' => $incident->id]);
-                if ($simulation->send_notifications) {
-                    Artisan::call('iapm:process-actions', ['--incident' => $incident->id]);
+            $recovery = DB::transaction(function () use ($simulation): ?array {
+                $port = Port::whereKey($simulation->port_id)->lockForUpdate()->first();
+                $locked = Simulation::whereKey($simulation->id)->lockForUpdate()->first();
+                // Failed records are historical: their port was already restored
+                // by the failure handler and may now represent a genuine outage.
+                if (! $locked || ! in_array($locked->status, ['starting', 'running', 'recovering'], true)) {
+                    return null;
                 }
+                if (! $port || ! $this->ownsPort($locked)) {
+                    $this->markSuperseded($locked);
+
+                    return null;
+                }
+                $locked->update(['status' => 'recovering']);
+                $this->restorePort($locked);
+                $result = $this->ingest($locked, false);
+                $incident = $this->simulationIncident($locked);
+                if ($incident) {
+                    Artisan::call('iapm:reconcile', ['--incident' => $incident->id]);
+                }
+                $attributes = [
+                    'status' => 'recovered',
+                    'recovered_at' => now(),
+                    'last_error' => null,
+                ];
+                if ($incident !== null) {
+                    $attributes['incident_id'] = $incident->id;
+                    $attributes['episode_uuid'] = $incident->episode_uuid;
+                }
+                $locked->update($attributes);
+                $simulation->setRawAttributes($locked->getAttributes(), true);
+
+                return [$result, $incident];
+            });
+            if ($recovery === null) {
+                return $simulation->fresh(['incident']) ?? $simulation;
             }
-            $simulation->update([
-                'status' => 'recovered',
-                'incident_id' => $incident instanceof Incident ? $incident->id : $simulation->incident_id,
-                'recovered_at' => now(),
-                'last_error' => null,
-            ]);
+            [$result, $incident] = $recovery;
+            if ($incident && $simulation->send_notifications) {
+                Artisan::call('iapm:process-actions', ['--incident' => $incident->id]);
+            }
             if ($request) {
                 $this->audit->record($request, 'recovered_real_simulation', 'simulation', $simulation, null, [
                     'reason' => $reason,
@@ -142,10 +171,7 @@ class RealSimulationService
 
             return $simulation->fresh(['incident']) ?? $simulation;
         } catch (\Throwable $exception) {
-            // Port restoration is the non-negotiable part. Even if ingestion or
-            // notification dispatch fails, never leave synthetic down state behind.
-            $this->restorePort($simulation);
-            $simulation->update(['status' => 'failed', 'recovered_at' => now(), 'last_error' => $this->safeError($exception)]);
+            $this->failSimulation($simulation, $exception);
             throw $exception;
         }
     }
@@ -191,8 +217,14 @@ class RealSimulationService
     private function maintainOverlay(Simulation $simulation): bool
     {
         return DB::transaction(function () use ($simulation): bool {
+            $port = Port::whereKey($simulation->port_id)->lockForUpdate()->first();
             $locked = Simulation::whereKey($simulation->id)->lockForUpdate()->first();
             if (! $locked || ! in_array($locked->status, ['starting', 'running'], true) || $locked->recover_at->lessThanOrEqualTo(now())) {
+                return false;
+            }
+            if (! $port || ! $this->ownsPort($locked)) {
+                $this->markSuperseded($locked);
+
                 return false;
             }
             DB::table('ports')->where('port_id', $locked->port_id)->update([
@@ -244,26 +276,73 @@ class RealSimulationService
         return $resolution->policy;
     }
 
-    private function claimRecovery(Simulation $simulation): bool
+    /** Caller holds the port lock; only the latest simulation and its episode own it. */
+    private function ownsPort(Simulation $simulation): bool
     {
-        return DB::transaction(function () use ($simulation): bool {
+        if (Simulation::where('port_id', $simulation->port_id)->where('id', '>', $simulation->id)->exists()) {
+            return false;
+        }
+        $incident = $this->currentIncident($simulation);
+        if (! $incident) {
+            return $simulation->incident_id === null && $simulation->episode_uuid === null;
+        }
+        // A new simulation may reuse the incident row of a completed outage.
+        if ($simulation->status === 'starting' && $simulation->episode_uuid === null && $incident->state === IncidentState::Recovered) {
+            return true;
+        }
+
+        return $incident->source_alert_uid === 'iapm-real-sim-'.$simulation->uuid
+            && ($simulation->episode_uuid === null || $incident->episode_uuid === $simulation->episode_uuid);
+    }
+
+    private function currentIncident(Simulation $simulation): ?Incident
+    {
+        return Incident::where('device_id', $simulation->device_id)->where('port_id', $simulation->port_id)->lockForUpdate()->first();
+    }
+
+    private function simulationIncident(Simulation $simulation): ?Incident
+    {
+        return Incident::where('device_id', $simulation->device_id)->where('port_id', $simulation->port_id)
+            ->where('source_alert_uid', 'iapm-real-sim-'.$simulation->uuid)
+            ->when($simulation->episode_uuid !== null, fn ($query) => $query->where('episode_uuid', $simulation->episode_uuid))
+            ->lockForUpdate()->first();
+    }
+
+    private function markSuperseded(Simulation $simulation): void
+    {
+        $simulation->update(['status' => 'failed', 'recovered_at' => now(), 'last_error' => 'The interface or incident is now owned by another observation; its state was left intact.']);
+    }
+
+    private function failSimulation(Simulation $simulation, \Throwable $exception): void
+    {
+        $restored = DB::transaction(function () use ($simulation, $exception): bool {
+            $port = Port::whereKey($simulation->port_id)->lockForUpdate()->first();
             $locked = Simulation::whereKey($simulation->id)->lockForUpdate()->first();
-            if (! $locked || in_array($locked->status, ['recovered'], true)) {
+            if ($locked?->status === 'recovered') {
+                $locked->update(['last_error' => $this->safeError($exception)]);
+
                 return false;
             }
-            // A recent recovering state belongs to another request. An old one
-            // is a crashed recovery and may safely be retried idempotently.
-            if ($locked->status === 'recovering' && $locked->updated_at?->isAfter(now()->subMinutes(2))) {
+            if (! $locked || ! in_array($locked->status, ['starting', 'running', 'recovering'], true)) {
                 return false;
             }
-            if (! in_array($locked->status, ['starting', 'running', 'recovering', 'failed'], true)) {
-                return false;
+            $owned = $port && $this->ownsPort($locked);
+            if ($owned) {
+                $this->restorePort($locked);
             }
-            $locked->update(['status' => 'recovering']);
+            $locked->update(['status' => 'failed', 'recovered_at' => now(), 'last_error' => $this->safeError($exception)]);
             $simulation->setRawAttributes($locked->getAttributes(), true);
 
-            return true;
+            return (bool) $owned;
         });
+        if ($restored) {
+            // The original UID scopes this best-effort cleanup. Never reconcile
+            // an incident fetched by port after releasing the ownership lock.
+            try {
+                $this->ingest($simulation, false);
+            } catch (\Throwable) {
+            }
+        }
     }
 
     private function assertDuration(Policy $policy, int $durationSeconds): void

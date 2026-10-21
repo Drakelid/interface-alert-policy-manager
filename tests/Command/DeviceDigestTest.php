@@ -355,7 +355,7 @@ class DeviceDigestTest extends IntegrationTestCase
         $this->triggerAction($policy, $destinationA);
         $this->triggerAction($policy, $destinationB);
         $device = $this->device();
-        collect(range(1, 2))->each(fn () => $this->incident($policy, $this->downPort($device)));
+        $incidents = collect(range(1, 2))->map(fn () => $this->incident($policy, $this->downPort($device)));
 
         $this->artisan('iapm:process-actions')->assertExitCode(0);
 
@@ -363,5 +363,10 @@ class DeviceDigestTest extends IntegrationTestCase
         self::assertSame('cancelled', NotificationOutbox::where('phase', 'digest')->where('destination_id', $destinationB->id)->sole()->status);
         self::assertSame(0, NotificationOutbox::where('phase', 'trigger')->where('destination_id', $destinationA->id)->count());
         self::assertSame(2, NotificationOutbox::where('phase', 'trigger')->where('destination_id', $destinationB->id)->where('status', 'sent')->count());
+        foreach ($incidents as $incident) {
+            // A modern digest flag must retain exact outbox membership scope,
+            // rather than being adopted as a shared legacy completion budget.
+            self::assertNotEmpty($incident->fresh()->context_json['trigger_notified_via_digest'] ?? null);
+        }
     }
 }

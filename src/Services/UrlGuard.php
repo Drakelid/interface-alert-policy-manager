@@ -100,13 +100,7 @@ class UrlGuard
         return array_values(array_unique($ips));
     }
 
-    /**
-     * Public = not private, not reserved, in either address family. PHP's
-     * FILTER_FLAG_NO_PRIV_RANGE / NO_RES_RANGE cover the IPv4 ranges and the
-     * documented IPv6 reserved blocks; a few IPv6 ranges (ULA fc00::/7,
-     * link-local fe80::/10, loopback ::1, and IPv4-mapped addresses) need an
-     * explicit check.
-     */
+    /** Globally reachable unicast, including explicit IANA special-use rules. */
     private function isPublic(string $ip): bool
     {
         if (! filter_var($ip, FILTER_VALIDATE_IP)) {
@@ -125,23 +119,63 @@ class UrlGuard
 
             return $mapped !== false && $this->isPublic($mapped);
         }
-        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        if (strlen($binary) === 4) {
+            // PHP's range flags differ across supported patch versions and do
+            // not consistently include special-use exceptions. Match IANA's
+            // non-global ranges explicitly, plus multicast.
+            if (in_array(inet_ntop($binary), ['192.0.0.9', '192.0.0.10'], true)) {
+                return true;
+            }
+            foreach ([['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4]] as [$network, $bits]) {
+                if ($this->inSubnet($binary, $network, $bits)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        // The well-known NAT64 prefix encodes an IPv4 destination. Judge it as
+        // IPv4 so a translator cannot turn an apparently public IPv6 URL into
+        // a request to loopback, metadata or a private address.
+        if ($this->inSubnet($binary, '64:ff9b::', 96)) {
+            $translated = inet_ntop(substr($binary, 12));
+
+            return $translated !== false && $this->isPublic($translated);
+        }
+        // Restrict native IPv6 to global unicast. This also excludes local
+        // translation prefixes, multicast, site-local and unallocated space.
+        if (! $this->inSubnet($binary, '2000::', 3)
+            || $this->inSubnet($binary, '2001:db8::', 32)
+            || $this->inSubnet($binary, '2002::', 16)
+            || $this->inSubnet($binary, '3fff::', 20)) {
             return false;
         }
-        if (strlen($binary) === 16) {
-            $first = ord($binary[0]);
-            if ($ip === '::1' || $ip === '::') {
-                return false;
+        // Most IETF protocol space is not globally reachable. Keep its
+        // explicit global exceptions (IANA registry, updated 2025-10-09).
+        if ($this->inSubnet($binary, '2001::', 23)) {
+            foreach ([['2001:1::1', 128], ['2001:1::2', 128], ['2001:1::3', 128], ['2001:3::', 32], ['2001:4:112::', 48], ['2001:20::', 28], ['2001:30::', 28]] as [$network, $bits]) {
+                if ($this->inSubnet($binary, $network, $bits)) {
+                    return true;
+                }
             }
-            if (($first & 0xFE) === 0xFC) { // fc00::/7 unique local
-                return false;
-            }
-            if ($first === 0xFE && (ord($binary[1]) & 0xC0) === 0x80) { // fe80::/10 link-local
-                return false;
-            }
+
+            return false;
         }
 
         return true;
+    }
+
+    private function inSubnet(string $binary, string $network, int $bits): bool
+    {
+        $prefix = inet_pton($network);
+        if ($prefix === false || strlen($binary) !== strlen($prefix)) {
+            return false;
+        }
+        $bytes = intdiv($bits, 8);
+        $remaining = $bits % 8;
+
+        return substr($binary, 0, $bytes) === substr($prefix, 0, $bytes)
+            && ($remaining === 0 || ((ord($binary[$bytes]) ^ ord($prefix[$bytes])) & (0xFF << (8 - $remaining))) === 0);
     }
 
     private function reportMissingPinning(): void

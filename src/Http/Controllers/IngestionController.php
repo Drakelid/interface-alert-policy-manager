@@ -47,51 +47,12 @@ class IngestionController extends Controller
 
             return response()->json(['error' => ['code' => 'device_not_found', 'message' => 'Referenced device does not exist.']], 422);
         }
-        $asyncThreshold = (int) config('iapm.ingestion.async_threshold', 1000);
-        $durableRecovery = $state === 'recovered' && (bool) config('iapm.ingestion.async_recovery', true);
-        if (! $request->attributes->getBoolean('_iapm_durable_replay') && ($durableRecovery || ($asyncThreshold > 0 && count($data['faults']) >= $asyncThreshold))) {
-            $inbox = DB::transaction(function () use ($data, $device): ?IngestionInbox {
-                // Serialize acceptance for one device. The preceding accepted
-                // payload is part of retry identity: down/up/down must retain
-                // all three observations even before replay creates an incident.
-                Device::whereKey($device->device_id)->lockForUpdate()->firstOrFail();
-                $signature = $this->incidentSignature($data);
-                $latest = IngestionInbox::where('device_id', $device->device_id)->latest('id')->first();
-                if ($latest && $latest->status !== 'dead' && $latest->created_at->greaterThanOrEqualTo(now()->subSeconds(max(1, (int) config('iapm.ingestion.inbox_dedup_seconds', 900))))) {
-                    $previous = (array) $latest->payload_encrypted;
-                    $acceptance = $previous['_iapm_acceptance'] ?? [];
-                    unset($previous['_iapm_acceptance']);
-                    if ($previous === $data && ($acceptance['incident_signature'] ?? null) === $signature) {
-                        return $latest;
-                    }
-                }
-                $maxPending = max(1, (int) config('iapm.ingestion.inbox_max_pending', 10000));
-                if (IngestionInbox::whereIn('status', ['pending', 'processing', 'failed'])->count() >= $maxPending) {
-                    return null;
-                }
 
-                return IngestionInbox::create([
-                    'idempotency_key' => hash('sha256', (string) Str::uuid()),
-                    'device_id' => $device->device_id,
-                    'fault_count' => count($data['faults']),
-                    // This metadata is generated after validation. Client input
-                    // cannot supply it, and replay validation strips it again.
-                    'payload_encrypted' => $data + ['_iapm_acceptance' => ['incident_signature' => $signature]],
-                    'status' => 'pending',
-                    'available_at' => now(),
-                ]);
-            });
-            if (! $inbox) {
-                // Backpressure is shedding alerts. The inbox health check reports the
-                // backlog itself; this records that alerts were turned away because
-                // of it, which is the part an operator otherwise never sees.
-                app(IngestionRejectionLog::class)->record('ingestion_backlog_full', $request->ip(), ['device_id' => $device->device_id, 'max_pending' => max(1, (int) config('iapm.ingestion.inbox_max_pending', 10000))]);
+        return $this->acceptOrProcess($request, $data, $state, $device, fn (): JsonResponse => $this->process($data, $state, $sourceEventAt, $device, $contexts, $policies, $suppression, $dependencies, $receivers, $lifecycle));
+    }
 
-                return response()->json(['error' => ['code' => 'ingestion_backlog_full', 'message' => 'Durable ingestion backlog is full; retry later.']], 503, ['Retry-After' => '60']);
-            }
-
-            return response()->json(['status' => 'accepted', 'processing' => 'durable_inbox', 'inbox_id' => $inbox->id], 202);
-        }
+    private function process(array $data, string $state, ?string $sourceEventAt, Device $device, InterfaceContextService $contexts, PolicyResolver $policies, SuppressionService $suppression, DependencyResolver $dependencies, ReceiverResolver $receivers, IncidentLifecycleService $lifecycle): JsonResponse
+    {
         $device->loadMissing('parents');
         $counts = array_fill_keys(['processed', 'activated', 'pending', 'suppressed', 'recovered', 'ignored', 'failed'], 0);
         // Collapse repeated port entries before relationships and policies are
@@ -131,7 +92,7 @@ class IngestionController extends Controller
 
                         return;
                     }
-                    if ($incident->state !== IncidentState::Recovered && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) {
+                    if ($incident->state !== IncidentState::Recovered && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint && ! ($state === 'active' && isset($incident->context_json['up_seen_at']))) {
                         $counts['ignored']++;
 
                         return;
@@ -215,7 +176,7 @@ class IngestionController extends Controller
 
                     return;
                 }
-                if ($incident && $incident->state !== IncidentState::Recovered && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint) {
+                if ($incident && $incident->state !== IncidentState::Recovered && ($incident->context_json['last_event_fingerprint'] ?? null) === $fingerprint && ! ($state === 'active' && isset($incident->context_json['up_seen_at']))) {
                     $counts['ignored']++;
 
                     return;
@@ -348,6 +309,55 @@ class IngestionController extends Controller
         }
 
         return response()->json(['status' => 'accepted', 'counts' => $counts]);
+    }
+
+    /** Keep synchronous observations behind every previously accepted device event. */
+    private function acceptOrProcess(IngestAlertRequest $request, array $data, string $state, Device $device, callable $process): JsonResponse
+    {
+        if ($request->attributes->getBoolean('_iapm_durable_replay')) {
+            return $process();
+        }
+
+        return DB::transaction(function () use ($request, $data, $state, $device, $process): JsonResponse {
+            // Both acceptance and inline processing take this lock. Releasing it
+            // before inline processing would let the next recovery overtake it.
+            Device::whereKey($device->device_id)->lockForUpdate()->firstOrFail();
+            $threshold = (int) config('iapm.ingestion.async_threshold', 1000);
+            $durable = ($state === 'recovered' && (bool) config('iapm.ingestion.async_recovery', true))
+                || ($threshold > 0 && count($data['faults']) >= $threshold)
+                || IngestionInbox::where('device_id', $device->device_id)->whereIn('status', ['pending', 'processing', 'failed'])->exists();
+            if (! $durable) {
+                return $process();
+            }
+
+            $signature = $this->incidentSignature($data);
+            $latest = IngestionInbox::where('device_id', $device->device_id)->latest('id')->first();
+            if ($latest && $latest->status !== 'dead' && $latest->created_at->greaterThanOrEqualTo(now()->subSeconds(max(1, (int) config('iapm.ingestion.inbox_dedup_seconds', 900))))) {
+                $previous = (array) $latest->payload_encrypted;
+                $acceptance = $previous['_iapm_acceptance'] ?? [];
+                unset($previous['_iapm_acceptance']);
+                if ($previous === $data && ($acceptance['incident_signature'] ?? null) === $signature) {
+                    return response()->json(['status' => 'accepted', 'processing' => 'durable_inbox', 'inbox_id' => $latest->id], 202);
+                }
+            }
+            $maxPending = max(1, (int) config('iapm.ingestion.inbox_max_pending', 10000));
+            if (IngestionInbox::whereIn('status', ['pending', 'processing', 'failed'])->count() >= $maxPending) {
+                app(IngestionRejectionLog::class)->record('ingestion_backlog_full', $request->ip(), ['device_id' => $device->device_id, 'max_pending' => $maxPending]);
+
+                return response()->json(['error' => ['code' => 'ingestion_backlog_full', 'message' => 'Durable ingestion backlog is full; retry later.']], 503, ['Retry-After' => '60']);
+            }
+
+            $inbox = IngestionInbox::create([
+                'idempotency_key' => hash('sha256', (string) Str::uuid()),
+                'device_id' => $device->device_id,
+                'fault_count' => count($data['faults']),
+                'payload_encrypted' => $data + ['_iapm_acceptance' => ['incident_signature' => $signature]],
+                'status' => 'pending',
+                'available_at' => now(),
+            ]);
+
+            return response()->json(['status' => 'accepted', 'processing' => 'durable_inbox', 'inbox_id' => $inbox->id], 202);
+        }, 3);
     }
 
     private function incidentSignature(array $data): string

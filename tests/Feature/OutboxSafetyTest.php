@@ -170,6 +170,7 @@ class OutboxSafetyTest extends IntegrationTestCase
     public function test_drain_command_requeues_due_failed_work(): void
     {
         Queue::fake();
+        $this->settings->put('dispatch_mode', 'queue');
         $policy = $this->policy();
         $action = $this->triggerAction($policy, $this->smsDestination());
         $incident = $this->incident($policy, $this->downPort($this->device()));

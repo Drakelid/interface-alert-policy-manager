@@ -8,6 +8,7 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\DeliveryLog;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\NotificationOutbox;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Outage;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 
 class StatsController extends Controller
 {
@@ -15,7 +16,7 @@ class StatsController extends Controller
     {
         $days = max(1, min(365, $request->integer('days', 30)));
         $since = now()->subDays($days);
-        $base = fn () => Outage::query()->where('recovered_at', '>=', $since);
+        $base = fn () => app(InventoryAccess::class)->records(Outage::query())->where('recovered_at', '>=', $since);
 
         $metrics = [
             'outages' => $base()->count(),
@@ -33,7 +34,7 @@ class StatsController extends Controller
             ->groupBy('policy_id')->orderByDesc('outages')->get();
 
         // Daily outage counts for a sparkline (gap-filled over the window).
-        $perDay = Outage::query()->where('recovered_at', '>=', $since)->selectRaw('date(recovered_at) as d, count(*) as c')->groupBy('d')->pluck('c', 'd');
+        $perDay = app(InventoryAccess::class)->records(Outage::query())->where('recovered_at', '>=', $since)->selectRaw('date(recovered_at) as d, count(*) as c')->groupBy('d')->pluck('c', 'd');
         $spark = [];
         $sparkDays = min($days, 60);
         for ($i = $sparkDays - 1; $i >= 0; $i--) {
@@ -41,8 +42,8 @@ class StatsController extends Controller
             $spark[$day] = (int) ($perDay[$day] ?? 0);
         }
 
-        $delivery = NotificationOutbox::where('created_at', '>=', $since)->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status');
-        $attempts = DeliveryLog::whereNotNull('notification_outbox_id')->where('created_at', '>=', $since)->whereIn('status', ['sent', 'failed'])->count();
+        $delivery = app(InventoryAccess::class)->throughIncident(NotificationOutbox::query())->where('created_at', '>=', $since)->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status');
+        $attempts = app(InventoryAccess::class)->throughIncident(DeliveryLog::query())->whereNotNull('notification_outbox_id')->where('created_at', '>=', $since)->whereIn('status', ['sent', 'failed'])->count();
         $liveCompleted = (int) ($delivery['sent'] ?? 0) + (int) ($delivery['failed'] ?? 0);
         $deliverySuccessRate = $liveCompleted > 0 ? round(100 * (int) ($delivery['sent'] ?? 0) / $liveCompleted, 1) : null;
 

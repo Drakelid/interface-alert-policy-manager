@@ -8,6 +8,7 @@ use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\ReceiverResolver;
 
@@ -16,7 +17,7 @@ class PolicyTestController extends Controller
     public function __invoke(Request $r, InterfaceContextService $contexts, PolicyResolver $resolver, ReceiverResolver $receivers, EntityLookup $lookup)
     {
         $r->validate(['port_id' => ['nullable', 'integer', new PortHasDevice]]);
-        $port = $r->filled('port_id') ? Port::with(['device.location', 'device.groups', 'groups'])->find($r->integer('port_id')) : null;
+        $port = $r->filled('port_id') ? app(InventoryAccess::class)->ports(Port::query())->with(['device.location', 'device.groups', 'groups'])->find($r->integer('port_id')) : null;
         $resolution = $port ? $resolver->resolve($contexts->forPort($port)) : null;
 
         // Show the receivers each enabled action would actually resolve to, using the

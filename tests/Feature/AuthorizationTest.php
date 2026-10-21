@@ -176,9 +176,14 @@ class AuthorizationTest extends IntegrationTestCase
 
     private function viewer(): User
     {
-        Permission::findOrCreate('view iapm', 'web');
+        // These cases isolate IAPM capabilities from inventory authorization.
+        // Restricted and port-only core access has its own regression suite.
+        $permissions = ['view iapm', 'device.viewAll', 'port.viewAll'];
+        foreach ($permissions as $permission) {
+            Permission::findOrCreate($permission, 'web');
+        }
         $viewer = User::factory()->create(['enabled' => true]);
-        $viewer->givePermissionTo('view iapm');
+        $viewer->givePermissionTo($permissions);
 
         return $viewer;
     }

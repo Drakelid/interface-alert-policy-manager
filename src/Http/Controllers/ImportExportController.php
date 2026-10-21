@@ -93,6 +93,13 @@ class ImportExportController extends Controller
 
         $updateExisting = $request->boolean('update_existing');
         $apply = $request->input('action') === 'apply';
+        // A policy permission does not confer assignment-management authority.
+        // Check previews too: they must describe work the caller can apply.
+        foreach ((array) ($doc['policies'] ?? []) as $policy) {
+            if (is_array($policy) && ! empty($policy['assignments'])) {
+                abort_unless($request->user()->can('manage iapm assignments'), 403);
+            }
+        }
 
         try {
             // Validation runs for the preview too, so problems surface before the

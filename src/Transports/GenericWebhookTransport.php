@@ -5,6 +5,7 @@ namespace LibreNMS\Plugins\InterfaceAlertPolicyManager\Transports;
 use Illuminate\Http\Client\Factory;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\Redactor;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\UrlGuard;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\RetryAfter;
 
 class GenericWebhookTransport implements NotificationTransport
 {
@@ -35,22 +36,9 @@ class GenericWebhookTransport implements NotificationTransport
             }
             $response = $client->post($url, ['receiver' => $receiver, 'message' => $message]);
 
-            return new TransportResult($response->successful(), $response->status(), $this->redactor->text($response->body(), $sensitive), $response->successful() ? null : 'Webhook returned a non-success response.', $this->retryAfter($response->header('Retry-After')));
+            return new TransportResult($response->successful(), $response->status(), $this->redactor->text($response->body(), $sensitive), $response->successful() ? null : 'Webhook returned a non-success response.', RetryAfter::seconds($response->header('Retry-After')));
         } catch (\Throwable $e) {
             return new TransportResult(false, null, null, $this->redactor->text($e->getMessage(), $sensitive));
         }
-    }
-
-    private function retryAfter(?string $value): ?int
-    {
-        if ($value === null || trim($value) === '') {
-            return null;
-        }
-        if (ctype_digit(trim($value))) {
-            return min(86400, (int) trim($value));
-        }
-        $timestamp = strtotime($value);
-
-        return $timestamp === false ? null : min(86400, max(0, $timestamp - time()));
     }
 }

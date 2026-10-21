@@ -35,6 +35,18 @@ class SmsGatewayTransportTest extends IntegrationTestCase
         });
     }
 
+    public function test_server_cooldowns_longer_than_one_day_are_preserved_and_overflow_is_rejected(): void
+    {
+        Http::fakeSequence()->push('limited', 429, ['Retry-After' => '172800'])
+            ->push('maintenance', 503, ['Retry-After' => gmdate(DATE_RFC7231, time() + 172800)])
+            ->push('invalid', 429, ['Retry-After' => str_repeat('9', 100)]);
+        $transport = app(SmsGatewayTransport::class);
+
+        self::assertSame(172800, $transport->send($this->configuration(), 'PERSON', 'message')->retryAfterSeconds);
+        self::assertEqualsWithDelta(172800, $transport->send($this->configuration(), 'PERSON', 'message')->retryAfterSeconds, 5);
+        self::assertNull($transport->send($this->configuration(), 'PERSON', 'message')->retryAfterSeconds);
+    }
+
     public function test_unsafe_custom_headers_are_stripped(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);

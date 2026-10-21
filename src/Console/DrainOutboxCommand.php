@@ -13,7 +13,7 @@ class DrainOutboxCommand extends Command
 
     protected $signature = 'iapm:drain-outbox {--limit=}';
 
-    protected $description = 'Enqueue due durable notification outbox rows';
+    protected $description = 'Process due durable notification outbox rows';
 
     public function handle(NotificationDispatcher $dispatcher, SettingStore $settings): int
     {
@@ -24,7 +24,7 @@ class DrainOutboxCommand extends Command
         $limit = max(1, (int) ($this->option('limit') ?: config('iapm.queue.drain_batch', 1000)));
         $queued = $dispatcher->enqueueDue($limit);
         $settings->put('last_outbox_drain_at', now()->toIso8601String());
-        $this->info("Queued {$queued} due outbox row(s).");
+        $this->info("Processed {$queued} due outbox row(s).");
 
         return self::SUCCESS;
     }

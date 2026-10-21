@@ -17,8 +17,10 @@ use LibreNMS\Plugins\InterfaceAlertPolicyManager\Models\Policy;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\AuditService;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceContextService;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyCacheRebuilder;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\PolicyResolver;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Support\SafeCsv;
 
 class InterfaceMatrixController
 {
@@ -54,15 +56,16 @@ class InterfaceMatrixController
         // boxes. Both sets are small enough to enumerate, so they become selects;
         // devices are not, so that filter is a type-ahead and only needs the
         // label of whatever is currently selected.
-        $device = $request->filled('device_id') ? Device::find($request->integer('device_id')) : null;
+        $access = app(InventoryAccess::class);
+        $device = $request->filled('device_id') ? $access->devices(Device::query())->find($request->integer('device_id')) : null;
 
         return view('iapm::matrix', [
             'rows' => $ports,
             'policies' => Policy::where('enabled', true)->orderBy('name')->get(),
-            'deviceGroups' => DeviceGroup::orderBy('name')->get(['id', 'name']),
-            'locations' => Location::orderBy('location')->get(['id', 'location']),
+            'deviceGroups' => DeviceGroup::query()->when(! $access->unrestricted(), fn ($query) => $query->whereIn('id', DB::table('device_group_device')->select('device_group_id')->whereIn('device_id', $access->devices(Device::query())->select('devices.device_id'))))->orderBy('name')->get(['id', 'name']),
+            'locations' => Location::query()->when(! $access->unrestricted(), fn ($query) => $query->whereIn('id', $access->devices(Device::query())->select('devices.location_id')))->orderBy('location')->get(['id', 'location']),
             'deviceFilterLabel' => $device ? app(EntityLookup::class)->deviceLabel($device) : '',
-            'cache' => app(PolicyCacheRebuilder::class)->state(),
+            'cache' => app(InventoryAccess::class)->unrestricted() ? app(PolicyCacheRebuilder::class)->state() : ['rebuilt_at' => null, 'running' => false],
         ] + $this->listControls($request, self::SORTABLE, $sort, $perPage));
     }
 
@@ -105,9 +108,12 @@ class InterfaceMatrixController
                 PolicyCacheRebuilder::invalidate();
             } elseif ($data['operation'] === 'mute') {
                 $mutedUntil = CarbonImmutable::parse($data['muted_until'])->setTimezone(config('app.timezone', 'UTC'));
-                Incident::whereIn('port_id', $data['port_ids'])->where('state', '!=', 'recovered')->update(['muted_until' => $mutedUntil->toDateTimeString()]);
+                app(InventoryAccess::class)->records(Incident::query())->whereIn('port_id', $data['port_ids'])->where('state', '!=', 'recovered')->update(['muted_until' => $mutedUntil->toDateTimeString()]);
             } else {
-                Incident::whereIn('port_id', $data['port_ids'])->update(['muted_until' => null]);
+                app(InventoryAccess::class)->records(Incident::query())->whereIn('port_id', $data['port_ids'])->update(['muted_until' => null]);
+                // Bulk updates bypass the model observer that re-arms delayed
+                // recovery actions when an operator removes a mute early.
+                app(InventoryAccess::class)->records(Incident::query())->whereIn('port_id', $data['port_ids'])->where('state', 'recovered')->update(['recovery_action_due_at' => now()]);
             }
         });
         $audit->record($request, 'bulk_'.$data['operation'], 'interface_matrix', null, null, ['port_ids' => $data['port_ids'], 'policy_id' => $data['policy_id'] ?? null, 'muted_until' => $data['muted_until'] ?? null]);
@@ -121,11 +127,11 @@ class InterfaceMatrixController
 
         return response()->streamDownload(function () use ($request, $contexts, $resolver) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['device_id', 'hostname', 'port_id', 'ifName', 'ifAlias', 'admin', 'oper', 'policy', 'assignment_source']);
+            SafeCsv::write($out, ['device_id', 'hostname', 'port_id', 'ifName', 'ifAlias', 'admin', 'oper', 'policy', 'assignment_source']);
             $this->query($request)->chunkById(500, function ($ports) use ($out, $contexts, $resolver) {
                 foreach ($ports as $port) {
                     $result = $resolver->resolve($contexts->forPort($port), writeCache: false);
-                    fputcsv($out, [$port->device_id, $port->device->hostname, $port->port_id, $port->ifName, $port->ifAlias, $port->ifAdminStatus?->value, $port->ifOperStatus?->value, $result->policy?->name, $result->winner?->assignment_type->value]);
+                    SafeCsv::write($out, [$port->device_id, $port->device->hostname, $port->port_id, $port->ifName, $port->ifAlias, $port->ifAdminStatus?->value, $port->ifOperStatus?->value, $result->policy?->name, $result->winner?->assignment_type->value]);
                 }
             }, 'ports.port_id', 'port_id');
             fclose($out);
@@ -140,7 +146,7 @@ class InterfaceMatrixController
         // port_id lets the header's "Find interface…" type-ahead land on the exact
         // interface the operator picked instead of a name search that may match
         // the same ifName on many devices (P1-2).
-        return Port::query()->select('ports.*')->leftJoin('iapm_interface_policy_cache as ipc', 'ipc.port_id', '=', 'ports.port_id')->with(['device.location', 'device.groups', 'groups'])->whereHas('device')->when($request->filled('port_id'), fn ($q) => $q->where('ports.port_id', $request->integer('port_id')))->when($request->filled('device_group_id'), fn ($q) => $q->whereHas('device.groups', fn ($g) => $g->where('device_groups.id', $request->integer('device_group_id'))))->when($request->filled('device_id'), fn ($q) => $q->where('ports.device_id', $request->integer('device_id')))->when($request->filled('location_id'), fn ($q) => $q->whereHas('device', fn ($d) => $d->where('location_id', $request->integer('location_id'))))->when($request->filled('policy_id'), fn ($q) => $q->where('ipc.policy_id', $request->integer('policy_id')))->when($request->filled('assignment_source'), fn ($q) => $q->where('ipc.assignment_source', $request->string('assignment_source')))->when($request->boolean('no_policy'), fn ($q) => $q->whereNull('ipc.policy_id'))->when($request->filled('admin'), fn ($q) => $q->where('ports.ifAdminStatus', $request->string('admin')))->when($request->filled('oper'), fn ($q) => $q->where('ports.ifOperStatus', $request->string('oper')))->when($request->filled('incident_state'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.state', $request->string('incident_state'))))->when($request->boolean('active_incident'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->whereIn('ii.state', ['pending', 'active', 'acknowledged', 'suppressed'])))->when($request->boolean('muted'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.muted_until', '>', now())))->when($request->filled('search'), function ($q) use ($request) {
+        return app(InventoryAccess::class)->ports(Port::query())->select('ports.*')->leftJoin('iapm_interface_policy_cache as ipc', 'ipc.port_id', '=', 'ports.port_id')->with(['device.location', 'device.groups', 'groups'])->whereHas('device')->when($request->filled('port_id'), fn ($q) => $q->where('ports.port_id', $request->integer('port_id')))->when($request->filled('device_group_id'), fn ($q) => $q->whereHas('device.groups', fn ($g) => $g->where('device_groups.id', $request->integer('device_group_id'))))->when($request->filled('device_id'), fn ($q) => $q->where('ports.device_id', $request->integer('device_id')))->when($request->filled('location_id'), fn ($q) => $q->whereHas('device', fn ($d) => $d->where('location_id', $request->integer('location_id'))))->when($request->filled('policy_id'), fn ($q) => $q->where('ipc.policy_id', $request->integer('policy_id')))->when($request->filled('assignment_source'), fn ($q) => $q->where('ipc.assignment_source', $request->string('assignment_source')))->when($request->boolean('no_policy'), fn ($q) => $q->whereNull('ipc.policy_id'))->when($request->filled('admin'), fn ($q) => $q->where('ports.ifAdminStatus', $request->string('admin')))->when($request->filled('oper'), fn ($q) => $q->where('ports.ifOperStatus', $request->string('oper')))->when($request->filled('incident_state'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.state', $request->string('incident_state'))))->when($request->boolean('active_incident'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->whereIn('ii.state', ['pending', 'active', 'acknowledged', 'suppressed'])))->when($request->boolean('muted'), fn ($q) => $q->whereExists(fn ($i) => $i->selectRaw('1')->from('iapm_incidents as ii')->whereColumn('ii.port_id', 'ports.port_id')->where('ii.muted_until', '>', now())))->when($request->filled('search'), function ($q) use ($request) {
             $term = '%'.str_replace(['%', '_'], ['\%', '\_'], $request->string('search')).'%';
             $q->where(fn ($s) => $s->where('ports.ifName', 'like', $term)->orWhere('ports.ifAlias', 'like', $term)->orWhere('ports.ifDescr', 'like', $term));
         })

@@ -8,6 +8,7 @@ use Illuminate\Routing\Controller;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Http\Requests\IngestAlertRequest;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\EntityLookup;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InventoryAccess;
 
 /**
  * Admin convenience: fire a synthetic alert for a chosen interface through the
@@ -21,7 +22,7 @@ class SimulationController extends Controller
     {
         // The Interface Matrix links here with ?port_id=, and the picker needs a
         // label for it so the operator sees the interface, not just a number.
-        $port = $request->filled('port_id') ? Port::with('device')->find($request->integer('port_id')) : null;
+        $port = $request->filled('port_id') ? app(InventoryAccess::class)->ports(Port::query())->with('device')->find($request->integer('port_id')) : null;
 
         return view('iapm::simulate', ['result' => null, 'port' => null, 'portLabel' => $port ? $lookup->portLabel($port) : '']);
     }
@@ -34,7 +35,7 @@ class SimulationController extends Controller
             'state' => ['required', 'in:down,up'],
         ]);
 
-        $port = Port::with('device')->findOrFail($data['port_id']);
+        $port = app(InventoryAccess::class)->ports(Port::query())->with('device')->findOrFail($data['port_id']);
         $down = $data['state'] === 'down';
         $payload = [
             // Stable for this interface so a later Up simulation correlates with
