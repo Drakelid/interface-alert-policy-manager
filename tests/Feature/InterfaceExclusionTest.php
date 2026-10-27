@@ -90,7 +90,7 @@ class InterfaceExclusionTest extends IntegrationTestCase
         $payload = ['policy_id' => $policy->id, 'assignment_type' => 'device_group', 'device_group_ids' => [$group->id],
             'excluded_name_patterns_text' => " Kundeport \r\n\r\nkundeport\n", 'match_mode' => 'any', 'priority' => 0, 'enabled' => '1'];
         $this->post('/plugin/interface-alert-policy-manager/assignments', $payload)->assertSessionHasNoErrors()->assertRedirect();
-        $assignment = Assignment::sole();
+        $assignment = Assignment::where('policy_id', $policy->id)->sole();
         self::assertSame(['Kundeport'], $assignment->metadata_json['excluded_name_patterns']);
 
         $resolve = fn ($port) => app(PolicyResolver::class)->resolve(app(InterfaceContextService::class)->forPort($port->fresh()->load(['device.location', 'device.groups', 'groups'])));
