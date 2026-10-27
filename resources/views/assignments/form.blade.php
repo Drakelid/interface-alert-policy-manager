@@ -153,6 +153,12 @@
 </div>
 
 <div class="form-group iapm-field" data-types="device_group">
+    <label for="iapm-excluded-name-patterns">Exclude interfaces by name <span class="iapm-hint">(optional, one per line)</span></label>
+    <textarea name="excluded_name_patterns_text" id="iapm-excluded-name-patterns" class="form-control" rows="2" placeholder="kundeport">{{ old('excluded_name_patterns_text', implode("\n", $assignment->metadata_json['excluded_name_patterns'] ?? [])) }}</textarea>
+    <p class="iapm-hint">Skips any interface whose name, description or ifDescr contains one of these words (not case-sensitive). For example, <code>kundeport</code> leaves out every customer port. Exclusions affect only this assignment.</p>
+</div>
+
+<div class="form-group iapm-field" data-types="device_group">
     <label for="iapm-as-mode">Group match mode</label>
     <select name="match_mode" id="iapm-as-mode" class="form-control">
         <option value="any" @selected(old('match_mode',$assignment->match_mode ?? 'any')==='any')>Match ANY selected group</option>

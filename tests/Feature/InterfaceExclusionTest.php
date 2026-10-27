@@ -75,6 +75,43 @@ class InterfaceExclusionTest extends IntegrationTestCase
         $this->post('/plugin/interface-alert-policy-manager/assignments/preview', $payload)->assertOk()->assertJsonPath('count', 2);
     }
 
+    public function test_interfaces_whose_names_contain_an_excluded_word_are_skipped(): void
+    {
+        $this->actingAs($this->admin());
+        $group = DeviceGroup::factory()->create();
+        $device = $this->device();
+        $device->groups()->attach($group->id);
+        $byAlias = $this->downPort($device, ['ifAlias' => 'KUNDEPORT: Acme AS']);
+        $byName = $this->downPort($device, ['ifName' => 'ge-0/0/kundeport-7', 'ifAlias' => '']);
+        $byDescr = $this->downPort($device, ['ifDescr' => 'Kundeport 9', 'ifAlias' => '']);
+        $included = $this->downPort($device, ['ifAlias' => 'Uplink core']);
+        $fallback = $this->defaultPolicy();
+        $policy = $this->policy();
+        $payload = ['policy_id' => $policy->id, 'assignment_type' => 'device_group', 'device_group_ids' => [$group->id],
+            'excluded_name_patterns_text' => " Kundeport \r\n\r\nkundeport\n", 'match_mode' => 'any', 'priority' => 0, 'enabled' => '1'];
+        $this->post('/plugin/interface-alert-policy-manager/assignments', $payload)->assertSessionHasNoErrors()->assertRedirect();
+        $assignment = Assignment::sole();
+        self::assertSame(['Kundeport'], $assignment->metadata_json['excluded_name_patterns']);
+
+        $resolve = fn ($port) => app(PolicyResolver::class)->resolve(app(InterfaceContextService::class)->forPort($port->fresh()->load(['device.location', 'device.groups', 'groups'])));
+        foreach ([$byAlias, $byName, $byDescr] as $port) {
+            self::assertSame($fallback->id, $resolve($port)->policy->id, $port->ifName);
+        }
+        self::assertSame($policy->id, $resolve($included)->policy->id);
+
+        $this->post('/plugin/interface-alert-policy-manager/assignments/preview', $payload)->assertOk()
+            ->assertJsonPath('count', 1)->assertJsonPath('samples.0.port_id', $included->port_id);
+        $this->view('iapm::assignments.form', app(AssignmentFormData::class)->for($assignment) + ['policy' => $policy])
+            ->assertSee('Exclude interfaces by name')->assertSee('>Kundeport</textarea>', false);
+
+        // A literal % must not act as a LIKE wildcard in the preview.
+        $this->post('/plugin/interface-alert-policy-manager/assignments/preview', ['excluded_name_patterns_text' => '%'] + $payload)
+            ->assertOk()->assertJsonPath('count', 4);
+
+        $this->postJson('/plugin/interface-alert-policy-manager/assignments', ['excluded_name_patterns' => [str_repeat('x', 129)]] + $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('excluded_name_patterns.0');
+    }
+
     public function test_the_picker_limits_interfaces_to_the_device_and_rejects_invalid_exclusions(): void
     {
         $this->actingAs($this->admin());

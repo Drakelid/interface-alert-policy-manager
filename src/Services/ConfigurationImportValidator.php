@@ -80,6 +80,8 @@ class ConfigurationImportValidator
             'policies.*.assignments.*.metadata_json.excluded_device_ids.*' => ['integer'],
             'policies.*.assignments.*.metadata_json.excluded_port_ids' => ['nullable', 'array', 'max:1000'],
             'policies.*.assignments.*.metadata_json.excluded_port_ids.*' => ['integer'],
+            'policies.*.assignments.*.metadata_json.excluded_name_patterns' => ['nullable', 'array', 'max:100'],
+            'policies.*.assignments.*.metadata_json.excluded_name_patterns.*' => ['string', 'max:128'],
             'policies.*.assignments.*.device_group_ids' => ['nullable', 'array', 'max:1000'],
             'policies.*.assignments.*.device_group_ids.*' => ['integer'],
         ]);

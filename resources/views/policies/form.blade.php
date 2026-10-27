@@ -88,6 +88,7 @@ $fields = [
 @if($a->assignment_type->value === 'device_group')
     @if(!empty($a->metadata_json['excluded_device_ids']))<br><small>{{ count($a->metadata_json['excluded_device_ids']) }} excluded device(s)</small>@endif
     @if(!empty($a->metadata_json['excluded_port_ids']))<br><small>{{ count($a->metadata_json['excluded_port_ids']) }} excluded interface(s)</small>@endif
+    @if(!empty($a->metadata_json['excluded_name_patterns']))<br><small>Excludes names containing: {{ implode(', ', $a->metadata_json['excluded_name_patterns']) }}</small>@endif
 @endif
 </td>
 <td>{{ $a->assignment_type->value === 'device' && $a->match_mode === 'exclude' ? 'Excluded from alerts' : $a->match_mode }}</td><td>{{ $a->priority }}</td>

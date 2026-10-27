@@ -48,6 +48,9 @@ class PolicyResolver
                 if (isset($index['excluded_devices'][$id][$context->deviceId]) || isset($index['excluded_ports'][$id][$context->portId])) {
                     continue;
                 }
+                if (isset($index['excluded_names'][$id]) && InterfaceNameExclusion::matches($index['excluded_names'][$id], $context->ifName, $context->ifAlias, $context->ifDescr)) {
+                    continue;
+                }
                 if ($assignment instanceof Assignment && (! $evaluate || $this->matches($assignment, $context))) {
                     $matches[] = $assignment;
                 }
@@ -155,6 +158,10 @@ class PolicyResolver
             if ($type === AssignmentType::DeviceGroup) {
                 $index['excluded_devices'][$id] = array_fill_keys(array_map('intval', (array) ($assignment->metadata_json['excluded_device_ids'] ?? [])), true);
                 $index['excluded_ports'][$id] = array_fill_keys(array_map('intval', (array) ($assignment->metadata_json['excluded_port_ids'] ?? [])), true);
+                $names = InterfaceNameExclusion::prepare($assignment->metadata_json['excluded_name_patterns'] ?? []);
+                if ($names !== []) {
+                    $index['excluded_names'][$id] = $names;
+                }
                 if ($row->match_mode === 'any') {
                     foreach ($assignment->deviceGroups as $group) {
                         $index['device_group'][(int) $group->device_group_id][] = $id;

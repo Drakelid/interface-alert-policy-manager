@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use LibreNMS\Plugins\InterfaceAlertPolicyManager\Rules\PortHasDevice;
+use LibreNMS\Plugins\InterfaceAlertPolicyManager\Services\InterfaceNameExclusion;
 
 class AssignmentRequest extends FormRequest
 {
@@ -33,7 +34,7 @@ class AssignmentRequest extends FormRequest
                     $fail('The regular expression is invalid.');
                 }
             }
-        }], 'match_mode' => ['required', Rule::in(['any', 'all', 'exclude'])], 'priority' => ['required', 'integer', 'between:-100000,100000'], 'enabled' => ['boolean'], 'device_group_ids' => ['array', 'max:1000'], 'device_group_ids.*' => ['integer', 'exists:device_groups,id'], 'excluded_device_ids' => $exclusionRules, 'excluded_device_ids.*' => ['integer', 'distinct', 'exists:devices,device_id'], 'excluded_port_ids' => $exclusionRules, 'excluded_port_ids.*' => ['bail', 'integer', 'distinct', new PortHasDevice], 'receivers' => ['array', 'max:100'], 'receivers.*' => ['string', 'max:128']];
+        }], 'match_mode' => ['required', Rule::in(['any', 'all', 'exclude'])], 'priority' => ['required', 'integer', 'between:-100000,100000'], 'enabled' => ['boolean'], 'device_group_ids' => ['array', 'max:1000'], 'device_group_ids.*' => ['integer', 'exists:device_groups,id'], 'excluded_device_ids' => $exclusionRules, 'excluded_device_ids.*' => ['integer', 'distinct', 'exists:devices,device_id'], 'excluded_port_ids' => $exclusionRules, 'excluded_port_ids.*' => ['bail', 'integer', 'distinct', new PortHasDevice], 'excluded_name_patterns' => [Rule::excludeIf($this->input('assignment_type') !== 'device_group'), 'array', 'max:100'], 'excluded_name_patterns.*' => ['string', 'max:128'], 'receivers' => ['array', 'max:100'], 'receivers.*' => ['string', 'max:128']];
     }
 
     protected function prepareForValidation(): void
@@ -48,6 +49,10 @@ class AssignmentRequest extends FormRequest
         if (! is_array($receivers)) {
             $receivers = preg_split('/[\r\n,]+/', trim((string) $this->input('receivers_text', '')), flags: PREG_SPLIT_NO_EMPTY) ?: [];
         }
-        $this->merge(['enabled' => $this->boolean('enabled'), 'device_group_ids' => array_values($groups), 'receivers' => array_values($receivers)]);
+        $namePatterns = $this->input('excluded_name_patterns');
+        if (! is_array($namePatterns)) {
+            $namePatterns = preg_split('/\R/', (string) $this->input('excluded_name_patterns_text', '')) ?: [];
+        }
+        $this->merge(['enabled' => $this->boolean('enabled'), 'device_group_ids' => array_values($groups), 'receivers' => array_values($receivers), 'excluded_name_patterns' => InterfaceNameExclusion::normalize($namePatterns)]);
     }
 }
