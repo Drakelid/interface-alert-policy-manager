@@ -4,14 +4,14 @@
 #
 # Usage:
 #   sudo bash update-production.sh
-#   sudo bash update-production.sh 1.7.3       # install an exact release
-#   sudo bash update-production.sh '^1.7' --yes
+#   sudo bash update-production.sh 2.1.0       # install an exact release
+#   sudo bash update-production.sh '^2.0' --yes
 #
 # Requires systemd and Linux /proc: the script drains the LibreNMS scheduler and
 # workers in maintenance mode and reloads PHP-FPM through systemctl. On a host without systemd (a container image, for
 # example) follow the manual steps in the README's "Updating" section instead.
 #
-# The default constraint follows stable 1.x releases from 1.7 onward. Database
+# The default constraint follows stable 2.x releases. Database
 # backup policy is installation-specific, so take and verify that backup before
 # running this script. This script backs up only the affected Composer metadata;
 # it deliberately does NOT copy .env, because that file holds APP_KEY and the
@@ -26,7 +26,7 @@ LIBRENMS_USER="${LIBRENMS_USER:-librenms}"
 LIBRENMS_GROUP="${LIBRENMS_GROUP:-librenms}"
 PACKAGE="drakelid/interface-alert-policy-manager"
 PLUGIN_NAME="interface-alert-policy-manager"
-VERSION_CONSTRAINT="^1.7"
+VERSION_CONSTRAINT="^2.0"
 ASSUME_YES=0
 BACKUP_DIR=""
 # BEGIN IAPM RUNTIME HELPERS

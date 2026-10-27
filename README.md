@@ -20,7 +20,7 @@ cd /opt/librenms
 sudo -u librenms tee composer.plugins.json >/dev/null <<'JSON'
 {
     "require": {
-        "drakelid/interface-alert-policy-manager": "^1.7"
+        "drakelid/interface-alert-policy-manager": "^2.0"
     }
 }
 JSON
@@ -84,7 +84,7 @@ cat composer.plugins.json 2>/dev/null
 sudo -u librenms tee composer.plugins.json >/dev/null <<'JSON'
 {
     "require": {
-        "drakelid/interface-alert-policy-manager": "^1.7"
+        "drakelid/interface-alert-policy-manager": "^2.0"
     }
 }
 JSON
@@ -93,7 +93,7 @@ JSON
 sudo -u librenms env FORCE=1 ./scripts/composer_wrapper.php require drakelid/interface-alert-policy-manager
 ```
 
-<sub>Verify the first step took effect with `sudo -u librenms php daily.php -f composer_get_plugins`; it must print `drakelid/interface-alert-policy-manager:^1.7`. If it prints nothing, `daily.sh` will remove the plugin on its next run. `composer_wrapper.php` is only a wrapper around composer itself — it writes to `composer.json`, never to `composer.plugins.json`. `^1.7` tracks 1.x releases from 1.7 up; pin it tighter (`~1.7.0`) if you want patch-only updates.</sub>
+<sub>Verify the first step took effect with `sudo -u librenms php daily.php -f composer_get_plugins`; it must print `drakelid/interface-alert-policy-manager:^2.0`. If it prints nothing, `daily.sh` will remove the plugin on its next run. `composer_wrapper.php` is only a wrapper around composer itself — it writes to `composer.json`, never to `composer.plugins.json`. `^2.0` tracks 2.x releases; pin it tighter (`~2.1.0`) if you want patch-only updates. A host still pinned to `^1.7` stays on 1.x until you change this constraint.</sub>
 
 ### 2. Migrate and enable
 
@@ -262,7 +262,7 @@ sudo systemctl enable --now iapm-worker@{1..6}
 
 `daily.sh` reinstalls the package from `composer.plugins.json`, so updates are automatic within your version constraint. After any update that changes code, restart the workers so they load it:
 
-For a guarded end-to-end production update, copy `tools/update-production.sh` to the server and run `sudo bash update-production.sh`. It defaults to the latest compatible `^1.7` release; pass an exact release such as `sudo bash update-production.sh 1.7.8` to pin it. The script preserves other `composer.plugins.json` entries, backs up Composer metadata, stops and restores systemd IAPM workers, updates the package, migrates, clears caches, reloads PHP-FPM, queues a policy-cache rebuild, and runs both operational checks. Take a verified database backup first.
+For a guarded end-to-end production update, copy `tools/update-production.sh` to the server and run `sudo bash update-production.sh`. It defaults to the latest compatible `^2.0` release; pass an exact release such as `sudo bash update-production.sh 2.1.0` to pin it. Use the copy of the script from the release you are installing: older copies default to `^1.7` and never move past 1.x. The script preserves other `composer.plugins.json` entries, backs up Composer metadata, stops and restores systemd IAPM workers, updates the package, migrates, clears caches, reloads PHP-FPM, queues a policy-cache rebuild, and runs both operational checks. Take a verified database backup first.
 
 <sub>The script requires **systemd** — it drives the `iapm-worker@` units and the PHP-FPM reload through `systemctl`, and exits with an explanation if `systemctl` is missing. Use the manual commands below on a non-systemd host. Its backup covers `composer.json`, `composer.lock` and `composer.plugins.json` only; it does **not** copy `.env`, so preserving `APP_KEY` is your own backup step, exactly as the script's pre-flight summary states.</sub>
 
